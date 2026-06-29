@@ -1,0 +1,17 @@
+{
+  "id": "./",
+  "name": "MyNote Stocks",
+  "short_name": "Stocks",
+  "description": "Personal offline stock portfolio tracker. All data stays on this device.",
+  "start_url": "./?source=pwa",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0e1726",
+  "theme_color": "#0e1726",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
