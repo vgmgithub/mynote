@@ -74,6 +74,36 @@ function monthRange(startYm, endYm) {
   return out;
 }
 
+const STALE_PRICE_DAYS = 30;
+
+function daysSince(iso) {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  if (!t) return null;
+  return Math.max(0, Math.floor((Date.now() - t) / 86400000));
+}
+
+function priceAgeDays(s) {
+  if (!s || s.status === 'sold' || !(Number(s.currentPrice) > 0)) return null;
+  return daysSince(s.updatedAt || s.createdAt);
+}
+
+function isPriceStale(s) {
+  const d = priceAgeDays(s);
+  return d != null && d >= STALE_PRICE_DAYS;
+}
+
+function isMonthEndReminderWindow(now) {
+  const d = now || new Date();
+  const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  return d.getDate() >= lastDay - 6;
+}
+
+function missingCurrentMonthCapture(months) {
+  const ym = thisYm();
+  return !(months || []).some((m) => m.ym === ym);
+}
+
 let toastTimer = null;
 function toast(msg) {
   const existing = $('.toast');
@@ -189,7 +219,27 @@ async function renderPortfolioAnalyzer(host, portfolio) {
   valued.forEach((v) => { v.alloc = total > 0 ? (v.value / total) * 100 : 0; });
   valued.sort((a, b) => b.alloc - a.alloc);
 
+  const bySector = {};
+  valued.forEach((v) => {
+    const k = v.stock.category || 'Uncategorized';
+    if (!bySector[k]) bySector[k] = { value: 0, count: 0 };
+    bySector[k].value += v.value;
+    bySector[k].count += 1;
+  });
+  const sectors = Object.entries(bySector).sort((a, b) => b[1].value - a[1].value || b[1].count - a[1].count);
+  const health = computePortfolioHealth(holdings, valued, sectors, total);
+
   const analyzer = el('div', { class: 'chart-card pa-card' }, [el('h3', { text: 'Portfolio Risk Analysis' })]);
+  analyzer.appendChild(el('div', { class: 'health-score ' + health.tone }, [
+    el('div', { class: 'health-ring' }, [
+      el('div', { class: 'health-num', text: String(health.score) }),
+      el('div', { class: 'health-den', text: '/100' }),
+    ]),
+    el('div', { class: 'health-copy' }, [
+      el('div', { class: 'health-title', text: health.label }),
+      el('div', { class: 'health-detail', text: health.reasons.join(' - ') }),
+    ]),
+  ]));
   analyzer.appendChild(el('div', { class: 'pa-sub', text: portfolioLabel(portfolio) + ' · ' + holdings.length + ' holdings · long-term view' }));
 
   // ---- 1. Concentration ----
@@ -221,14 +271,6 @@ async function renderPortfolioAnalyzer(host, portfolio) {
   }
 
   // ---- 3. Sector exposure ----
-  const bySector = {};
-  valued.forEach((v) => {
-    const k = v.stock.category || 'Uncategorized';
-    if (!bySector[k]) bySector[k] = { value: 0, count: 0 };
-    bySector[k].value += v.value;
-    bySector[k].count += 1;
-  });
-  const sectors = Object.entries(bySector).sort((a, b) => b[1].value - a[1].value || b[1].count - a[1].count);
   if (sectors.length) {
     const useValue = total > 0;
     const maxSec = sectors[0][1][useValue ? 'value' : 'count'] || 1;
@@ -293,6 +335,41 @@ function _paFlag(tone, title, detail) {
     el('div', { class: 'pa-flag-t', text: title }),
     el('div', { class: 'pa-flag-d', text: detail }),
   ]);
+}
+
+function computePortfolioHealth(holdings, valued, sectors, total) {
+  const count = holdings.length || 1;
+  const unpriced = holdings.filter((s) => !(Number(s.currentPrice) > 0)).length;
+  const stale = holdings.filter(isPriceStale).length;
+  const maxAlloc = total > 0 && valued[0] ? valued[0].alloc : 0;
+  const maxSectorPct = total > 0 && sectors[0] ? (sectors[0][1].value / total) * 100 : 0;
+  const avoid = holdings.filter((s) => s.conviction === 'down').length;
+
+  let score = 100;
+  if (total <= 0) score -= 30;
+  score -= Math.round((unpriced / count) * 20);
+  score -= Math.round((stale / count) * 20);
+  if (maxAlloc > 30) score -= 22;
+  else if (maxAlloc > 20) score -= 14;
+  else if (maxAlloc > 15) score -= 8;
+  if (maxSectorPct > 55) score -= 16;
+  else if (maxSectorPct > 40) score -= 10;
+  score -= Math.min(10, avoid * 3);
+  score = Math.max(0, Math.min(100, score));
+
+  const reasons = [];
+  reasons.push(unpriced ? unpriced + ' without price' : 'prices covered');
+  reasons.push(stale ? stale + ' stale price' + (stale > 1 ? 's' : '') : 'prices fresh');
+  if (maxAlloc > 15) reasons.push('top holding ' + maxAlloc.toFixed(0) + '%');
+  else reasons.push('weight balanced');
+  if (maxSectorPct > 40) reasons.push('sector ' + maxSectorPct.toFixed(0) + '%');
+  else reasons.push('sector spread ok');
+
+  const tone = score >= 80 ? 'good' : score >= 60 ? 'neutral' : 'bad';
+  const label = score >= 80 ? 'Strong portfolio health'
+    : score >= 60 ? 'Balanced, watch a few items'
+      : 'Needs review';
+  return { score, tone, label, reasons };
 }
 
 function portfolioLabel(id) {
@@ -377,6 +454,12 @@ function stockCard(s) {
     if (c.priced) {
       left.appendChild(el('div', { class: 'meta-line' }, [b(String(Number(s.units) || 0)), ' @ ' + fmtCur(s.buyPrice, cur)]));
       left.appendChild(el('div', { class: 'meta-line' }, ['Current price ', b(fmtCur(s.currentPrice, cur))]));
+      const age = priceAgeDays(s);
+      if (age != null) {
+        const cls = age >= STALE_PRICE_DAYS ? ' stale warn' : ' stale';
+        const text = age === 0 ? 'Price updated today' : 'Price updated ' + age + 'd ago';
+        left.appendChild(el('div', { class: 'meta-line' + cls, text }));
+      }
       const kv = (label, valNode) => el('div', { class: 'kv' }, [el('span', { class: 'kv-label', text: label }), valNode]);
       right.appendChild(kv('Overall return', el('span', { class: 'kv-val ' + (c.pl >= 0 ? 'pos' : 'neg'), text: (c.pl >= 0 ? '+' : '') + fmtCur(c.pl, cur) })));
       right.appendChild(kv('Current value', el('span', { class: 'kv-val', text: fmtCur(c.value, cur) })));
@@ -1039,6 +1122,15 @@ function renderMonthly() {
     ]),
     el('p', { class: 'note', text: 'Note: Capture stores this month\'s totals from your current holdings. Re-saving the same month overwrites it (no duplicate history).' }),
   ]);
+  if (isMonthEndReminderWindow() && missingCurrentMonthCapture(months)) {
+    head.appendChild(el('div', { class: 'snapshot-reminder' }, [
+      el('div', {}, [
+        el('div', { class: 'snapshot-reminder-t', text: ymToLabel(thisYm()) + ' snapshot is not captured yet' }),
+        el('div', { class: 'snapshot-reminder-d', text: 'Month end is near. Capture after your prices are updated.' }),
+      ]),
+      el('button', { class: 'btn primary small', text: 'Capture now', onclick: captureMonth }),
+    ]));
+  }
   if (!months.length) {
     host.appendChild(head);
   } else {
@@ -2594,6 +2686,14 @@ async function checkBackupReminder() {
   } catch (_) {}
 }
 
+function checkMonthEndSnapshotReminder() {
+  if (!isMonthEndReminderWindow() || !missingCurrentMonthCapture(state.months)) return;
+  const key = 'snapshotReminderShown_' + state.portfolio + '_' + thisYm();
+  if (sessionStorage.getItem(key)) return;
+  sessionStorage.setItem(key, '1');
+  setTimeout(() => toast('Month-end reminder: capture ' + ymToLabel(thisYm()) + ' snapshot'), 2300);
+}
+
 async function init() {
   applyTheme();
   buildChrome();
@@ -2643,11 +2743,13 @@ async function init() {
   }
   requestPersistentStorage();
   checkBackupReminder();
+  checkMonthEndSnapshotReminder();
   // Idempotent: back-fills wife-in (and reverse) months with the peer's Nifty
   // where one side is missing it. Cheap; a no-op once everything's in sync.
   syncNiftyAll().catch(() => {});
   // Silent feed refresh on app open — so the user doesn't have to visit the
-  // Feed tab to get fresh news. Fires for the active portfolio if stale (>12h).
+  // Feed tab to get fresh news. Fires for the active portfolio when its
+  // session-anchor sync is stale.
   _autoRefreshFeedOnInit().catch(() => {});
 }
 

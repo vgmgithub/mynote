@@ -14,6 +14,7 @@ This is the inventory. Each entry: **what** + **where** + **why it's that way**.
 - **Sort always puts holdings before sold** (status-primary, then field-secondary). Single sort applies across the unified list.
 - **Search box**: filters by name OR category.
 - **Per-stock card**: shows current value, overall return %, invested, units, latest monthly change. Sold cards show realized P&L instead.
+- **Stale price indicator**: active holdings with a current price show how many days ago the price was updated. At 30+ days the line turns warning-colored.
 - **Tap a card** → opens detail with monthly history list + per-month % editor.
 - **➕ FAB** → add new stock.
 - **📷 FAB** → OCR upload. **Only visible on Holdings tab**, and only on portfolios with an OCR parser (me-in, wife-in, me-us — all three now).
@@ -29,6 +30,7 @@ This is the inventory. Each entry: **what** + **where** + **why it's that way**.
 
 - "Capture this month" button — saves current portfolio totals as a monthly snapshot.
 - Note under the button explains what Capture does (small font, user-requested).
+- **Month-end snapshot reminder**: during the final 7 calendar days of a month, if the current month has not been captured, the Trend tab shows a reminder banner with **Capture now**. App open also shows a once-per-session reminder toast for the active portfolio.
 - **Value-by-month chart** with Nifty 50 / Nasdaq overlay on second axis.
 - Per-month MoM calculation: `value - prev.value` (kept simple per user — was overengineered with profit-loss deltas, reverted).
 - Tap a point on mobile to show details (SVG `<title>` only triggers on hover, so we added a click handler + `.chart-info` div).
@@ -109,12 +111,13 @@ See [feed.md](feed.md) for the full design. Summary:
 - **7-day rolling window:** articles accumulate over 7 days; older articles auto-expire. Provides stable sentiment signal.
 - Recommendation engine is **fully offline** — pure function combining cached news sentiment with local price history. See `feed.js → computeRecommendation`.
 - API key entered via Menu → 📰 Feed settings.
-- Auto-refresh on Feed tab open if cached data is older than 12h. Manual "Refresh now" button always available.
+- Auto-refresh runs silently on app open for the active portfolio when stale, and also on Feed tab open when stale. Manual "Refresh now" button always available.
 - Disclaimer banner: "Not financial advice."
 
 ## Portfolio Analyzer (in Overview tab)
 
 - New subsection on the Holdings/Overview tab showing current portfolio health.
+- **Portfolio health score:** 0-100 score based on price coverage, stale prices, top holding concentration, sector exposure, and "Avoid" conviction flags. It is a conservative review signal, not investment advice.
 - **Concentration risk:** flags stocks >15% of portfolio.
 - **Top holdings + sentiment:** shows top 5 holdings with their 7-day sentiment (color-coded).
 - **Sector breakdown:** displays how many stocks in each sector (IT, Finance, Pharma, etc.).

@@ -13,7 +13,7 @@ A bottom-nav tab that pulls last-24h news for the user's current holdings, then 
 
 1. **First time** — user taps Feed tab. No API key set → onboarding card with sign-up link.
 2. **API key entry** — Menu → "Feed settings" → paste key → Save. Stored in `meta.feedApiKey`.
-3. **Refresh** — tap "Refresh now" or auto-triggered on Feed tab open if data is stale (> 12h).
+3. **Refresh** — tap "Refresh now", or let the app auto-sync when the portfolio is stale for the current market session.
 4. **View** — per-stock card with recommendation badge + reason. Tap card to expand news list.
 
 ## File: `feed.js` (~250 lines)
@@ -24,13 +24,13 @@ Lazy-loaded module (`await import('./feed.js')` from `renderFeed()` / `openFeedS
 
 | Name | Purpose |
 |---|---|
-| `FEED_CACHE_TTL_MS` | 12h. Threshold for "stale" data → triggers auto-refresh. |
+| `FEED_CACHE_TTL_MS` | Legacy 12h constant; current auto-refresh uses `shouldAutoRefresh()` session anchors. |
 | `MARKETAUX_FREE_LIMIT` | 100, informational. |
 | `getApiKey()` / `saveApiKey(key)` | Reads/writes `meta.feedApiKey`. |
 | `getCachedFeed(portfolio)` | Returns `Map<stockId, entry>` from the `feed` store. |
 | `saveFeedEntry(entry)` | Persists one stock's feed entry. |
 | `getLastFetch(portfolio)` / `setLastFetch(portfolio, ms)` | Per-portfolio fetch timestamps in `meta`. |
-| `shouldAutoRefresh(lastFetchMs, portfolio, nowMs)` | Stale check (12h threshold). |
+| `shouldAutoRefresh(lastFetchMs, portfolio, nowMs)` | Stale check based on IST session anchors: 08:30 for India portfolios, 18:30 for US. |
 | `fetchNewsForStocks(stocks, apiKey, onProgress, signal)` | Online fetch. Sequential per stock — Marketaux `search=` doesn't batch. Returns `Map<stockId, {items, error}>`. |
 | `computeRecommendation(stock, items, history)` | Pure function. Returns `{label, color, reason, severity}`. |
 | `applyKeywordSentiment(text)` | Fallback sentiment scorer (used when Marketaux article has no entity sentiment). |
@@ -106,7 +106,7 @@ A disclaimer banner above the card list reinforces "not financial advice."
 ## Refresh model
 
 - **Manual:** "Refresh now" button on the Feed tab. Always works (subject to API key + network).
-- **Auto:** triggers when entering the Feed tab IF `(now - lastFetch) >= 12h` AND online. Background — UI shows cached results while it runs. The plan's "09:00 IST / 19:00 IST" windows were softened to "stale = 12h" because forcing exact hours produces worse UX than fetching whenever the user opens a stale Feed.
+- **Auto:** triggers silently on app open for the active portfolio if online and stale for the current session. It also triggers when entering the Feed tab if stale. UI shows cached results while it runs.
 - **Lock:** the `_feedFetchInFlight` flag prevents double-tap and overlapping fetches.
 
 ## Filter toggle
@@ -144,7 +144,7 @@ CSS classes: `.feed-disclaimer`, `.feed-actions`, `.feed-status` (with `.online/
 ## Gotchas
 
 - **Marketaux Indian coverage is patchy.** Small/mid-caps may return zero results — Feed shows "No news today" for those, which is correct (better than fake news).
-- **Auto-refresh only fires when on the Feed tab.** This is deliberate — we don't burn the user's 100-req/day budget on app opens they didn't intend to spend on news.
+- **Auto-refresh can fire on app open for the active portfolio.** It is still gated by the session anchor and `_feedFetchInFlight`, so it should not double-fetch repeatedly.
 - **`navigator.onLine`** is the best signal we have for offline; it's not perfectly reliable on all browsers, but it's good enough for "show cached + don't bother fetching."
 - **External links open with `rel="noopener" target="_blank"`** so a malicious news source can't reach back into the app via `window.opener`.
 - **The card tap toggles article visibility**, but clicks on the actual `<a>` are excluded so external navigation still works (see `if (e.target.tagName === 'A') return;` in the handler).

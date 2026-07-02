@@ -6,6 +6,8 @@ Each item below has been mentioned in conversation. Do NOT pick these up unpromp
 
 ## 1. Auto-capture monthly snapshot
 
+**Status update:** month-end reminder is now built. During the final 7 calendar days of the month, the Trend tab shows a reminder if the current month is not captured, and app open shows a once-per-session toast for the active portfolio. Silent auto-capture is still not built.
+
 **User goal:** "I always want to note the month-end value" without having to remember to tap **Capture this month**.
 
 **Current state:** OCR Apply auto-captures the current month. The standalone "Capture this month" button is the manual fallback.

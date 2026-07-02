@@ -138,8 +138,8 @@ Meta keys added in v3:
 - **Stale-while-revalidate** on every same-origin GET.
 - Precache on `install` with `cache: 'reload'` (bypass HTTP cache) so a fresh deploy lands cleanly.
 - Revalidation fetch uses `cache: 'no-store'` so the browser HTTP cache can't serve a stale copy.
-- `skipWaiting()` + `clients.claim()` so a new SW takes over immediately.
-- `app.js` listens to `controllerchange` and reloads the page exactly once after a SW swap — users never see stale UI after an update.
+- New service workers install into the waiting slot. They activate only when the user taps **Menu -> Check for updates** / **Update available**.
+- `app.js` posts `{ type: 'SKIP_WAITING' }` to the waiting worker, then listens to `controllerchange` and reloads exactly once. No surprise reloads.
 
 To force-update everything: bump `const CACHE = 'mynote-stocks-vNN'`. Always do this on any change to a precached file. See [gotchas.md](gotchas.md) for the manual cache-flush procedure when the SW gets stuck.
 
