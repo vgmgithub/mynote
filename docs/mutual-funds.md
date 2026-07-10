@@ -31,7 +31,7 @@ Key `id` (auto-increment), index `owner` (currently only `'me'` — room for a w
   targetYear: 2030,
   benchXirr,                     // decimal, manual (no live feed)
   goodReturn, judgeAfter, remarks,
-  contributions: [{ date:'YYYY-MM-DD', amount }],  // dated investments (cashflows out) — the accuracy driver
+  contributions: [{ date:'YYYY-MM-DD', amount, notes }],  // dated investments (cashflows out) — the accuracy driver; notes is free text, optional
   valueHistory: [{ ym:'YYYY-MM', value }],         // monthly value snapshots (overwrite per month)
   valueAsOf: 'YYYY-MM-DD',
   soldValue, soldDate,           // set when status='Sold' (realized XIRR terminal)
@@ -62,12 +62,12 @@ Verified: single lumpsum → XIRR == CAGR; sold 100k→150k over 2 yr → 22.47%
 
 ## UI (renderMF → `#mfView`, reuses stock CSS classes)
 
-- **Summary card** (`.summary`) — adapts to the active tab: *Current value / Invested / Overall gain / Portfolio XIRR / Beating benchmark / Proj 2030* for Investing; *Realized value / Realized gain / Realized XIRR / Sold funds* for Sold.
-- **Tabs** — `Investing | Sold` with live counts. **Holding vs redeemed, not SIP status** — a paused SIP ("Stopped"/"On/Off") is still *Investing*; a fund is *Sold* only when `status==='Sold'` or it has a `soldDate`. Default `investing`.
-- **Sort** — XIRR / Return / Invested / Name.
+- **Bottom nav** (`#mfBottomNav`) — **Holdings | Overview**, a *second fixed bottom nav* built once (`buildMfBottomNav`) that looks exactly like the Stocks app's own `#bottomNav` (same `.bottom-nav` CSS, icon + label, accent when active). `setAppMode` shows it only in MF mode and hides the Stocks one, so the two never overlap. Tab state is `_mfTab` (`'holdings' | 'overview'`); clicking a nav button just flips `_mfTab` and calls `renderMF()` — `updateMfNavActive()` syncs the button's active class after each render.
+  - **Holdings** — filter (`Investing | Sold`, live counts — holding vs redeemed, not SIP status) + sort (XIRR / Return / Invested / Name) + the fund card list + the update-values icon.
+  - **Overview** — the summary card (*Current value / Invested / Overall gain / Portfolio XIRR / Beating benchmark / Proj 2030* for Investing; *Realized value / Realized gain / Realized XIRR / Sold funds* for Sold) + **Allocation by type** (`.bar-row`).
 - **Fund cards** (`.card`) — name, type · status, beats/lags (or `sold`) badge, XIRR (labelled `XIRR` / `XIRR (sheet)` / `Realized XIRR`), Invested, Value/Sold for, Return, Bench, an auto-tracked **Range** line (XIRR & Return lo–hi, shown once it moves ≥0.1%), and remarks.
-- **Allocation by type** (`.bar-row`) over the shown funds.
-- **`openFundForm`** — metadata + a dated **investments editor** (`+ Add investment`, `Generate SIP schedule`, `📷 Import transactions (Paytm)`) + current value/as-of. **Sold value / Sold on** appear only when Status = Sold. On save: writes the value snapshot, then updates `xirrLow/High` and `returnLow/High` from a fresh `computeFund` (the auto min/max observation), and clears `seeded`.
+- **Update current values** — an icon button (📷) next to the filter/sort row on the Holdings tab, opens `openMfValueSheet()` (see OCR below).
+- **`openFundForm`** — a **two-tab sheet** (`.seg`, plain — not the bottom nav): **Edit fund** (metadata: name, type, status, SIP, current value/as-of, sold value/date when Status=Sold, benchmark, target year, remarks) and **Fund Holdings** (the investment log + a 📷 icon bottom-right for OCR import). Each investment row is **date · amount · notes** (`contributions[].notes`, free text, optional). On save: writes the value snapshot, then updates `xirrLow/High` and `returnLow/High` from a fresh `computeFund` (the auto min/max observation), and clears `seeded`.
 
 ## OCR (Paytm Money) — two distinct flows
 

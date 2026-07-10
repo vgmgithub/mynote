@@ -34,6 +34,7 @@ const state = {
 // Mutual-fund view state (only used inside the MF surface).
 let _mfSort = 'xirr';        // 'xirr' | 'ret' | 'inv' | 'name'
 let _mfFilter = 'investing'; // 'investing' | 'sold' (holding vs redeemed - not SIP status)
+let _mfTab = 'holdings';     // 'holdings' | 'overview' (bottom nav, mirrors Stocks)
 const MF_TYPES = ['Multi Cap', 'Flexi Cap', 'Large Cap', 'Mid Cap', 'Small Cap', 'Tax Saver', 'Technology', 'Pharma', 'Energy', 'International', 'Index', 'Debt', 'Hybrid'];
 const MF_STATUS = ['Investing', 'Investing On/Off', 'Investing Variable', 'Stopped', 'Sold'];
 
@@ -1393,6 +1394,7 @@ function setAppMode(mode) {
   $('#mfView').classList.toggle('hidden', !isMF);
   $('#portfolioTabs').classList.toggle('hidden', !isStocks);
   $('#bottomNav').classList.toggle('hidden', !isStocks);
+  $('#mfBottomNav').classList.toggle('hidden', !isMF);
   $('#mfAddBtn').classList.toggle('hidden', !isMF);
   $('#backBtn').classList.toggle('hidden', isHome);
   $('#appTitle').innerHTML = isHome ? 'MyNote' : (isMF ? 'Mutual&nbsp;Funds' : 'MyNote&nbsp;Stocks');
@@ -1402,8 +1404,24 @@ function setAppMode(mode) {
     // Nothing from the stock surface should show on Home/MF.
     STOCK_SURFACE.forEach((sel) => $(sel).classList.add('hidden'));
     if (isHome) renderHome();
-    if (isMF) renderMF();
+    if (isMF) { buildMfBottomNav(); renderMF(); }
   }
+}
+
+// Bottom nav for the MF surface (Holdings | Overview) - built once, mirrors
+// the Stocks app's #bottomNav look (fixed, icon + label, active in accent).
+function buildMfBottomNav() {
+  const nav = $('#mfBottomNav');
+  if (nav.childElementCount) { updateMfNavActive(); return; }
+  nav.innerHTML = '';
+  [['holdings', '📈', 'Holdings'], ['overview', '📊', 'Overview']].forEach(([v, ico, label]) => {
+    nav.appendChild(el('button', { 'data-view': v, onclick: () => { if (_mfTab === v) return; _mfTab = v; renderMF(); } },
+      [el('span', { class: 'bn-ico', text: ico }), label]));
+  });
+  updateMfNavActive();
+}
+function updateMfNavActive() {
+  $('#mfBottomNav').querySelectorAll('button').forEach((x) => x.classList.toggle('active', x.getAttribute('data-view') === _mfTab));
 }
 
 async function renderHome() {
@@ -1484,8 +1502,6 @@ const _mfCell = (k, v, cls) => el('div', { class: 'cell' }, [
   el('div', { class: 'v ' + (cls || ''), text: v }),
 ]);
 
-let _mfTab = 'holdings';  // 'holdings' | 'overview'
-
 async function renderMF() {
   const host = $('#mfView');
   host.innerHTML = '';
@@ -1496,6 +1512,7 @@ async function renderMF() {
 
   // No funds at all → simple empty state (tabs would be pointless).
   if (!funds.length) {
+    updateMfNavActive();
     host.appendChild(el('section', { class: 'summary' }, [
       el('div', { class: 'label', text: 'Current value' }),
       el('div', { class: 'big', text: fmtCur(0, 'INR') }),
@@ -1524,14 +1541,9 @@ async function renderMF() {
   const gainPct = totInv > 0 ? ((totVal - totInv) / totInv) * 100 : 0;
   const wXirr = wW > 0 ? (wSum / wW) * 100 : null;
 
-  // Tab: Holdings (fund list) | Overview (summary + allocation)
-  const holdTabBtn = el('button', { class: (_mfTab === 'holdings' ? 'active' : ''), type: 'button', text: 'Holdings' });
-  const ovrvTabBtn = el('button', { class: (_mfTab === 'overview' ? 'active' : ''), type: 'button', text: 'Overview' });
-
-  holdTabBtn.addEventListener('click', () => { _mfTab = 'holdings'; renderMF(); });
-  ovrvTabBtn.addEventListener('click', () => { _mfTab = 'overview'; renderMF(); });
-
-  const tabSeg = el('div', { class: 'seg mf-tabs' }, [holdTabBtn, ovrvTabBtn]);
+  // Tab: Holdings (fund list) | Overview (summary + allocation) - the fixed
+  // #mfBottomNav (built by setAppMode) drives the tab, this just syncs its active state.
+  updateMfNavActive();
 
   // Holdings tab content: fund list with filter/sort
   const holdContent = el('div', { class: 'tab-content' + (_mfTab === 'holdings' ? '' : ' hidden') });
@@ -1606,7 +1618,6 @@ async function renderMF() {
   }
 
   // Assemble the view
-  host.appendChild(tabSeg);
   host.appendChild(holdContent);
   host.appendChild(ovrvContent);
 }

@@ -921,10 +921,9 @@ body.locked { overflow: hidden; }
 .mf-value-name { flex: 1; min-width: 0; font-size: 0.82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mf-value-row input { flex: 0 0 42%; }
 
-/* Tab layout (Holdings | Overview, Edit fund | Fund Holdings) */
+/* Tab layout (Holdings | Overview via #mfBottomNav; Edit fund | Fund Holdings via .seg) */
 .tab-content { display: block; }
 .tab-content.hidden { display: none; }
-.mf-tabs { margin-bottom: 12px; }
 .icon-only { padding: 6px 8px; font-size: 1.3rem; }
 
 /* Toolbar with icon button for Update values */
