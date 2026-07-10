@@ -918,10 +918,27 @@ body.locked { overflow: hidden; }
 .mf-actions { margin-top: 10px; }
 .mf-value-list { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 4px; max-height: 46vh; overflow-y: auto; }
 .mf-value-row { display: flex; align-items: center; gap: 10px; }
-.mf-value-name { flex: 1; min-width: 0; font-size: 0.82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mf-value-row input { flex: 0 0 42%; }
+.mf-value-name { flex: 1; min-width: 0; font-size: 0.82rem; display: flex; flex-direction: column; gap: 2px; }
+.mf-value-name > div:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mf-value-cap { font-size: 0.68rem; color: var(--muted); }
+.mf-value-row input { flex: 0 0 38%; }
 
-/* Tab layout (Holdings | Overview via #mfBottomNav; Edit fund | Fund Holdings via .seg) */
+/* Transaction log row: date · amount · units · NAV · notes (wraps on phones) */
+.mf-txn-row { flex-wrap: wrap; padding: 8px; border: 1px solid var(--line); border-radius: 10px; }
+.mf-txn-row input.txn-date { flex: 1 1 46%; min-width: 0; }
+.mf-txn-row input.txn-amt { flex: 1 1 46%; width: auto; }
+.mf-txn-row input.txn-units, .mf-txn-row input.txn-nav { flex: 1 1 30%; width: auto; }
+.mf-txn-row input.txn-notes { flex: 1 1 100%; width: auto; }
+.mf-txn-row .icon-btn { flex: 0 0 auto; margin-left: auto; }
+.mf-units { margin-top: 6px; font-size: 0.66rem; color: var(--muted); }
+
+/* Benchmark tab live readout */
+.mf-bench-readout { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.mf-bench-now { display: flex; justify-content: space-between; gap: 10px; font-size: 0.82rem; }
+.mf-bench-status { margin-top: 8px; }
+.mf-bench-badge { font-size: 0.72rem; padding: 3px 10px; }
+
+/* Tab layout (Holdings | Overview via #mfBottomNav; Edit fund | Fund Holdings | Benchmark via .seg) */
 .tab-content { display: block; }
 .tab-content.hidden { display: none; }
 .icon-only { padding: 6px 8px; font-size: 1.3rem; }

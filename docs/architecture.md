@@ -140,7 +140,7 @@ Meta keys added in v3:
 ### `funds` store (v4+)
 - Key: `id` (auto-increment).
 - Index: `owner` (currently only `'me'`).
-- One row per mutual fund: dated `contributions`, monthly `valueHistory`, `soldValue`/`soldDate`, auto-tracked `xirrLow/High` + `returnLow/High`, seed metadata. Full shape and logic in [mutual-funds.md](mutual-funds.md).
+- One row per mutual fund: dated `contributions` (each with `units`/`nav`), `latestNav`/`navAsOf` (current value = total units × latest NAV; `valueHistory` is the fallback for unit-less funds), user-defined benchmark thresholds (`benchReturnLow/High`, `benchXirrLow/High` → Below/Within/Above status), `soldValue`/`soldDate`, auto-tracked observed `xirrLow/High` + `returnLow/High`, seed metadata. Full shape and logic in [mutual-funds.md](mutual-funds.md).
 
 Meta keys added in v4:
 - `mfSeeded` → `true` once the 11 sheet funds have been seeded.

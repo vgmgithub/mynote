@@ -16,6 +16,16 @@ const CLAMP_HI = 0.35;   // projection-rate ceiling (35%/yr is generous long-ter
 export function investedOf(fund) {
   return (fund.contributions || []).reduce((s, c) => s + (Number(c.amount) || 0), 0);
 }
+// Total units held = Σ units across transactions (buys add, sells could subtract
+// but the current model logs buys only; a sold fund realises via soldValue).
+export function totalUnitsOf(fund) {
+  return (fund.contributions || []).reduce((s, c) => s + (Number(c.units) || 0), 0);
+}
+// Weighted average purchase NAV = total invested ÷ total units.
+export function avgNavOf(fund) {
+  const u = totalUnitsOf(fund);
+  return u > 0 ? investedOf(fund) / u : null;
+}
 export function latestValue(fund) {
   const vh = fund.valueHistory || [];
   if (!vh.length) return 0;
@@ -97,12 +107,20 @@ export function computeFund(fund, nowMs) {
   const now = nowMs || Date.now();
   const nowDate = new Date(now);
   const invested = investedOf(fund);
+  const totalUnits = totalUnitsOf(fund);
+  const avgNav = avgNavOf(fund);
+  const latestNav = fund.latestNav != null && fund.latestNav !== '' ? Number(fund.latestNav) : null;
   // A fund is "sold" (holding vs redeemed — independent of SIP status) when its
   // status is Sold or it carries a sold date. Sold funds realise at their sold
-  // value/date; held funds use the latest value snapshot as a notional sell.
+  // value/date. Held funds derive current value from units × latest NAV when both
+  // are known (authoritative & self-consistent); otherwise fall back to the
+  // manually-entered value snapshot (seeded/legacy funds with no per-unit data).
   const sold = fund.status === 'Sold' || !!fund.soldDate;
-  const value = sold ? (Number(fund.soldValue) || 0) : latestValue(fund);
-  const valueDate = (sold ? (fund.soldDate || fund.valueAsOf) : fund.valueAsOf) || nowDate.toISOString().slice(0, 10);
+  let value, valueSource;
+  if (sold) { value = Number(fund.soldValue) || 0; valueSource = 'sold'; }
+  else if (totalUnits > 0 && latestNav != null && latestNav > 0) { value = totalUnits * latestNav; valueSource = 'nav'; }
+  else { value = latestValue(fund); valueSource = 'manual'; }
+  const valueDate = (sold ? (fund.soldDate || fund.valueAsOf) : (fund.navAsOf || fund.valueAsOf)) || nowDate.toISOString().slice(0, 10);
   const absReturnPct = invested > 0 ? ((value - invested) / invested) * 100 : 0;
 
   const times = (fund.contributions || []).map((c) => Date.parse(c.date)).filter((t) => !isNaN(t)).sort((a, b) => a - b);
@@ -123,8 +141,25 @@ export function computeFund(fund, nowMs) {
     xirrSource = rate != null ? (sold ? 'realized' : 'computed') : 'none';
   }
 
-  const benchXirr = fund.benchXirr != null && fund.benchXirr !== '' ? Number(fund.benchXirr) : null;
-  const beatsBenchmark = rate != null && benchXirr != null ? rate >= benchXirr : null;
+  // ---------- benchmark status (user-defined thresholds, never auto-modified) ----------
+  // Four optional thresholds stored as decimals: low/high absolute return, low/high
+  // XIRR. Legacy funds carry a single `benchXirr` → treated as the low XIRR bound.
+  // Status (Below-precedence — the worst case wins, which is conservative for an
+  // investor): Below if current return OR XIRR is under its low bound; Above if
+  // current return OR XIRR is over its high bound; Within otherwise.
+  const th = (v) => (v != null && v !== '' ? Number(v) : null);
+  const benchRetLo = th(fund.benchReturnLow), benchRetHi = th(fund.benchReturnHigh);
+  const benchXirrLo = th(fund.benchXirrLow != null && fund.benchXirrLow !== '' ? fund.benchXirrLow : fund.benchXirr);
+  const benchXirrHi = th(fund.benchXirrHigh);
+  const retDec = invested > 0 ? (value - invested) / invested : null;
+  const xirrDec = rate;
+  let benchStatus = null;
+  if ([benchRetLo, benchRetHi, benchXirrLo, benchXirrHi].some((x) => x != null)) {
+    const below = (benchRetLo != null && retDec != null && retDec < benchRetLo) || (benchXirrLo != null && xirrDec != null && xirrDec < benchXirrLo);
+    const above = (benchRetHi != null && retDec != null && retDec > benchRetHi) || (benchXirrHi != null && xirrDec != null && xirrDec > benchXirrHi);
+    benchStatus = below ? 'below' : above ? 'above' : 'within';
+  }
+  const beatsBenchmark = benchStatus === 'above' ? true : benchStatus === 'below' ? false : null;
 
   // Projections only apply to funds you still hold.
   const targetYear = Number(fund.targetYear) || 2030;
@@ -132,17 +167,21 @@ export function computeFund(fund, nowMs) {
   let monthsLeft = 0, projInvested2030 = null, projCorpusStop = null, projCorpusStay = null;
   if (!sold) {
     monthsLeft = monthsToTargetEnd(nowDate, targetYear);
-    const projRate = rate != null ? rate : (benchXirr != null ? benchXirr : 0.10);
+    const projRate = rate != null ? rate : (benchXirrLo != null ? benchXirrLo : 0.10);
     projInvested2030 = invested + sip * monthsLeft;
     projCorpusStop = projectCorpus(value, sip, projRate, monthsLeft, false);
     projCorpusStay = projectCorpus(value, sip, projRate, monthsLeft, true);
   }
 
+  const pct = (d) => (d != null ? d * 100 : null);
   return {
-    invested, value, absReturnPct, ageYears, sold,
+    invested, value, absReturnPct, ageYears, sold, valueSource,
+    totalUnits, avgNav, latestNav,
     soldValue: sold ? value : null, soldDate: sold ? valueDate : null,
     xirr: rate, xirrPct: rate != null ? rate * 100 : null, xirrSource,
-    benchXirr, benchXirrPct: benchXirr != null ? benchXirr * 100 : null, beatsBenchmark,
+    benchStatus, beatsBenchmark,
+    benchReturnLowPct: pct(benchRetLo), benchReturnHighPct: pct(benchRetHi),
+    benchXirrLowPct: pct(benchXirrLo), benchXirrHighPct: pct(benchXirrHi),
     targetYear, monthsLeft, projInvested2030, projCorpusStop, projCorpusStay,
   };
 }
@@ -307,7 +346,13 @@ export function buildSeedFund(seed, nowMs) {
     name: seed.name, type: seed.type, category: seed.category,
     benchmark: '', status: seed.status, sip: seed.sip || 0,
     targetYear: 2030,
-    benchXirr: seed.benchXirr,
+    // Latest NAV unknown at seed time — value falls back to the manual snapshot
+    // until the user logs transactions with units and enters a latest NAV.
+    latestNav: null, navAsOf: null,
+    // Benchmark thresholds (user-defined). The sheet's single benchmark XIRR seeds
+    // the low XIRR bound; the rest are blank for the user to fill on the Benchmark tab.
+    benchReturnLow: null, benchReturnHigh: null,
+    benchXirrLow: seed.benchXirr != null ? seed.benchXirr : null, benchXirrHigh: null,
     goodReturn: seed.goodReturn || '', judgeAfter: seed.judgeAfter || '',
     remarks: seed.remarks || '',
     contributions,
