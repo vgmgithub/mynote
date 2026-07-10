@@ -1637,17 +1637,18 @@ function _mfCard(f, c) {
 function buildContribEditor(contributions, getSip) {
   const rowsWrap = el('div', { class: 'hist-rows' });
   const refs = [];
-  const addRow = (date, amount) => {
+  const addRow = (date, amount, notes) => {
     const d = el('input', { type: 'date', value: date || todayISO() });
     const amt = el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: amount != null ? amount : '', placeholder: '₹ amount' });
+    const n = el('input', { type: 'text', value: notes || '', placeholder: 'Notes (optional)' });
     const del = el('button', { class: 'icon-btn', type: 'button', text: '×' });
-    const ref = { d, amt, removed: false };
-    const row = el('div', { class: 'hist-row' }, [d, amt, del]);
+    const ref = { d, amt, n, removed: false };
+    const row = el('div', { class: 'hist-row' }, [d, amt, n, del]);
     del.addEventListener('click', () => { row.remove(); ref.removed = true; });
     refs.push(ref);
     rowsWrap.appendChild(row);
   };
-  (contributions || []).slice().sort((a, b2) => (a.date || '').localeCompare(b2.date || '')).forEach((c) => addRow(c.date, c.amount));
+  (contributions || []).slice().sort((a, b2) => (a.date || '').localeCompare(b2.date || '')).forEach((c) => addRow(c.date, c.amount, c.notes));
 
   const addBtn = el('button', { class: 'btn ghost small', type: 'button', text: '+ Add investment', onclick: () => addRow(null, null) });
   const genBtn = el('button', {
@@ -1674,7 +1675,7 @@ function buildContribEditor(contributions, getSip) {
       if (r.removed) continue;
       const dv = r.d.value, av = num(r.amt.value);
       if (!dv || av == null) continue;
-      out.push({ date: dv, amount: Math.round(av * 100) / 100 });
+      out.push({ date: dv, amount: Math.round(av * 100) / 100, notes: r.n.value.trim() || '' });
     }
     out.sort((a, b2) => (a.date || '').localeCompare(b2.date || ''));
     return out;
@@ -1688,7 +1689,7 @@ function buildContribEditor(contributions, getSip) {
       const amt = Math.round(Number(r.amount) * 100) / 100;
       const ex = refs.find((x) => !x.removed && x.d.value === r.date);
       if (ex) { ex.amt.value = amt; updated++; }
-      else { addRow(r.date, amt); added++; }
+      else { addRow(r.date, amt, r.notes); added++; }
     }
     return { added, updated };
   };
@@ -1771,11 +1772,10 @@ function openFundForm(existing) {
       soldValue: isSold ? (sv != null ? sv : null) : null,
       soldDate: isSold ? (soldDate.value || null) : null,
       seedXirrRef: f.seedXirrRef != null ? f.seedXirrRef : null,
-      seeded: false, // user has reviewed/edited → compute XIRR from their cashflows
+      seeded: false,
       createdAt: f.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    // Auto-track the lowest/highest return & XIRR this fund has hit over time.
     const c2 = mod.computeFund(rec, Date.now());
     const lo = (prev, v) => v == null ? (prev != null ? prev : null) : (prev == null ? v : Math.min(prev, v));
     const hi = (prev, v) => v == null ? (prev != null ? prev : null) : (prev == null ? v : Math.max(prev, v));
@@ -1788,28 +1788,54 @@ function openFundForm(existing) {
     renderMF();
   };
 
-  const children = [
-    el('h2', { text: isEdit ? 'Edit fund' : 'Add fund' }),
+  // Build tabbed form: "Edit fund" + "Fund Holdings"
+  let activeTab = 'edit';
+  const editTabBtn = el('button', { class: 'active', type: 'button', text: 'Edit fund' });
+  const holdTabBtn = el('button', { type: 'button', text: 'Fund Holdings' });
+
+  const editTabContent = el('div', { class: 'tab-content' }, [
     typeList,
     field('Fund name', name),
     el('div', { class: 'field-row' }, [field('Type', type), field('Category', category)]),
     el('div', { class: 'field-row' }, [field('Status', status), field('Monthly SIP', sip)]),
     el('div', { class: 'field-row' }, [field('Current value', curValue), field('Value as of', valueAsOf)]),
     soldRow,
-    el('div', { class: 'field' }, [
-      el('label', { text: 'Investments (date + amount)' }),
-      el('p', { class: 'hint', text: 'Log each investment with its date — that is what makes XIRR accurate. No daily NAV needed; just refresh the current value now and then.' }),
-      contribEditor.node,
-      el('div', { class: 'btn-row' }, [
-        el('button', { class: 'btn ghost small', type: 'button', text: '📷 Import transactions (Paytm)', onclick: () => _mfOcrTransactions(contribEditor) }),
-      ]),
-    ]),
     el('div', { class: 'field-row' }, [field('Benchmark XIRR %', benchXirr), field('Target year', targetYear)]),
     field('Benchmark name', benchmark),
     el('div', { class: 'field-row' }, [field('Good return', goodReturn), field('Judge after', judgeAfter)]),
     field('Remarks', remarks),
+  ]);
+  if (f.seeded) editTabContent.appendChild(el('p', { class: 'hint', text: 'This fund was seeded from your sheet. Saving switches it to app-computed XIRR from your logged investments.' }));
+
+  const holdTabContent = el('div', { class: 'tab-content' }, [
+    el('div', { class: 'field' }, [
+      el('label', { text: 'Investment log' }),
+      el('p', { class: 'hint', text: 'Date · Amount · Notes (each investment feeds XIRR)' }),
+      contribEditor.node,
+    ]),
+    el('div', { class: 'field mf-hold-footer' }, [
+      el('button', { class: 'btn ghost small icon-only', type: 'button', text: '📷', title: 'Import transactions from screenshot', onclick: () => _mfOcrTransactions(contribEditor) }),
+    ]),
+  ]);
+
+  editTabBtn.addEventListener('click', () => {
+    activeTab = 'edit';
+    editTabBtn.classList.add('active'); holdTabBtn.classList.remove('active');
+    editTabContent.classList.remove('hidden'); holdTabContent.classList.add('hidden');
+  });
+  holdTabBtn.addEventListener('click', () => {
+    activeTab = 'hold';
+    holdTabBtn.classList.add('active'); editTabBtn.classList.remove('active');
+    holdTabContent.classList.remove('hidden'); editTabContent.classList.add('hidden');
+  });
+
+  const children = [
+    el('h2', { text: isEdit ? 'Edit fund' : 'Add fund' }),
+    el('div', { class: 'seg' }, [editTabBtn, holdTabBtn]),
+    editTabContent,
+    holdTabContent,
   ];
-  if (f.seeded) children.push(el('p', { class: 'hint', text: 'This fund was seeded from your sheet. Saving switches it to app-computed XIRR from your logged investments.' }));
+
   const btns = [el('button', { class: 'btn primary', text: 'Save', onclick: save })];
   if (isEdit) btns.push(el('button', { class: 'btn danger', text: 'Delete', onclick: del }));
   btns.push(el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }));
