@@ -29,16 +29,20 @@
 <body>
   <header class="app-header">
     <div class="title-row">
-      <h1>MyNote&nbsp;Stocks</h1>
+      <button id="backBtn" class="icon-btn hidden" aria-label="Back to home">&#8249;</button>
+      <h1 id="appTitle">MyNote&nbsp;Stocks</h1>
       <button id="menuBtn" class="icon-btn" aria-label="Menu">&#8942;</button>
     </div>
     <nav class="portfolio-tabs" id="portfolioTabs"></nav>
   </header>
 
   <main id="main">
-    <section class="summary" id="summary"></section>
+    <section id="homeView" class="home-view hidden"></section>
+    <section id="mfView" class="mf-view hidden"></section>
 
-    <div class="toolbar" id="toolbar">
+    <section class="summary hidden" id="summary"></section>
+
+    <div class="toolbar hidden" id="toolbar">
       <div class="seg" id="filterSeg"></div>
       <div class="sortbar" id="sortBar">
         <button class="sort-btn" type="button" data-field="name">Name</button>
@@ -48,7 +52,7 @@
       <input id="search" class="search" type="search" placeholder="Search stock or category" />
     </div>
 
-    <section id="stockList" class="stock-list"></section>
+    <section id="stockList" class="stock-list hidden"></section>
     <section id="monthlyView" class="trend-view hidden"></section>
     <section id="heatmapView" class="hidden"></section>
     <section id="trendView" class="trend-view hidden"></section>
@@ -56,7 +60,8 @@
   </main>
 
   <button id="ocrBtn" class="fab fab-secondary hidden" aria-label="Update prices from screenshot" title="Update prices from a broker screenshot">📷</button>
-  <button id="addBtn" class="fab" aria-label="Add stock">+</button>
+  <button id="addBtn" class="fab hidden" aria-label="Add stock">+</button>
+  <button id="mfAddBtn" class="fab hidden" aria-label="Add mutual fund">+</button>
 
   <nav class="bottom-nav" id="bottomNav"></nav>
 

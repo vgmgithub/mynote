@@ -1,7 +1,7 @@
 // IndexedDB data layer. All data lives on this device only.
 export const DB = (function () {
   const NAME = 'mynote-stocks';
-  const VERSION = 3;
+  const VERSION = 4;
   let dbp = null;
 
   function open() {
@@ -34,6 +34,13 @@ export const DB = (function () {
           const s = db.createObjectStore('feed', { keyPath: 'key' });
           s.createIndex('portfolio', 'portfolio', { unique: false });
         }
+        // Mutual funds (separate from the stock app). One row per fund, indexed
+        // by `owner` (currently only 'me'). Holds dated contributions + a monthly
+        // value history — see mf.js for the record shape. Added in v4.
+        if (!db.objectStoreNames.contains('funds')) {
+          const s = db.createObjectStore('funds', { keyPath: 'id', autoIncrement: true });
+          s.createIndex('owner', 'owner', { unique: false });
+        }
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
@@ -61,6 +68,10 @@ export const DB = (function () {
       const os = await store(name, 'readonly');
       return reqP(os.index('portfolio').getAll(portfolio));
     },
+    async byIndex(name, index, value) {
+      const os = await store(name, 'readonly');
+      return reqP(os.index(index).getAll(value));
+    },
     async get(name, id) {
       const os = await store(name, 'readonly');
       return reqP(os.get(id));
@@ -82,12 +93,13 @@ export const DB = (function () {
       // `feed` is best-effort: very old backups (v2 export) won't have it, and
       // the store may not exist if the user is mid-upgrade. Don't fail the
       // whole export over a missing store.
-      const [stocks, snapshots, monthly, meta, feed] = await Promise.all([
+      const [stocks, snapshots, monthly, meta, feed, funds] = await Promise.all([
         this.all('stocks'),
         this.all('snapshots'),
         this.all('monthly'),
         this.all('meta'),
         this.all('feed').catch(() => []),
+        this.all('funds').catch(() => []),
       ]);
       return {
         app: 'mynote-stocks',
@@ -98,6 +110,7 @@ export const DB = (function () {
         monthly,
         meta,
         feed,
+        funds,
       };
     },
     // Replace all data with the contents of a previously exported object.
@@ -111,14 +124,16 @@ export const DB = (function () {
         this.clear('monthly'),
         this.clear('meta'),
         this.clear('feed').catch(() => {}),
+        this.clear('funds').catch(() => {}),
       ]);
       const tasks = [];
       (data.stocks || []).forEach((s) => tasks.push(this.put('stocks', s)));
       (data.snapshots || []).forEach((s) => tasks.push(this.put('snapshots', s)));
       (data.monthly || []).forEach((m) => tasks.push(this.put('monthly', m)));
       (data.meta || []).forEach((m) => tasks.push(this.put('meta', m)));
-      // feed may be missing on older backups — silently skip.
+      // feed + funds may be missing on older backups — silently skip.
       (data.feed || []).forEach((f) => tasks.push(this.put('feed', f).catch(() => {})));
+      (data.funds || []).forEach((f) => tasks.push(this.put('funds', f).catch(() => {})));
       await Promise.all(tasks);
     },
   };

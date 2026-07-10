@@ -19,6 +19,7 @@ import {
 } from './backup.js';
 
 const state = {
+  appMode: 'home',   // 'home' | 'stocks' | 'mf' — top-level surface (Stocks app is untouched)
   portfolio: 'me-in',
   view: 'holdings', // 'holdings' | 'monthly' | 'heatmap' | 'trends' | 'feed'
   filter: 'holding', // 'all' | 'holding' | 'sold' — default to active holdings
@@ -29,6 +30,12 @@ const state = {
   snapshots: [],
   months: [],
 };
+
+// Mutual-fund view state (only used inside the MF surface).
+let _mfSort = 'xirr';   // 'xirr' | 'ret' | 'inv' | 'name'
+let _mfFilter = 'all';  // 'all' | 'active' | 'stopped'
+const MF_TYPES = ['Multi Cap', 'Flexi Cap', 'Large Cap', 'Mid Cap', 'Small Cap', 'Tax Saver', 'Technology', 'Pharma', 'Energy', 'International', 'Index', 'Debt', 'Hybrid'];
+const MF_STATUS = ['Investing', 'Investing On/Off', 'Investing Variable', 'Stopped'];
 
 let deferredInstall = null;
 
@@ -1347,6 +1354,10 @@ function openMonthForm(existing) {
 }
 
 async function render() {
+  // Stocks app only. Home/MF surfaces are drawn by setAppMode/renderMF, and this
+  // function is only ever reached via the stock nav/portfolio tabs anyway — the
+  // guard keeps a stray call from un-hiding stock sections over the home screen.
+  if (state.appMode !== 'stocks') return;
   updateChromeActive();
   const v = state.view;
   const holdings = v === 'holdings';
@@ -1368,6 +1379,353 @@ async function render() {
   renderSummary();
   renderList();
   $('#search').value = state.search;
+}
+
+// ---------- top-level surface switch (Home launcher / Stocks / Mutual Funds) ----------
+// Sits ABOVE the stock view system. The Stocks app renders exactly as before;
+// this just decides which of the three surfaces is on screen and keeps the
+// header (with the shared 3-dots menu) consistent.
+const STOCK_SURFACE = ['#summary', '#toolbar', '#stockList', '#monthlyView', '#heatmapView', '#trendView', '#feedView', '#addBtn', '#ocrBtn'];
+function setAppMode(mode) {
+  state.appMode = mode;
+  const isHome = mode === 'home', isStocks = mode === 'stocks', isMF = mode === 'mf';
+  $('#homeView').classList.toggle('hidden', !isHome);
+  $('#mfView').classList.toggle('hidden', !isMF);
+  $('#portfolioTabs').classList.toggle('hidden', !isStocks);
+  $('#bottomNav').classList.toggle('hidden', !isStocks);
+  $('#mfAddBtn').classList.toggle('hidden', !isMF);
+  $('#backBtn').classList.toggle('hidden', isHome);
+  $('#appTitle').innerHTML = isHome ? 'MyNote' : (isMF ? 'Mutual&nbsp;Funds' : 'MyNote&nbsp;Stocks');
+  if (isStocks) {
+    render();
+  } else {
+    // Nothing from the stock surface should show on Home/MF.
+    STOCK_SURFACE.forEach((sel) => $(sel).classList.add('hidden'));
+    if (isHome) renderHome();
+    if (isMF) renderMF();
+  }
+}
+
+async function renderHome() {
+  const host = $('#homeView');
+  host.innerHTML = '';
+  host.appendChild(el('div', { class: 'home-hero' }, [
+    el('h2', { class: 'home-title', text: 'MyNote' }),
+    el('p', { class: 'home-tag', text: 'Private tracker — everything stays on this device.' }),
+  ]));
+  const stockCard = _homeCard('📈', 'Stocks', 'Holdings · trends · news', () => setAppMode('stocks'));
+  const mfCard = _homeCard('📊', 'Mutual Funds', 'SIPs · XIRR · 2030 goal', () => openMF());
+  host.appendChild(el('div', { class: 'home-cards' }, [stockCard, mfCard]));
+  host.appendChild(el('p', { class: 'hint home-foot', text: 'Backup covers both — open the ⋮ menu → Backup & Restore.' }));
+  // Light live stat for the MF card (invested = sum of contributions; no mf.js needed).
+  try {
+    const funds = await DB.byIndex('funds', 'owner', 'me');
+    const sub = mfCard.querySelector('.home-card-sub');
+    if (funds && funds.length && sub) {
+      const invested = funds.reduce((s, f) => s + (f.contributions || []).reduce((a, c) => a + (Number(c.amount) || 0), 0), 0);
+      sub.textContent = `${funds.length} funds · ${fmtCur(invested, 'INR')} invested`;
+    }
+  } catch (_) {}
+}
+function _homeCard(icon, title, sub, onclick) {
+  return el('button', { class: 'home-card', type: 'button', onclick }, [
+    el('span', { class: 'home-card-ico', text: icon }),
+    el('span', { class: 'home-card-body' }, [
+      el('span', { class: 'home-card-title', text: title }),
+      el('span', { class: 'home-card-sub', text: sub }),
+    ]),
+    el('span', { class: 'home-card-arrow', text: '›' }),
+  ]);
+}
+
+// ---------- Mutual Funds surface ----------
+// Lazy-loaded: mf.js (logic + seed data) only loads when the user opens MF.
+async function openMF() {
+  try {
+    const existing = await DB.byIndex('funds', 'owner', 'me');
+    if (!existing || !existing.length) {
+      // Seed the 11 funds from the sheet once. The flag stops them reappearing
+      // if the user later deletes everything.
+      const seeded = await DB.get('meta', 'mfSeeded').catch(() => null);
+      if (!seeded || !seeded.value) {
+        const mod = await import('./mf.js');
+        const now = Date.now();
+        for (const s of mod.SEED_FUNDS) await DB.put('funds', mod.buildSeedFund(s, now));
+        await DB.put('meta', { key: 'mfSeeded', value: true });
+      }
+    }
+  } catch (e) { console.error('MF seed failed', e); }
+  setAppMode('mf');
+}
+
+const _mfCell = (k, v, cls) => el('div', { class: 'cell' }, [
+  el('div', { class: 'k', text: k }),
+  el('div', { class: 'v ' + (cls || ''), text: v }),
+]);
+
+async function renderMF() {
+  const host = $('#mfView');
+  host.innerHTML = '';
+  const mod = await import('./mf.js');
+  const funds = (await DB.byIndex('funds', 'owner', 'me')) || [];
+  const now = Date.now();
+  const rows = funds.map((f) => ({ f, c: mod.computeFund(f, now) }));
+
+  // Totals
+  let totInv = 0, totVal = 0, projStay = 0, beat = 0, benchCount = 0, wSum = 0, wW = 0;
+  rows.forEach(({ c }) => {
+    totInv += c.invested; totVal += c.value; projStay += c.projCorpusStay;
+    if (c.beatsBenchmark !== null) { benchCount++; if (c.beatsBenchmark) beat++; }
+    if (c.xirr != null && c.value > 0) { wSum += c.xirr * c.value; wW += c.value; }
+  });
+  const gainPct = totInv > 0 ? ((totVal - totInv) / totInv) * 100 : 0;
+  const wXirr = wW > 0 ? (wSum / wW) * 100 : null;
+
+  host.appendChild(el('section', { class: 'summary' }, [
+    el('div', { class: 'label', text: 'Current value' }),
+    el('div', { class: 'big', text: fmtCur(totVal, 'INR') }),
+    el('div', { class: 'grid' }, [
+      _mfCell('Invested', fmtCur(totInv, 'INR')),
+      _mfCell('Overall gain', fmtPct(gainPct), pctClass(gainPct)),
+      _mfCell('Portfolio XIRR', wXirr != null ? fmtPct(wXirr) : '—', wXirr != null ? pctClass(wXirr) : ''),
+      _mfCell('Beating benchmark', benchCount ? `${beat} of ${benchCount}` : '—'),
+      _mfCell('Proj. 2030 · stay', fmtCur(projStay, 'INR')),
+      _mfCell('Funds', String(funds.length)),
+    ]),
+  ]));
+
+  if (!funds.length) {
+    host.appendChild(el('div', { class: 'empty' }, [
+      el('div', { class: 'e-icon', text: '📊' }),
+      el('p', { text: 'No funds yet.' }),
+      el('p', { class: 'hint', text: 'Tap + to add your first mutual fund.' }),
+    ]));
+    return;
+  }
+
+  // Sort + status filter
+  const sortbar = el('div', { class: 'sortbar mf-sortbar' }, [['xirr', 'XIRR'], ['ret', 'Return'], ['inv', 'Invested'], ['name', 'Name']].map(([v, l]) =>
+    el('button', { class: 'sort-btn' + (_mfSort === v ? ' active' : ''), type: 'button', text: l, onclick: () => { _mfSort = v; renderMF(); } })));
+  const filterSeg = el('div', { class: 'seg' }, [['all', 'All'], ['active', 'Investing'], ['stopped', 'Stopped']].map(([v, l]) =>
+    el('button', { class: (_mfFilter === v ? 'active' : ''), 'data-filter': v, type: 'button', text: l, onclick: () => { _mfFilter = v; renderMF(); } })));
+  host.appendChild(el('div', { class: 'toolbar mf-toolbar' }, [filterSeg, sortbar]));
+
+  // Filter + sort
+  let list = rows.slice();
+  if (_mfFilter === 'active') list = list.filter(({ f }) => /investing/i.test(f.status || ''));
+  else if (_mfFilter === 'stopped') list = list.filter(({ f }) => /stop/i.test(f.status || ''));
+  list.sort((a, b) => {
+    if (_mfSort === 'name') return (a.f.name || '').localeCompare(b.f.name || '');
+    if (_mfSort === 'inv') return b.c.invested - a.c.invested;
+    if (_mfSort === 'ret') return b.c.absReturnPct - a.c.absReturnPct;
+    const av = a.c.xirr == null ? -Infinity : a.c.xirr, bv = b.c.xirr == null ? -Infinity : b.c.xirr;
+    return bv - av;
+  });
+
+  const listWrap = el('section', { class: 'stock-list' });
+  list.forEach(({ f, c }) => listWrap.appendChild(_mfCard(f, c)));
+  host.appendChild(listWrap);
+
+  // Allocation by fund type
+  const byType = {};
+  rows.forEach(({ f, c }) => { const k = f.type || 'Other'; byType[k] = (byType[k] || 0) + c.invested; });
+  const types = Object.keys(byType).sort((a, b) => byType[b] - byType[a]);
+  if (types.length && totInv > 0) {
+    const alloc = el('div', { class: 'chart-card' }, [el('h3', { text: 'Allocation by type' })]);
+    types.forEach((t) => {
+      const pct = (byType[t] / totInv) * 100;
+      alloc.appendChild(el('div', { class: 'bar-row' }, [
+        el('span', { class: 'bl', text: t }),
+        el('span', { class: 'bar-track' }, [el('span', { class: 'bar-fill', style: `width:${Math.max(2, pct).toFixed(1)}%` })]),
+        el('span', { class: 'bn', text: pct.toFixed(0) + '%' }),
+      ]));
+    });
+    host.appendChild(alloc);
+  }
+
+  host.appendChild(el('p', { class: 'hint mf-foot', text: 'XIRR is computed from your dated investments. Funds marked “(sheet)” still use your sheet’s figure — add a real investment to switch to app-computed XIRR. Not investment advice.' }));
+}
+
+function _mfCard(f, c) {
+  const xirrTxt = c.xirrPct != null ? fmtPct(c.xirrPct) : '—';
+  const benchTxt = c.benchXirrPct != null ? fmtPct(c.benchXirrPct) : '—';
+  const beatBadge = c.beatsBenchmark === true ? el('span', { class: 'badge good mf-beat', text: 'beats' })
+    : c.beatsBenchmark === false ? el('span', { class: 'badge bad mf-beat', text: 'lags' }) : null;
+  const catLine = el('div', { class: 'cat mf-catline' }, [(f.type || '') + (f.status ? ' · ' + f.status : '')]);
+  if (beatBadge) catLine.appendChild(beatBadge);
+  const card = el('div', { class: 'card', onclick: () => openFundForm(f) }, [
+    el('div', { class: 'top' }, [
+      el('div', { class: 'card-left' }, [
+        el('div', { class: 'name', text: f.name }),
+        catLine,
+      ]),
+      el('div', { class: 'card-right' }, [
+        el('div', { class: 'pct ' + pctClass(c.xirrPct || 0), text: xirrTxt }),
+        el('div', { class: 'meta-line', text: c.xirrSource === 'sheet' ? 'XIRR (sheet)' : 'XIRR' }),
+      ]),
+    ]),
+    el('div', { class: 'sub' }, [
+      el('span', {}, ['Invested ', b(fmtCur(c.invested, 'INR'))]),
+      el('span', {}, ['Value ', b(fmtCur(c.value, 'INR'))]),
+    ]),
+    el('div', { class: 'sub' }, [
+      el('span', {}, ['Return ', el('b', { class: pctClass(c.absReturnPct) }, [fmtPct(c.absReturnPct)])]),
+      el('span', {}, ['Bench ', b(benchTxt)]),
+    ]),
+  ]);
+  if (f.remarks) card.appendChild(el('p', { class: 'note', text: f.remarks }));
+  return card;
+}
+
+// Dated-investment editor: rows of { date, amount }. Powers XIRR accuracy.
+function buildContribEditor(contributions, getSip) {
+  const rowsWrap = el('div', { class: 'hist-rows' });
+  const refs = [];
+  const addRow = (date, amount) => {
+    const d = el('input', { type: 'date', value: date || todayISO() });
+    const amt = el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: amount != null ? amount : '', placeholder: '₹ amount' });
+    const del = el('button', { class: 'icon-btn', type: 'button', text: '×' });
+    const ref = { d, amt, removed: false };
+    const row = el('div', { class: 'hist-row' }, [d, amt, del]);
+    del.addEventListener('click', () => { row.remove(); ref.removed = true; });
+    refs.push(ref);
+    rowsWrap.appendChild(row);
+  };
+  (contributions || []).slice().sort((a, b2) => (a.date || '').localeCompare(b2.date || '')).forEach((c) => addRow(c.date, c.amount));
+
+  const addBtn = el('button', { class: 'btn ghost small', type: 'button', text: '+ Add investment', onclick: () => addRow(null, null) });
+  const genBtn = el('button', {
+    class: 'btn ghost small', type: 'button', text: 'Generate SIP schedule',
+    onclick: async () => {
+      const sipVal = getSip();
+      if (!sipVal) { toast('Enter the monthly SIP amount first'); return; }
+      const startYm = window.prompt('Fill monthly SIP from which month? (YYYY-MM)', thisYm());
+      if (!startYm || !/^\d{4}-\d{2}$/.test(startYm)) return;
+      const mod = await import('./mf.js');
+      const sched = mod.generateSipSchedule(startYm, sipVal, thisYm());
+      if (!sched.length) { toast('Nothing to add for that range'); return; }
+      refs.forEach((r) => (r.removed = true));
+      rowsWrap.innerHTML = '';
+      refs.length = 0;
+      sched.forEach((c) => addRow(c.date, c.amount));
+      toast(sched.length + ' months added — edit or remove any On/Off months');
+    },
+  });
+  const node = el('div', {}, [rowsWrap, el('div', { class: 'btn-row' }, [addBtn, genBtn])]);
+  const collect = () => {
+    const out = [];
+    for (const r of refs) {
+      if (r.removed) continue;
+      const dv = r.d.value, av = num(r.amt.value);
+      if (!dv || av == null) continue;
+      out.push({ date: dv, amount: Math.round(av * 100) / 100 });
+    }
+    out.sort((a, b2) => (a.date || '').localeCompare(b2.date || ''));
+    return out;
+  };
+  return { node, collect };
+}
+
+function openFundForm(existing) {
+  const isEdit = !!(existing && existing.id != null);
+  const f = Object.assign({ owner: 'me', status: 'Investing', targetYear: 2030, sip: 0 }, existing || {});
+
+  const name = el('input', { type: 'text', value: f.name || '', placeholder: 'e.g. Quant Small Cap Fund' });
+  const typeList = el('datalist', { id: 'mftypelist' }, MF_TYPES.map((t) => el('option', { value: t })));
+  const type = el('input', { type: 'text', value: f.type || '', list: 'mftypelist', placeholder: 'Multi Cap, Small Cap…' });
+  const category = el('input', { type: 'text', value: f.category || 'Equity', placeholder: 'Equity / Debt / Hybrid' });
+  const status = el('select', {}, MF_STATUS.map((s) => { const o = el('option', { value: s, text: s }); if (s === f.status) o.selected = true; return o; }));
+  const numInput = (v, ph) => el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: v != null && v !== '' ? v : '', placeholder: ph });
+  const sip = numInput(f.sip, 'Monthly SIP ₹ (0 if lumpsum)');
+  const benchXirr = numInput(f.benchXirr != null && f.benchXirr !== '' ? Math.round(f.benchXirr * 10000) / 100 : '', 'Benchmark XIRR %');
+  const targetYear = numInput(f.targetYear || 2030, '2030');
+  const benchmark = el('input', { type: 'text', value: f.benchmark || '', placeholder: 'Benchmark name (optional)' });
+  const goodReturn = el('input', { type: 'text', value: f.goodReturn || '', placeholder: 'e.g. 15%+ XIRR' });
+  const judgeAfter = el('input', { type: 'text', value: f.judgeAfter || '', placeholder: 'e.g. 2030' });
+  const remarks = el('textarea', { placeholder: 'Your notes' });
+  remarks.value = f.remarks || '';
+
+  const latestVal = (f.valueHistory && f.valueHistory.length)
+    ? f.valueHistory.slice().sort((a, b2) => (a.ym || '').localeCompare(b2.ym || ''))[f.valueHistory.length - 1].value
+    : null;
+  const curValue = numInput(latestVal, 'Current value ₹');
+  const valueAsOf = el('input', { type: 'date', value: f.valueAsOf || todayISO() });
+
+  const contribEditor = buildContribEditor(f.contributions, () => num(sip.value) || 0);
+
+  const del = async () => {
+    if (!window.confirm('Delete this fund? This cannot be undone.')) return;
+    await DB.del('funds', f.id);
+    closeModal();
+    toast('Fund deleted');
+    renderMF();
+  };
+  const save = async () => {
+    const nm = name.value.trim();
+    if (!nm) { toast('Enter a fund name'); return; }
+    const contributions = contribEditor.collect();
+    const cv = num(curValue.value);
+    const asOf = valueAsOf.value || todayISO();
+    const vh = (f.valueHistory || []).slice();
+    if (cv != null) {
+      const ym = asOf.slice(0, 7);
+      const i = vh.findIndex((v) => v.ym === ym);
+      if (i >= 0) vh[i] = { ym, value: cv }; else vh.push({ ym, value: cv });
+    }
+    vh.sort((a, b2) => (a.ym || '').localeCompare(b2.ym || ''));
+    const bx = num(benchXirr.value);
+    const rec = {
+      owner: 'me',
+      name: nm,
+      type: type.value.trim(),
+      category: category.value.trim() || 'Equity',
+      benchmark: benchmark.value.trim(),
+      status: status.value,
+      sip: num(sip.value) || 0,
+      targetYear: num(targetYear.value) || 2030,
+      benchXirr: bx != null ? bx / 100 : null,
+      goodReturn: goodReturn.value.trim(),
+      judgeAfter: judgeAfter.value.trim(),
+      remarks: remarks.value.trim(),
+      contributions,
+      valueHistory: vh,
+      valueAsOf: asOf,
+      seedXirrRef: f.seedXirrRef != null ? f.seedXirrRef : null,
+      seeded: false, // user has reviewed/edited → compute XIRR from their cashflows
+      createdAt: f.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    if (isEdit) rec.id = f.id;
+    await DB.put('funds', rec);
+    closeModal();
+    toast(isEdit ? 'Fund updated' : 'Fund added');
+    renderMF();
+  };
+
+  const children = [
+    el('h2', { text: isEdit ? 'Edit fund' : 'Add fund' }),
+    typeList,
+    field('Fund name', name),
+    el('div', { class: 'field-row' }, [field('Type', type), field('Category', category)]),
+    el('div', { class: 'field-row' }, [field('Status', status), field('Monthly SIP', sip)]),
+    el('div', { class: 'field-row' }, [field('Current value', curValue), field('Value as of', valueAsOf)]),
+    el('div', { class: 'field' }, [
+      el('label', { text: 'Investments (date + amount)' }),
+      el('p', { class: 'hint', text: 'Log each investment with its date — that is what makes XIRR accurate. No daily NAV needed; just refresh the current value now and then.' }),
+      contribEditor.node,
+    ]),
+    el('div', { class: 'field-row' }, [field('Benchmark XIRR %', benchXirr), field('Target year', targetYear)]),
+    field('Benchmark name', benchmark),
+    el('div', { class: 'field-row' }, [field('Good return', goodReturn), field('Judge after', judgeAfter)]),
+    field('Remarks', remarks),
+  ];
+  if (f.seeded) children.push(el('p', { class: 'hint', text: 'This fund was seeded from your sheet. Saving switches it to app-computed XIRR from your logged investments.' }));
+  const btns = [el('button', { class: 'btn primary', text: 'Save', onclick: save })];
+  if (isEdit) btns.push(el('button', { class: 'btn danger', text: 'Delete', onclick: del }));
+  btns.push(el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }));
+  children.push(el('div', { class: 'btn-row', style: 'flex-wrap:wrap' }, btns));
+
+  openModal(el('div', { class: 'sheet' }, children));
 }
 
 // ---------- heatmap (sheet-style grid) ----------
@@ -2652,6 +3010,8 @@ function doInstall() {
 function bind() {
   $('#addBtn').addEventListener('click', () => openStockForm(null));
   $('#ocrBtn').addEventListener('click', openOcrFlow);
+  $('#mfAddBtn').addEventListener('click', () => openFundForm(null));
+  $('#backBtn').addEventListener('click', () => setAppMode('home'));
   $('#menuBtn').addEventListener('click', openMenu);
   const onSearch = debounce(renderList, 120);
   $('#search').addEventListener('input', (e) => { state.search = e.target.value; onSearch(); });
@@ -2702,7 +3062,10 @@ async function init() {
   // Data load happens *after* unlock — so even if the overlay is somehow
   // bypassed, the in-memory state is still empty until verification succeeds.
   try { await showLockScreen(); } catch (e) { console.error('lock screen error', e); }
+  // Load the stock data (render() no-ops while appMode==='home'), then show the
+  // Home launcher. Tapping "Stocks" just unhides the already-loaded surface.
   try { await refresh(); } catch (e) { console.error(e); toast('Could not open local database'); }
+  setAppMode('home');
   if ('serviceWorker' in navigator) {
     try {
       // updateViaCache: 'none' ensures any update check (manual or browser-
