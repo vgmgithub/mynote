@@ -19,10 +19,10 @@ import {
 } from './backup.js';
 
 const state = {
-  appMode: 'home',   // 'home' | 'stocks' | 'mf' — top-level surface (Stocks app is untouched)
+  appMode: 'home',   // 'home' | 'stocks' | 'mf' - top-level surface (Stocks app is untouched)
   portfolio: 'me-in',
   view: 'holdings', // 'holdings' | 'monthly' | 'heatmap' | 'trends' | 'feed'
-  filter: 'holding', // 'all' | 'holding' | 'sold' — default to active holdings
+  filter: 'holding', // 'all' | 'holding' | 'sold' - default to active holdings
   sortField: 'name', // 'name' | 'pct' | 'value'
   sortStage: 0,      // 0 = default (name A-Z), 1 = primary, 2 = secondary
   search: '',
@@ -33,7 +33,7 @@ const state = {
 
 // Mutual-fund view state (only used inside the MF surface).
 let _mfSort = 'xirr';        // 'xirr' | 'ret' | 'inv' | 'name'
-let _mfFilter = 'investing'; // 'investing' | 'sold' (holding vs redeemed — not SIP status)
+let _mfFilter = 'investing'; // 'investing' | 'sold' (holding vs redeemed - not SIP status)
 const MF_TYPES = ['Multi Cap', 'Flexi Cap', 'Large Cap', 'Mid Cap', 'Small Cap', 'Tax Saver', 'Technology', 'Pharma', 'Energy', 'International', 'Index', 'Debt', 'Hybrid'];
 const MF_STATUS = ['Investing', 'Investing On/Off', 'Investing Variable', 'Stopped', 'Sold'];
 
@@ -192,11 +192,11 @@ function renderSummary() {
       ? el('span', { class: 'badge ' + (s.pl >= 0 ? 'good' : 'bad'), text: fmtPct(s.plPct) })
       : el('span', { class: 'badge muted', text: 'no prices yet' }),
   ]));
-  host.appendChild(el('div', { class: 'big', text: s.hasVal ? fmtCur(s.value, cur) : '—' }));
+  host.appendChild(el('div', { class: 'big', text: s.hasVal ? fmtCur(s.value, cur) : '-' }));
   const grid = el('div', { class: 'grid' });
   const cells = [
-    ['Invested', s.hasVal ? fmtCur(s.invested, cur) : '—', ''],
-    ['Profit / Loss', s.hasVal ? (s.pl >= 0 ? '+' : '') + fmtCur(s.pl, cur) : '—', s.hasVal ? pctClass(s.pl) : ''],
+    ['Invested', s.hasVal ? fmtCur(s.invested, cur) : '-', ''],
+    ['Profit / Loss', s.hasVal ? (s.pl >= 0 ? '+' : '') + fmtCur(s.pl, cur) : '-', s.hasVal ? pctClass(s.pl) : ''],
     ['Holdings', String(s.holdings) + (s.sold ? '  ·  ' + s.sold + ' sold' : ''), ''],
     ['Up / Down', s.up + ' ▲  /  ' + s.down + ' ▼', ''],
   ];
@@ -206,19 +206,19 @@ function renderSummary() {
   host.appendChild(grid);
 }
 
-// Portfolio Risk Analysis — fully offline. Reads current-portfolio holdings +
+// Portfolio Risk Analysis - fully offline. Reads current-portfolio holdings +
 // (optionally) cached feed sentiment. Long-term, structural view only: weights,
 // diversification, sector exposure, news mood. No timing/intraday signals.
 async function renderPortfolioAnalyzer(host, portfolio) {
   const holdings = state.stocks.filter((s) => s.status !== 'sold');
   if (!holdings.length) return;
 
-  // Cached feed sentiment is optional — analyzer still works without it.
+  // Cached feed sentiment is optional - analyzer still works without it.
   let feedCache = new Map();
   try {
     const mod = await import('./feed.js');
     feedCache = await mod.getCachedFeed(portfolio);
-  } catch (_) { /* feed never used yet — show structural metrics only */ }
+  } catch (_) { /* feed never used yet - show structural metrics only */ }
 
   // Allocation by value. Stocks without a price contribute 0 (and are noted).
   const valued = holdings.map((s) => ({ stock: s, value: calc(s).value || 0, entry: feedCache.get(s.id) }));
@@ -293,7 +293,7 @@ async function renderPortfolioAnalyzer(host, portfolio) {
       ]));
     });
     if (sectors[0] && total > 0 && (sectors[0][1].value / total * 100) > 40) {
-      wrap.appendChild(el('div', { class: 'pa-note bad', text: '⚠️ ' + sectors[0][0] + ' is over 40% of value — sector-concentrated.' }));
+      wrap.appendChild(el('div', { class: 'pa-note bad', text: '⚠️ ' + sectors[0][0] + ' is over 40% of value - sector-concentrated.' }));
     }
     analyzer.appendChild(wrap);
   }
@@ -305,7 +305,7 @@ async function renderPortfolioAnalyzer(host, portfolio) {
     const watch = [];
     withNews.forEach((v) => {
       // Use the same count-based majority vote as the Feed cards so the two
-      // views always agree — raw average scores are too low-magnitude to cross
+      // views always agree - raw average scores are too low-magnitude to cross
       // the ±0.15 threshold reliably, making everything show as neutral.
       const items = v.entry.items || [];
       let pos = 0, neg = 0;
@@ -324,13 +324,13 @@ async function renderPortfolioAnalyzer(host, portfolio) {
       el('div', { class: 'pa-mood-cell' }, [el('div', { class: 'pa-mood-n', text: String(neutral) }), el('div', { class: 'pa-mood-k', text: '→ Neutral' })]),
       el('div', { class: 'pa-mood-cell bad' }, [el('div', { class: 'pa-mood-n', text: String(bear) }), el('div', { class: 'pa-mood-k', text: '📉 Bearish' })]),
     ]));
-    // Attention list — bearish-sentiment holdings worth a thesis review.
+    // Attention list - bearish-sentiment holdings worth a thesis review.
     if (watch.length) {
       wrap.appendChild(el('div', { class: 'pa-note', text: 'Worth reviewing: ' + watch.map((v) => v.stock.name).join(', ') + '. Open Feed for the news behind this.' }));
     }
     analyzer.appendChild(wrap);
   } else {
-    analyzer.appendChild(el('div', { class: 'pa-note', text: 'No news synced yet — open the Feed tab and tap Refresh to add sentiment to this analysis.' }));
+    analyzer.appendChild(el('div', { class: 'pa-note', text: 'No news synced yet - open the Feed tab and tap Refresh to add sentiment to this analysis.' }));
   }
 
   host.appendChild(analyzer);
@@ -457,7 +457,7 @@ function stockCard(s) {
     else left.appendChild(el('div', { class: 'meta-line flat', text: 'Set current price to judge' }));
   } else {
     const dpct = displayPct(s, c);
-    right.appendChild(el('div', { class: 'pct ' + (dpct != null ? pctClass(dpct) : 'flat'), text: dpct != null ? fmtPct(dpct) : '—' }));
+    right.appendChild(el('div', { class: 'pct ' + (dpct != null ? pctClass(dpct) : 'flat'), text: dpct != null ? fmtPct(dpct) : '-' }));
     if (c.priced) {
       left.appendChild(el('div', { class: 'meta-line' }, [b(String(Number(s.units) || 0)), ' @ ' + fmtCur(s.buyPrice, cur)]));
       left.appendChild(el('div', { class: 'meta-line' }, ['Current price ', b(fmtCur(s.currentPrice, cur))]));
@@ -583,7 +583,7 @@ function monthlyValueChart(months, cur, bname) {
   const svg = document.createElementNS(ns, 'svg');
   svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
   svg.setAttribute('width', '100%'); svg.setAttribute('height', h);
-  const info = el('div', { class: 'chart-info', text: months.length < 2 ? '' : 'Tap a dot for that month’s details' });
+  const info = el('div', { class: 'chart-info', text: months.length < 2 ? '' : 'Tap a dot for that month\'s details' });
   const setInfo = (text, color) => { info.textContent = text; info.style.color = color || ''; };
   if (months.length < 2) {
     const t = document.createElementNS(ns, 'text');
@@ -654,7 +654,7 @@ async function renderTrends() {
   const grid = el('div', { class: 'stats' });
   PORTFOLIOS.forEach((p) => {
     const lm = latest[p.id];
-    const valTxt = lm && lm.value != null ? fmtCur(lm.value, p.cur) : '—';
+    const valTxt = lm && lm.value != null ? fmtCur(lm.value, p.cur) : '-';
     grid.appendChild(el('div', { class: 'stat' }, [
       el('div', { class: ('stat-v ' + _statSizeClass(valTxt)).trim(), text: valTxt }),
       el('div', { class: 'stat-k', text: p.label }),
@@ -704,7 +704,7 @@ async function renderTrends() {
     ]),
   ]));
 
-  // Portfolio Analyzer — only show for current portfolio
+  // Portfolio Analyzer - only show for current portfolio
   await renderPortfolioAnalyzer(host, state.portfolio);
 }
 
@@ -739,7 +739,7 @@ async function renderFeed() {
     host.appendChild(el('div', { class: 'chart-card' }, [
       el('h3', { text: 'Set up news feed' }),
       el('p', { class: 'hint', text:
-        'To pull last-24h news, MyNote uses Marketaux — free, 100 requests per day. Sign up at marketaux.com, get your free API key, and paste it in Feed settings. Your key stays on this device only. Only stock names are sent in requests — no prices, no balances.' }),
+        'To pull last-24h news, MyNote uses Marketaux - free, 100 requests per day. Sign up at marketaux.com, get your free API key, and paste it in Feed settings. Your key stays on this device only. Only stock names are sent in requests - no prices, no balances.' }),
       el('div', { class: 'btn-row' }, [
         el('button', { class: 'btn primary', text: 'Open Feed settings', onclick: () => openFeedSettings() }),
       ]),
@@ -755,7 +755,7 @@ async function renderFeed() {
   host.appendChild(_buildFeedHeader(mod, lastFetched, navigator.onLine ? 'online' : 'offline', portfolio));
 
   if (!holdings.length) {
-    host.appendChild(el('div', { class: 'feed-empty', text: 'No active holdings — Feed is empty.' }));
+    host.appendChild(el('div', { class: 'feed-empty', text: 'No active holdings - Feed is empty.' }));
     return;
   }
 
@@ -792,7 +792,7 @@ async function renderFeed() {
     list.appendChild(allWrapper);
   }
 
-  // Switch between Today's Stocks and All. Each stock has two DOM elements —
+  // Switch between Today's Stocks and All. Each stock has two DOM elements -
   // one per context. data-no-today marks stocks that had nothing today so they
   // stay hidden when Today's Stocks is active.
   const applyFilter = (mode) => {
@@ -893,7 +893,7 @@ function _buildFeedCard(stock, entry, mod) {
   const items = entry ? (entry.items || []) : [];
   const sentiment24h = entry ? (entry.sentiment24h || 0) : 0;
   const sentiment7d = entry ? (entry.sentiment7d || 0) : 0;
-  // Recompute every render — cheap and ensures price-history updates take effect.
+  // Recompute every render - cheap and ensures price-history updates take effect.
   const rec = mod.computeRecommendation(stock, items, stock.history || [], sentiment24h, sentiment7d, entry ? (entry.days || []) : []);
   const articleCount = items.length;
   const verdict = _sentimentVerdict(items);
@@ -901,13 +901,13 @@ function _buildFeedCard(stock, entry, mod) {
 
   const card = el('div', { class: 'feed-card' });
 
-  // Row 1 — stock name + recommendation badge (the "action" call).
+  // Row 1 - stock name + recommendation badge (the "action" call).
   card.appendChild(el('div', { class: 'feed-card-head' }, [
     el('div', { class: 'feed-stock', text: stock.name }),
     el('div', { class: 'feed-badge ' + (rec.color || 'grey'), text: rec.label }),
   ]));
 
-  // Row 2 — sentiment verdict pill + transparent count breakdown.
+  // Row 2 - sentiment verdict pill + transparent count breakdown.
   // The breakdown explains the verdict so it never contradicts the articles.
   const flagRow = el('div', { class: 'feed-flag-row' });
   if (articleCount) {
@@ -922,14 +922,14 @@ function _buildFeedCard(stock, entry, mod) {
   }
   card.appendChild(flagRow);
 
-  // Row 3 — recommendation reason.
+  // Row 3 - recommendation reason.
   card.appendChild(el('div', { class: 'feed-reason', text: rec.reason }));
 
   if (articleCount) {
     const expandHint = el('div', { class: 'feed-expand-hint', text: 'Tap for news & sentiment ▾' });
     card.appendChild(expandHint);
 
-    // Expanded panel — hidden until tap. Holds the detailed numbers + articles.
+    // Expanded panel - hidden until tap. Holds the detailed numbers + articles.
     const panel = el('div', { class: 'feed-articles hidden' });
 
     // Verdict recap + average-score intensity (clearly labelled so the average
@@ -964,7 +964,7 @@ function _buildFeedCard(stock, entry, mod) {
     }
     card.appendChild(panel);
 
-    // Toggle on card tap (but not on link tap — links handle their own clicks).
+    // Toggle on card tap (but not on link tap - links handle their own clicks).
     card.style.cursor = 'pointer';
     card.addEventListener('click', (e) => {
       if (e.target.tagName === 'A') return;
@@ -982,15 +982,15 @@ async function refreshFeedNow(silent) {
     const mod = await import('./feed.js');
     const apiKey = await mod.getApiKey();
     if (!apiKey) {
-      if (!silent) toast('No API key — set one in Feed settings');
+      if (!silent) toast('No API key - set one in Feed settings');
       return;
     }
     if (!navigator.onLine) {
-      if (!silent) toast('You\'re offline — showing cached news');
+      if (!silent) toast('You\'re offline - showing cached news');
       return;
     }
     // India portfolios (me-in, wife-in) are synced together so a stock that
-    // appears in both only gets one API request — the news is saved to both.
+    // appears in both only gets one API request - the news is saved to both.
     // US is single-portfolio only (different market, no overlap expected).
     const isIndia = state.portfolio !== 'me-us';
     const portfolios = isIndia ? ['me-in', 'wife-in'] : [state.portfolio];
@@ -1048,7 +1048,7 @@ async function refreshFeedNow(silent) {
       }
     }
 
-    // Stamp lastFetch for every portfolio synced — so switching to wife-in
+    // Stamp lastFetch for every portfolio synced - so switching to wife-in
     // doesn't trigger a duplicate sync if me-in already ran this morning.
     const totalFailure = errors === byName.size;
     if (!totalFailure) {
@@ -1075,19 +1075,19 @@ async function refreshFeedNow(silent) {
 }
 
 // Called once on app open. Silently refreshes the feed for the current
-// portfolio if data is stale — so the user gets fresh news just by opening
+// portfolio if data is stale - so the user gets fresh news just by opening
 // the app, without needing to visit the Feed tab first.
 async function _autoRefreshFeedOnInit() {
   if (!navigator.onLine) return;
   try {
     const mod = await import('./feed.js');
     const apiKey = await mod.getApiKey();
-    if (!apiKey) return; // no key configured — nothing to do
+    if (!apiKey) return; // no key configured - nothing to do
     const lastFetch = await mod.getLastFetch(state.portfolio);
     if (mod.shouldAutoRefresh(lastFetch, state.portfolio, Date.now())) {
       refreshFeedNow(/*silent*/ true);
     }
-  } catch (_) { /* feed.js not available or DB error — silently skip */ }
+  } catch (_) { /* feed.js not available or DB error - silently skip */ }
 }
 
 async function openFeedSettings() {
@@ -1097,7 +1097,7 @@ async function openFeedSettings() {
   openModal(el('div', { class: 'sheet' }, [
     el('h2', { text: 'Feed settings' }),
     el('p', { class: 'hint', text:
-      'Get a free Marketaux API key at marketaux.com (100 requests/day). Stored only on this device. Only stock names are sent in requests — no prices, no portfolio data.' }),
+      'Get a free Marketaux API key at marketaux.com (100 requests/day). Stored only on this device. Only stock names are sent in requests - no prices, no portfolio data.' }),
     el('label', { style: 'display:block;font-size:0.8rem;margin:8px 0 4px;color:var(--muted);', text: 'API key' }),
     input,
     el('div', { class: 'btn-row' }, [
@@ -1165,11 +1165,11 @@ function renderMonthly() {
     };
     head.appendChild(el('div', { class: 'stats' }, [
       stat('Months', String(months.length)),
-      stat('Avg invested / mo', n ? fmtCur(adds / n, cur) : '—'),
-      stat('Invested', last.invested != null ? fmtCur(last.invested, cur) : '—'),
-      stat('Value', last.value != null ? fmtCur(last.value, cur) : '—'),
-      stat('Total return', last.profitLoss != null ? (last.profitLoss >= 0 ? '+' : '') + fmtCur(last.profitLoss, cur) : '—', last.profitLoss != null ? pctClass(last.profitLoss) : ''),
-      stat('Overall %', last.returnPct != null ? fmtPct(last.returnPct) : '—', last.returnPct != null ? pctClass(last.returnPct) : ''),
+      stat('Avg invested / mo', n ? fmtCur(adds / n, cur) : '-'),
+      stat('Invested', last.invested != null ? fmtCur(last.invested, cur) : '-'),
+      stat('Value', last.value != null ? fmtCur(last.value, cur) : '-'),
+      stat('Total return', last.profitLoss != null ? (last.profitLoss >= 0 ? '+' : '') + fmtCur(last.profitLoss, cur) : '-', last.profitLoss != null ? pctClass(last.profitLoss) : ''),
+      stat('Overall %', last.returnPct != null ? fmtPct(last.returnPct) : '-', last.returnPct != null ? pctClass(last.returnPct) : ''),
     ]));
     host.appendChild(head);
 
@@ -1177,8 +1177,8 @@ function renderMonthly() {
       el('h3', { text: 'Value by month' }),
       monthlyValueChart(months, cur, bname),
       el('div', { class: 'hint' }, [
-        el('span', { style: 'color:#38bdf8', text: '— Value' }),
-        months.some((m) => m.nifty != null) ? el('span', { style: 'color:#fbbf24', text: '   — ' + bname }) : document.createTextNode(''),
+        el('span', { style: 'color:#38bdf8', text: '- Value' }),
+        months.some((m) => m.nifty != null) ? el('span', { style: 'color:#fbbf24', text: '   - ' + bname }) : document.createTextNode(''),
       ]),
       el('p', { class: 'note', text: 'Hover or tap a dot to see that month\'s value and return.' }),
     ]));
@@ -1219,24 +1219,24 @@ function renderMonthly() {
     ]),
   ]);
   if (!months.length) {
-    list.appendChild(el('p', { class: 'hint', text: 'No monthly data yet. Tap “Capture this month”, add one manually, or import your sheet (menu) to back-fill history.' }));
+    list.appendChild(el('p', { class: 'hint', text: 'No monthly data yet. Tap "Capture this month", add one manually, or import your sheet (menu) to back-fill history.' }));
   } else {
     months.map((m, i) => ({ m, prev: i > 0 ? months[i - 1] : null })).reverse().forEach(({ m, prev }) => {
       const mom = (m.value != null && prev && prev.value != null) ? m.value - prev.value : null;
       const top = el('div', { class: 'top' }, [
         el('div', { class: 'name', text: ymToLabel(m.ym) }),
-        el('div', { class: 'pct ' + (m.returnPct != null ? pctClass(m.returnPct) : 'flat'), text: m.returnPct != null ? fmtPct(m.returnPct) : '—' }),
+        el('div', { class: 'pct ' + (m.returnPct != null ? pctClass(m.returnPct) : 'flat'), text: m.returnPct != null ? fmtPct(m.returnPct) : '-' }),
       ]);
       const momTip = 'MoM = this month\'s value minus last month\'s value.';
       const sub = el('div', { class: 'sub' }, [
-        el('span', {}, ['Value ', b(m.value != null ? fmtCur(m.value, cur) : '—')]),
+        el('span', {}, ['Value ', b(m.value != null ? fmtCur(m.value, cur) : '-')]),
         mom != null
           ? el('span', { class: pctClass(mom), title: momTip }, ['MoM ', b((mom >= 0 ? '+' : '') + fmtCur(mom, cur))])
-          : el('span', { class: 'flat', title: momTip, text: 'MoM —' }),
+          : el('span', { class: 'flat', title: momTip, text: 'MoM -' }),
       ]);
       const line3 = el('div', { class: 'meta-line' }, [
-        'Invested ' + (m.invested != null ? fmtCur(m.invested, cur) : '—')
-        + '  ·  ▲' + (m.countProfit != null ? m.countProfit : '–') + ' ▼' + (m.countLoss != null ? m.countLoss : '–')
+        'Invested ' + (m.invested != null ? fmtCur(m.invested, cur) : '-')
+        + '  ·  ▲' + (m.countProfit != null ? m.countProfit : '-') + ' ▼' + (m.countLoss != null ? m.countLoss : '-')
         + (m.nifty != null ? '  ·  ' + bname + ' ' + m.nifty : ''),
       ]);
       list.appendChild(el('div', { class: 'card', onclick: () => openMonthForm(m) }, [top, sub, line3]));
@@ -1269,7 +1269,7 @@ async function captureMonth() {
   refresh();
 }
 
-// Nifty 50 is one market value — propagate it across the portfolios that share
+// Nifty 50 is one market value - propagate it across the portfolios that share
 // that benchmark. me-in <-> wife-in share Nifty; me-us (Nasdaq) is alone.
 async function syncNifty(rec) {
   if (rec.portfolio !== 'me-in' && rec.portfolio !== 'wife-in') return;
@@ -1355,7 +1355,7 @@ function openMonthForm(existing) {
 
 async function render() {
   // Stocks app only. Home/MF surfaces are drawn by setAppMode/renderMF, and this
-  // function is only ever reached via the stock nav/portfolio tabs anyway — the
+  // function is only ever reached via the stock nav/portfolio tabs anyway - the
   // guard keeps a stray call from un-hiding stock sections over the home screen.
   if (state.appMode !== 'stocks') return;
   updateChromeActive();
@@ -1370,7 +1370,7 @@ async function render() {
   $('#feedView').classList.toggle('hidden', v !== 'feed');
   $('#addBtn').classList.toggle('hidden', !holdings);
   // Camera FAB: Holdings tab only, and only on portfolios with an OCR parser.
-  // wife-in is included (Groww, price-only) — see openOcrReview's priceOnly branch.
+  // wife-in is included (Groww, price-only) - see openOcrReview's priceOnly branch.
   $('#ocrBtn').classList.toggle('hidden', !holdings || !(state.portfolio === 'me-in' || state.portfolio === 'me-us' || state.portfolio === 'wife-in'));
   if (v === 'monthly') { renderMonthly(); return; }
   if (v === 'heatmap') { renderHeatmap(); return; }
@@ -1411,12 +1411,12 @@ async function renderHome() {
   host.innerHTML = '';
   host.appendChild(el('div', { class: 'home-hero' }, [
     el('h2', { class: 'home-title', text: 'MyNote' }),
-    el('p', { class: 'home-tag', text: 'Private tracker — everything stays on this device.' }),
+    el('p', { class: 'home-tag', text: 'Private tracker - everything stays on this device.' }),
   ]));
   const stockCard = _homeCard('📈', 'Stocks', 'Holdings · trends · news', () => setAppMode('stocks'));
   const mfCard = _homeCard('📊', 'Mutual Funds', 'SIPs · XIRR · 2030 goal', () => openMF());
   host.appendChild(el('div', { class: 'home-cards' }, [stockCard, mfCard]));
-  host.appendChild(el('p', { class: 'hint home-foot', text: 'Backup covers both — open the ⋮ menu → Backup & Restore.' }));
+  host.appendChild(el('p', { class: 'hint home-foot', text: 'Backup covers both - open the ⋮ menu → Backup & Restore.' }));
   // Light live stat for the MF card (invested = sum of contributions; no mf.js needed).
   try {
     const funds = await DB.byIndex('funds', 'owner', 'me');
@@ -1455,7 +1455,7 @@ async function openMF() {
       }
     }
     // One-time: add Quant Mid Cap as a Sold entry so it shows on the Sold tab.
-    // Seeded as a stub (no fabricated figures) — the user fills invested + sold
+    // Seeded as a stub (no fabricated figures) - the user fills invested + sold
     // value/date from Paytm Money. Guarded so it's added only once.
     const midDone = await DB.get('meta', 'mfMidCapAdded').catch(() => null);
     if (!midDone || !midDone.value) {
@@ -1466,7 +1466,7 @@ async function openMF() {
           owner: 'me', name: 'Quant Mid Cap Fund Direct - Growth', type: 'Mid Cap',
           category: 'Equity', benchmark: '', status: 'Sold', sip: 0, targetYear: 2030,
           benchXirr: null, goodReturn: '', judgeAfter: '',
-          remarks: 'Sold — tap to add your invested amounts and the sold value/date.',
+          remarks: 'Sold - tap to add your invested amounts and the sold value/date.',
           contributions: [], valueHistory: [], valueAsOf: null,
           soldValue: null, soldDate: null, seedXirrRef: null,
           xirrLow: null, xirrHigh: null, returnLow: null, returnHigh: null,
@@ -1483,6 +1483,8 @@ const _mfCell = (k, v, cls) => el('div', { class: 'cell' }, [
   el('div', { class: 'k', text: k }),
   el('div', { class: 'v ' + (cls || ''), text: v }),
 ]);
+
+let _mfTab = 'holdings';  // 'holdings' | 'overview'
 
 async function renderMF() {
   const host = $('#mfView');
@@ -1506,7 +1508,7 @@ async function renderMF() {
     return;
   }
 
-  // Holding vs sold split (SIP state is irrelevant — a paused SIP is still held).
+  // Holding vs sold split (SIP state is irrelevant - a paused SIP is still held).
   const soldRows = rows.filter(({ c }) => c.sold);
   const heldRows = rows.filter(({ c }) => !c.sold);
   const viewSold = _mfFilter === 'sold';
@@ -1522,53 +1524,71 @@ async function renderMF() {
   const gainPct = totInv > 0 ? ((totVal - totInv) / totInv) * 100 : 0;
   const wXirr = wW > 0 ? (wSum / wW) * 100 : null;
 
+  // Tab: Holdings (fund list) | Overview (summary + allocation)
+  const holdTabBtn = el('button', { class: (_mfTab === 'holdings' ? 'active' : ''), type: 'button', text: 'Holdings' });
+  const ovrvTabBtn = el('button', { class: (_mfTab === 'overview' ? 'active' : ''), type: 'button', text: 'Overview' });
+
+  holdTabBtn.addEventListener('click', () => { _mfTab = 'holdings'; renderMF(); });
+  ovrvTabBtn.addEventListener('click', () => { _mfTab = 'overview'; renderMF(); });
+
+  const tabSeg = el('div', { class: 'seg mf-tabs' }, [holdTabBtn, ovrvTabBtn]);
+
+  // Holdings tab content: fund list with filter/sort
+  const holdContent = el('div', { class: 'tab-content' + (_mfTab === 'holdings' ? '' : ' hidden') });
+  const ovrvContent = el('div', { class: 'tab-content' + (_mfTab === 'overview' ? '' : ' hidden') });
+
+  // Summary (shown in Overview tab only)
   const cells = [
     _mfCell('Invested', fmtCur(totInv, 'INR')),
     _mfCell(viewSold ? 'Realized gain' : 'Overall gain', fmtPct(gainPct), pctClass(gainPct)),
-    _mfCell(viewSold ? 'Realized XIRR' : 'Portfolio XIRR', wXirr != null ? fmtPct(wXirr) : '—', wXirr != null ? pctClass(wXirr) : ''),
-    _mfCell('Beating benchmark', benchCount ? `${beat} of ${benchCount}` : '—'),
+    _mfCell(viewSold ? 'Realized XIRR' : 'Portfolio XIRR', wXirr != null ? fmtPct(wXirr) : '-', wXirr != null ? pctClass(wXirr) : ''),
+    _mfCell('Beating benchmark', benchCount ? `${beat} of ${benchCount}` : '-'),
   ];
   if (!viewSold) cells.push(_mfCell('Proj. 2030 · stay', fmtCur(projStay, 'INR')));
   cells.push(_mfCell(viewSold ? 'Sold funds' : 'Funds', String(list.length)));
-  host.appendChild(el('section', { class: 'summary' }, [
+
+  const summarySec = el('section', { class: 'summary' }, [
     el('div', { class: 'label', text: viewSold ? 'Realized value' : 'Current value' }),
     el('div', { class: 'big', text: fmtCur(totVal, 'INR') }),
     el('div', { class: 'grid' }, cells),
-  ]));
+  ]);
 
-  // Common OCR / bulk value update (updates every held fund's current value at once).
-  host.appendChild(el('div', { class: 'btn-row mf-actions' }, [
-    el('button', { class: 'btn ghost small', type: 'button', text: '📷 Update current values', onclick: () => openMfValueSheet() }),
-  ]));
-
-  // Tabs (Investing | Sold, with counts) + sort — always shown so the user can switch.
+  // Filter + Sort + Update button (top of holdings tab)
   const filterSeg = el('div', { class: 'seg' }, [['investing', `Investing (${heldRows.length})`], ['sold', `Sold (${soldRows.length})`]].map(([v, l]) =>
     el('button', { class: (_mfFilter === v ? 'active' : ''), 'data-filter': v, type: 'button', text: l, onclick: () => { _mfFilter = v; renderMF(); } })));
   const sortbar = el('div', { class: 'sortbar mf-sortbar' }, [['xirr', 'XIRR'], ['ret', 'Return'], ['inv', 'Invested'], ['name', 'Name']].map(([v, l]) =>
     el('button', { class: 'sort-btn' + (_mfSort === v ? ' active' : ''), type: 'button', text: l, onclick: () => { _mfSort = v; renderMF(); } })));
-  host.appendChild(el('div', { class: 'toolbar mf-toolbar' }, [filterSeg, sortbar]));
+  const updateValueIcon = el('button', { class: 'icon-btn', type: 'button', text: '📷', title: 'Update current values from screenshot', onclick: () => openMfValueSheet() });
+  const toolbarTop = el('div', { class: 'toolbar mf-toolbar-top' }, [filterSeg, sortbar, updateValueIcon]);
+
+  holdContent.appendChild(toolbarTop);
 
   if (!list.length) {
-    host.appendChild(el('div', { class: 'empty' }, [
+    holdContent.appendChild(el('div', { class: 'empty' }, [
       el('div', { class: 'e-icon', text: viewSold ? '🧾' : '📈' }),
       el('p', { text: viewSold ? 'No sold funds.' : 'No funds you are holding.' }),
     ]));
-    return;
+  } else {
+    list.sort((a, b) => {
+      if (_mfSort === 'name') return (a.f.name || '').localeCompare(b.f.name || '');
+      if (_mfSort === 'inv') return b.c.invested - a.c.invested;
+      if (_mfSort === 'ret') return b.c.absReturnPct - a.c.absReturnPct;
+      const av = a.c.xirr == null ? -Infinity : a.c.xirr, bv = b.c.xirr == null ? -Infinity : b.c.xirr;
+      return bv - av;
+    });
+
+    const listWrap = el('section', { class: 'stock-list' });
+    list.forEach(({ f, c }) => listWrap.appendChild(_mfCard(f, c)));
+    holdContent.appendChild(listWrap);
   }
 
-  list.sort((a, b) => {
-    if (_mfSort === 'name') return (a.f.name || '').localeCompare(b.f.name || '');
-    if (_mfSort === 'inv') return b.c.invested - a.c.invested;
-    if (_mfSort === 'ret') return b.c.absReturnPct - a.c.absReturnPct;
-    const av = a.c.xirr == null ? -Infinity : a.c.xirr, bv = b.c.xirr == null ? -Infinity : b.c.xirr;
-    return bv - av;
-  });
+  holdContent.appendChild(el('p', { class: 'hint mf-foot', text: viewSold
+    ? 'Sold funds show your realized XIRR - from your dated investments to the sold value. Not investment advice.'
+    : 'XIRR is computed from your dated investments. Funds marked "(sheet)" still use your sheet\'s figure - add a real investment to switch to app-computed XIRR. Not investment advice.' }));
 
-  const listWrap = el('section', { class: 'stock-list' });
-  list.forEach(({ f, c }) => listWrap.appendChild(_mfCard(f, c)));
-  host.appendChild(listWrap);
+  // Overview tab content: summary + allocation
+  ovrvContent.appendChild(summarySec);
 
-  // Allocation by fund type (over the funds shown).
   const byType = {};
   list.forEach(({ f, c }) => { const k = f.type || 'Other'; byType[k] = (byType[k] || 0) + c.invested; });
   const types = Object.keys(byType).sort((a, b) => byType[b] - byType[a]);
@@ -1582,17 +1602,18 @@ async function renderMF() {
         el('span', { class: 'bn', text: pct.toFixed(0) + '%' }),
       ]));
     });
-    host.appendChild(alloc);
+    ovrvContent.appendChild(alloc);
   }
 
-  host.appendChild(el('p', { class: 'hint mf-foot', text: viewSold
-    ? 'Sold funds show your realized XIRR — from your dated investments to the sold value. Not investment advice.'
-    : 'XIRR is computed from your dated investments. Funds marked “(sheet)” still use your sheet’s figure — add a real investment to switch to app-computed XIRR. Not investment advice.' }));
+  // Assemble the view
+  host.appendChild(tabSeg);
+  host.appendChild(holdContent);
+  host.appendChild(ovrvContent);
 }
 
 function _mfCard(f, c) {
-  const xirrTxt = c.xirrPct != null ? fmtPct(c.xirrPct) : '—';
-  const benchTxt = c.benchXirrPct != null ? fmtPct(c.benchXirrPct) : '—';
+  const xirrTxt = c.xirrPct != null ? fmtPct(c.xirrPct) : '-';
+  const benchTxt = c.benchXirrPct != null ? fmtPct(c.benchXirrPct) : '-';
   const beatBadge = c.beatsBenchmark === true ? el('span', { class: 'badge good mf-beat', text: 'beats' })
     : c.beatsBenchmark === false ? el('span', { class: 'badge bad mf-beat', text: 'lags' }) : null;
   const statusTxt = c.sold ? ('Sold' + (c.soldDate ? ' · ' + c.soldDate : '')) : (f.status || '');
@@ -1620,8 +1641,8 @@ function _mfCard(f, c) {
       el('span', {}, ['Bench ', b(benchTxt)]),
     ]),
   ]);
-  // Auto-tracked swing range (lowest–highest seen over time), when it has moved.
-  const rng = (lo, hi) => (lo != null && hi != null && Math.abs(hi - lo) >= 0.1) ? `${Number(lo).toFixed(1)}%–${Number(hi).toFixed(1)}%` : null;
+  // Auto-tracked swing range (lowest-highest seen over time), when it has moved.
+  const rng = (lo, hi) => (lo != null && hi != null && Math.abs(hi - lo) >= 0.1) ? `${Number(lo).toFixed(1)}%-${Number(hi).toFixed(1)}%` : null;
   const xr = rng(f.xirrLow, f.xirrHigh), rr = rng(f.returnLow, f.returnHigh);
   if (xr || rr) {
     const parts = [];
@@ -1665,7 +1686,7 @@ function buildContribEditor(contributions, getSip) {
       rowsWrap.innerHTML = '';
       refs.length = 0;
       sched.forEach((c) => addRow(c.date, c.amount));
-      toast(sched.length + ' months added — edit or remove any On/Off months');
+      toast(sched.length + ' months added - edit or remove any On/Off months');
     },
   });
   const node = el('div', {}, [rowsWrap, el('div', { class: 'btn-row' }, [addBtn, genBtn])]);
@@ -1680,8 +1701,8 @@ function buildContribEditor(contributions, getSip) {
     out.sort((a, b2) => (a.date || '').localeCompare(b2.date || ''));
     return out;
   };
-  // Merge OCR/imported rows in. Date is the unique key — no fund invests twice a
-  // day — so a matching date updates that row's amount instead of duplicating.
+  // Merge OCR/imported rows in. Date is the unique key - no fund invests twice a
+  // day - so a matching date updates that row's amount instead of duplicating.
   const merge = (newRows) => {
     let added = 0, updated = 0;
     for (const r of (newRows || [])) {
@@ -1846,7 +1867,7 @@ function openFundForm(existing) {
 
 // Per-fund transaction OCR: read a Paytm Money transaction-history screenshot and
 // merge the Buy rows into the open fund form's investment editor. Dedupes by date
-// (one investment per day) — never opens a nested modal, so the form stays put.
+// (one investment per day) - never opens a nested modal, so the form stays put.
 async function _mfOcrTransactions(editor) {
   const input = el('input', { type: 'file', accept: 'image/*', multiple: '' });
   input.addEventListener('change', async () => {
@@ -1874,12 +1895,12 @@ async function _mfOcrTransactions(editor) {
       }
       hideLoader();
       if (!buys.length) {
-        console.warn('MF transaction OCR — raw text:\n', texts.join('\n----- next -----\n'));
-        toast('No transactions detected — try a clearer/cropped screenshot');
+        console.warn('MF transaction OCR - raw text:\n', texts.join('\n----- next -----\n'));
+        toast('No transactions detected - try a clearer/cropped screenshot');
         return;
       }
       const { added, updated } = editor.merge(buys);
-      toast(`${buys.length} read · ${added} added${updated ? ', ' + updated + ' updated' : ''} — review & Save`);
+      toast(`${buys.length} read · ${added} added${updated ? ', ' + updated + ' updated' : ''} - review & Save`);
     } catch (e) {
       hideLoader();
       alert('OCR failed: ' + e.message);
@@ -1948,8 +1969,8 @@ async function openMfValueSheet() {
           const ref = refs.find((r) => r.f.id === match.id);
           if (ref && h.value > 0) { ref.inp.value = Math.round(h.value * 100) / 100; filled++; }
         }
-        if (!filled) console.warn('MF holdings OCR — raw text:\n', texts.join('\n----- next -----\n'));
-        toast(filled ? `${filled} value${filled > 1 ? 's' : ''} pre-filled — review & Save` : 'No funds matched — enter values manually');
+        if (!filled) console.warn('MF holdings OCR - raw text:\n', texts.join('\n----- next -----\n'));
+        toast(filled ? `${filled} value${filled > 1 ? 's' : ''} pre-filled - review & Save` : 'No funds matched - enter values manually');
       } catch (e) { hideLoader(); alert('OCR failed: ' + e.message); }
     });
     input.click();
@@ -1980,7 +2001,7 @@ async function openMfValueSheet() {
   };
   openModal(el('div', { class: 'sheet' }, [
     el('h2', { text: 'Update current values' }),
-    el('p', { class: 'hint', text: 'Enter each fund’s current value from Paytm Money, or scan the holdings screen to pre-fill. Saved as one value per fund for the as-of month — updating again the same month overwrites, never duplicates.' }),
+    el('p', { class: 'hint', text: 'Enter each fund\'s current value from Paytm Money, or scan the holdings screen to pre-fill. Saved as one value per fund for the as-of month - updating again the same month overwrites, never duplicates.' }),
     el('div', { class: 'field' }, [el('label', { text: 'Value as of' }), asOf]),
     el('div', { class: 'btn-row' }, [el('button', { class: 'btn ghost', type: 'button', text: '📷 Scan holdings screenshot', onclick: scan })]),
     rowsWrap,
@@ -2166,7 +2187,7 @@ function openStockForm(existing) {
   const soldBlock = el('div', { class: 'sold-only' + (s.status === 'sold' ? '' : ' hidden') }, [
     el('div', { class: 'field-row' }, [field('Sold price', soldPrice), field('Units sold', soldUnits)]),
     field('Sold date', soldDate),
-    el('p', { class: 'hint', text: 'After selling, keep updating “Current price”. If it falls below your sold price it was a good exit; if it rises above, you sold early.' }),
+    el('p', { class: 'hint', text: 'After selling, keep updating "Current price". If it falls below your sold price it was a good exit; if it rises above, you sold early.' }),
   ]);
   status.addEventListener('change', () => soldBlock.classList.toggle('hidden', status.value !== 'sold'));
 
@@ -2201,8 +2222,8 @@ function openStockForm(existing) {
 
     const card = el('div', { class: 'chart-card tappable' }, [multiSparkline(series, 320, 90, '')]);
     card.appendChild(el('div', { class: 'hint' }, [
-      el('span', { style: 'color:#38bdf8', text: '— Stock' }),
-      benchVals ? el('span', { style: 'color:#fbbf24', text: ' — ' + bname }) : document.createTextNode(''),
+      el('span', { style: 'color:#38bdf8', text: '- Stock' }),
+      benchVals ? el('span', { style: 'color:#fbbf24', text: ' - ' + bname }) : document.createTextNode(''),
       lh ? ' · Latest ' + lh.month + ' ' + fmtPct(lh.pct) : '',
     ]));
     card.appendChild(el('div', { style: 'text-align:center' }, [el('span', { class: 'tap-hint', text: 'tap to edit' })]));
@@ -2307,7 +2328,7 @@ function saveSnapshot() {
   };
   openModal(el('div', { class: 'sheet' }, [
     el('h2', { text: 'Save snapshot' }),
-    el('p', { class: 'hint', text: 'Stores this portfolio’s totals for ' + dateInput.value + ': value ' + fmtCur(s.value, cur) + ', P/L ' + fmtPct(s.plPct) + '.' }),
+    el('p', { class: 'hint', text: 'Stores this portfolio\'s totals for ' + dateInput.value + ': value ' + fmtCur(s.value, cur) + ', P/L ' + fmtPct(s.plPct) + '.' }),
     field('Date', dateInput),
     field('Benchmark (optional)', benchmark),
     el('div', { class: 'btn-row' }, [
@@ -2324,17 +2345,17 @@ async function openMenu() {
   const items = [];
   if (deferredInstall) items.push(menuItem('⬇️', 'Install app', 'Add to home screen', doInstall));
   const lb = await DB.get('meta', 'lastBackup').catch(() => null);
-  const lbDesc = lb && lb.value ? 'Last backup ' + new Date(lb.value).toLocaleDateString() : 'No backup yet — do this regularly';
+  const lbDesc = lb && lb.value ? 'Last backup ' + new Date(lb.value).toLocaleDateString() : 'No backup yet - do this regularly';
   items.push(menuItem('🗄️', 'Backup & Restore', lbDesc, () => { closeModal(); openBackupSheet(); }));
-  items.push(menuItem('📊', 'Import from X-MyNotes sheet', 'Download the “Stock” tab as CSV, then pick it here', () => { closeModal(); importSheetCSV(); }));
+  items.push(menuItem('📊', 'Import from X-MyNotes sheet', 'Download the "Stock" tab as CSV, then pick it here', () => { closeModal(); importSheetCSV(); }));
   const lockCfg = await getLockConfig();
   const lockDesc = lockCfg && lockCfg.enabled
     ? (lockCfg.biometric && lockCfg.biometric.enabled ? 'PIN + biometric · tap to manage' : 'PIN · tap to manage')
     : 'Protect this app with a PIN';
   items.push(menuItem('🔒', lockCfg && lockCfg.enabled ? 'App lock · on' : 'Set up app lock', lockDesc, () => { closeModal(); openLockEntry(); }));
   items.push(menuItem('📰', 'Feed settings', 'Marketaux API key for the news Feed', () => { closeModal(); openFeedSettings(); }));
-  // Update item — label/description flip when a new SW is already waiting.
-  const updTitle = window.__updateReady ? 'Update available — tap to apply' : 'Check for updates';
+  // Update item - label/description flip when a new SW is already waiting.
+  const updTitle = window.__updateReady ? 'Update available - tap to apply' : 'Check for updates';
   const updDesc = window.__updateReady ? 'A new version is ready to install' : 'Pull the latest version from the server';
   items.push(menuItem('🔄', updTitle, updDesc, () => { closeModal(); checkForUpdates(); }));
   openModal(el('div', { class: 'sheet' }, [
@@ -2395,7 +2416,7 @@ async function openBackupSheet() {
   if (!fileSystemAccessSupported()) { openBackupFallbackSheet(); return; }
   const handle = await getSavedFolder();
   if (!handle) { openBackupSetupSheet(); return; }
-  // The menu click is a valid user gesture — safe to request permission here.
+  // The menu click is a valid user gesture - safe to request permission here.
   if (!(await ensureFolderPermission(handle, 'readwrite'))) {
     alert('Permission to use the backup folder was not granted. You can pick a different folder, or use the file-based restore at the bottom.');
     openBackupSetupSheet();
@@ -2447,7 +2468,7 @@ async function openBackupMainSheet(handle) {
     );
     if (!ok) return;
     try {
-      // Snapshot current state to prerestore — single-level "oops" undo.
+      // Snapshot current state to prerestore - single-level "oops" undo.
       const current = await DB.exportAll();
       await writePreRestoreSnapshot(handle, current);
       const data = await readBackupByName(handle, item.name);
@@ -2472,7 +2493,7 @@ async function openBackupMainSheet(handle) {
 
   const listSection = rows.length
     ? el('div', { class: 'backup-list' }, rows)
-    : el('p', { class: 'hint', text: 'No backups yet — tap "Backup now" to create your first one.' });
+    : el('p', { class: 'hint', text: 'No backups yet - tap "Backup now" to create your first one.' });
 
   openModal(el('div', { class: 'sheet' }, [
     el('h2', { text: 'Backup & Restore' }),
@@ -2585,7 +2606,7 @@ function _normName(s) { return (s || '').toLowerCase().replace(/[^a-z0-9]/g, '')
 // OCR alias memory: when the user overrides the auto-match in the review modal
 // (e.g. parsed "Adani Pwr" → mapped manually to stock "Adani Power Ltd"), we
 // remember that mapping so next time the same parsed name auto-matches with
-// full confidence — no re-tweaking. Keyed by portfolio so an alias in one
+// full confidence - no re-tweaking. Keyed by portfolio so an alias in one
 // portfolio can't leak into another. Lives in the existing `meta` store; small
 // enough to load whole into memory on demand.
 const _aliasKey = (portfolio, parsedName) => portfolio + '|' + _normName(parsedName);
@@ -2611,7 +2632,7 @@ function _findStockMatch(parsedName, stocks) {
     const nn = _normName(s.name);
     if (!nn) continue;
     if (nn === t) return { stock: s, score: 1 };
-    // substring (either way) — score by length ratio
+    // substring (either way) - score by length ratio
     if (nn.includes(t) || t.includes(nn)) {
       const score = Math.min(nn.length, t.length) / Math.max(nn.length, t.length);
       if (!best || score > best.score) best = { stock: s, score };
@@ -2625,7 +2646,7 @@ function _findStockMatch(parsedName, stocks) {
       if (!best || score > best.score) best = { stock: s, score };
     }
   }
-  // Always return the best — user can untick in the review if wrong.
+  // Always return the best - user can untick in the review if wrong.
   return best;
 }
 
@@ -2646,7 +2667,7 @@ function hideLoader() { const o = document.getElementById('__loader'); if (o) o.
 async function openOcrFlow() {
   // multiple: lets the OS picker accept 1-N screenshots (typical 4-5 for a long
   // holdings list that doesn't fit one screen). Sequential OCR with a shared
-  // Tesseract worker — see ocrImages() in ocr.js.
+  // Tesseract worker - see ocrImages() in ocr.js.
   const input = el('input', { type: 'file', accept: 'image/*', multiple: '' });
   input.addEventListener('change', async () => {
     const files = Array.from(input.files || []);
@@ -2678,7 +2699,7 @@ async function openOcrFlow() {
       }
       hideLoader();
       // Note: the image Files go only to Tesseract for recognition. We never
-      // persist them — only the parsed numbers reach the review screen.
+      // persist them - only the parsed numbers reach the review screen.
       if (!allRows.length) { openOcrDebug(texts.join('\n\n----- next image -----\n\n')); return; }
       const aliases = await _loadOcrAliases();
       openOcrReview(allRows, aliases);
@@ -2695,7 +2716,7 @@ function openOcrDebug(text) {
   ta.value = text || '(empty)';
   openModal(el('div', { class: 'sheet' }, [
     el('h2', { text: 'No holding rows detected' }),
-    el('p', { class: 'note', text: 'OCR ran but the parser couldn’t pick out any "units × avg / LTP:" pattern. The raw text below is what was read — share it so the parser can be tuned. Try cropping to just the holdings rows, or use a higher-resolution screenshot.' }),
+    el('p', { class: 'note', text: 'OCR ran but the parser couldn\'t pick out any "units × avg / LTP:" pattern. The raw text below is what was read - share it so the parser can be tuned. Try cropping to just the holdings rows, or use a higher-resolution screenshot.' }),
     ta,
     el('div', { class: 'btn-row' }, [
       el('button', { class: 'btn ghost', text: 'Copy text', onclick: () => { ta.select(); document.execCommand && document.execCommand('copy'); toast('Copied'); } }),
@@ -2710,7 +2731,7 @@ function openOcrReview(rows, aliases) {
   // Groww/wife-in: the "Market Price" view shows units (e.g. "27 shares") and
   // current price, but not the average buy price. So we update units + price
   // and leave the saved avg untouched. The Avg column is hidden in the review
-  // and the apply step gates avg writes — defense in depth.
+  // and the apply step gates avg writes - defense in depth.
   const noAvg = state.portfolio === 'wife-in';
   aliases = aliases || {};
   // Resolve each row's auto-match: saved alias (manual override from a prior
@@ -2725,14 +2746,14 @@ function openOcrReview(rows, aliases) {
     return { ...r, match: _findStockMatch(r.name, state.stocks) };
   });
   const matchedCount = matched.filter((m) => m.match).length;
-  // Stocks shown in the per-row override dropdown — only active holdings, sorted
+  // Stocks shown in the per-row override dropdown - only active holdings, sorted
   // by name. Mirrors what _findStockMatch considers, so manual selection and
   // auto-match can never disagree on which pool is valid.
   const activeStocks = state.stocks.filter((s) => s.status !== 'sold')
     .slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   // Big-jump heuristic: a stock's parsed price differing > 30% from its saved
   // currentPrice is almost always a wrong match or an OCR misread (not a real
-  // 30%/day move). Flag for verification — separate from the ₹→3 suspect heuristic.
+  // 30%/day move). Flag for verification - separate from the ₹→3 suspect heuristic.
   const BIG_JUMP_THRESHOLD = 0.30;
   const isBigJump = (savedLtp, newLtp) =>
     savedLtp != null && newLtp != null && savedLtp > 0 &&
@@ -2745,7 +2766,7 @@ function openOcrReview(rows, aliases) {
   );
   // Tesseract often misreads ₹ as the digit "3", inflating a price like ₹84.89
   // to "384.89". Flag any integer-part starting with "3" that has 3+ digits
-  // ("3xx" up). Over-flagging is fine — the user just glances at highlights.
+  // ("3xx" up). Over-flagging is fine - the user just glances at highlights.
   const suspectLtp = (v) => v != null && /^3\d{2,}/.test(String(Math.trunc(v)));
   const refs = matched.map((m) => {
     const enabled = !!m.match;
@@ -2772,10 +2793,10 @@ function openOcrReview(rows, aliases) {
     };
     // Dropdown to override the auto-matched stock. Pre-selects the best match;
     // user can pick a different stock, "+ Add as new stock" to create one from
-    // this row, or "— Skip —" to drop the row. Selecting a stock auto-checks
+    // this row, or "- Skip -" to drop the row. Selecting a stock auto-checks
     // the row; selecting Skip disables it.
     const sel = el('select', { class: 'ocr-match-sel' });
-    sel.appendChild(el('option', { value: '', text: '— Skip (no match) —' }));
+    sel.appendChild(el('option', { value: '', text: '- Skip (no match) -' }));
     sel.appendChild(el('option', { value: '__new__', text: '+ Add as new stock' }));
     for (const s of activeStocks) {
       const opt = el('option', { value: s.id, text: s.name });
@@ -2796,7 +2817,7 @@ function openOcrReview(rows, aliases) {
     // ref.allowAvg controls whether the apply step writes buyPrice from this
     // row. For me-in/me-us it's always true (avg column visible). For wife-in
     // (noAvg) it flips to true only when parsed units differ from the matched
-    // stock's saved units — a unit change means a buy/sell happened and the
+    // stock's saved units - a unit change means a buy/sell happened and the
     // average buy price has definitely shifted, so we surface the Avg input
     // as an inline banner for that row only.
     const ref = { row, cb, unitsI, avgI, ltpI, match: m.match, allowAvg: !noAvg };
@@ -2823,7 +2844,7 @@ function openOcrReview(rows, aliases) {
           row.appendChild(ref.avgBanner);
         }
         ref.avgMsg.textContent =
-          'Units changed (' + savedUnits + ' → ' + parsedUnits + ') — set new average buy price:';
+          'Units changed (' + savedUnits + ' → ' + parsedUnits + ') - set new average buy price:';
         ref.avgBanner.style.display = '';
       } else if (ref.avgBanner) {
         ref.avgBanner.style.display = 'none';
@@ -2836,7 +2857,7 @@ function openOcrReview(rows, aliases) {
         ref.match = null;
         cb.checked = false; cb.disabled = true;
         row.classList.add('no-match');
-        // Remember "Skip" too — next time, the parser won't keep auto-mapping
+        // Remember "Skip" too - next time, the parser won't keep auto-mapping
         // a parsed name the user has explicitly rejected.
         await _saveOcrAlias(state.portfolio, m.name, null).catch(() => {});
       } else if (sel.value === '__new__') {
@@ -2868,7 +2889,7 @@ function openOcrReview(rows, aliases) {
       if (!r.cb.checked || !r.match) continue;
       const nU = num(r.unitsI.value), nA = num(r.avgI.value), nL = num(r.ltpI.value);
 
-      // "+ Add as new" path — create the stock from the parsed row. Category
+      // "+ Add as new" path - create the stock from the parsed row. Category
       // is left blank; the user can edit it from the stock card afterwards.
       // For wife-in (no Avg in Groww view), buyPrice is left null too.
       if (r.match.addNew) {
@@ -2902,7 +2923,7 @@ function openOcrReview(rows, aliases) {
       // that don't show Avg in the holdings view don't wipe what's already saved).
       // r.allowAvg gates the buyPrice write: always true for me-in/me-us; for
       // wife-in (Groww) it's true only when parsed units differ from the saved
-      // units (a buy/sell happened) — the inline avg banner in the review
+      // units (a buy/sell happened) - the inline avg banner in the review
       // exposes the avg input only in that case.
       if (nU != null) fresh.units = nU;
       if (r.allowAvg && nA != null) fresh.buyPrice = nA;
@@ -2949,11 +2970,11 @@ function openOcrReview(rows, aliases) {
     el('h2', { text: 'Update from screenshot' }),
     el('p', { class: 'note', text:
       matchedCount + ' of ' + rows.length + ' rows auto-matched to your ' + state.portfolio.replace('-', ' · ') + ' holdings. ' +
-      'Use the dropdown under each row to override the match, choose "+ Add as new stock" to create a fresh holding from that row, or "Skip" to drop it. Manual matches are remembered — next OCR will auto-pick the same stock. ' +
+      'Use the dropdown under each row to override the match, choose "+ Add as new stock" to create a fresh holding from that row, or "Skip" to drop it. Manual matches are remembered - next OCR will auto-pick the same stock. ' +
       (noAvg
-        ? 'Groww screenshots update units and current price — the average is kept as you saved it (Groww doesn\'t show it in this view). If a row\'s units have changed (you bought or sold), an "Avg" input appears for that row so you can enter the new average buy price. Untick anything wrong before Apply. '
+        ? 'Groww screenshots update units and current price - the average is kept as you saved it (Groww doesn\'t show it in this view). If a row\'s units have changed (you bought or sold), an "Avg" input appears for that row so you can enter the new average buy price. Untick anything wrong before Apply. '
         : 'Edit values if needed, untick anything wrong, then Apply. Blank fields keep the existing value. ') +
-      'Heads-up: prices highlighted orange look suspect — either Tesseract misread the ₹ as a "3", or the value jumped > 30% from saved. Verify against the screenshot.'
+      'Heads-up: prices highlighted orange look suspect - either Tesseract misread the ₹ as a "3", or the value jumped > 30% from saved. Verify against the screenshot.'
     }),
     head,
     el('div', { class: 'ocr-list' }, refs.map((r) => r.row)),
@@ -2967,7 +2988,7 @@ function openOcrReview(rows, aliases) {
 // ---------- app lock (PIN + optional biometric) ----------
 
 // Shared keypad widget used by the lock screen, setup wizard and Change PIN.
-// onPress receives the digit string ('0'..'9') or 'back'. onBio is optional —
+// onPress receives the digit string ('0'..'9') or 'back'. onBio is optional -
 // when provided, a fingerprint key appears in the bottom-left slot.
 function buildKeypad(onPress, onBio) {
   const grid = el('div', { class: 'kpad' });
@@ -3053,7 +3074,7 @@ async function showLockScreen() {
       try {
         if (await verifyBiometric()) finish();
       } catch (e) {
-        if (!silent) ctrl.setError('Biometric cancelled — use PIN');
+        if (!silent) ctrl.setError('Biometric cancelled - use PIN');
       }
     };
 
@@ -3069,7 +3090,7 @@ async function showLockScreen() {
       ]),
     ]));
 
-    // Auto-prompt biometric — feels native on mobile (lock screen → fingerprint).
+    // Auto-prompt biometric - feels native on mobile (lock screen → fingerprint).
     // silent=true so a browser that blocks auto-prompts (Safari) fails quietly
     // and the user just uses the keypad's 👆 key or types the PIN.
     if (hasBio) setTimeout(() => tryBio(true), 350);
@@ -3080,7 +3101,7 @@ async function forgotPinFlow() {
   const warn = 'Resetting will erase ALL local data on this device and turn off the lock.\n\n' +
     'Make sure you have a recent backup (Menu → Export). You can re-import after reset.\n\nContinue?';
   if (!confirm(warn)) return;
-  if (!confirm('Last warning — reset now and lose all unsynced changes?')) return;
+  if (!confirm('Last warning - reset now and lose all unsynced changes?')) return;
   try { await wipeAllData(); } catch (_) {}
   location.reload();
 }
@@ -3130,7 +3151,7 @@ async function openLockSetup() {
         try { await setPin(firstPin); } catch (e) { ctrl.setError(e.message); ctrl.reset(); return; }
         showBioStep();
       } else {
-        ctrl.setError('PINs didn\'t match — try again');
+        ctrl.setError('PINs didn\'t match - try again');
         firstPin = ''; stage = 'set';
         sub.textContent = 'Choose a ' + PIN_LENGTH + '-digit PIN';
         ctrl.reset();
@@ -3224,7 +3245,7 @@ async function checkForUpdates() {
   const reg = window.__swReg || await navigator.serviceWorker.getRegistration();
   if (!reg) { toast('Service worker not registered'); return; }
 
-  // Already waiting — just apply it.
+  // Already waiting - just apply it.
   if (reg.waiting) {
     reg.waiting.postMessage({ type: 'SKIP_WAITING' });
     toast('Applying update…');
@@ -3235,7 +3256,7 @@ async function checkForUpdates() {
   try {
     await reg.update();
   } catch (e) {
-    toast('Could not reach server — try again later');
+    toast('Could not reach server - try again later');
     return;
   }
 
@@ -3248,14 +3269,14 @@ async function checkForUpdates() {
         if (sw.state === 'installed' || sw.state === 'activated' || sw.state === 'redundant') done();
       };
       sw.addEventListener('statechange', onChange);
-      // Safety timeout — don't block forever on a hung install.
+      // Safety timeout - don't block forever on a hung install.
       setTimeout(done, 8000);
     });
   }
 
   if (reg.waiting) {
     reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-    toast('Update found — applying…');
+    toast('Update found - applying…');
   } else {
     toast('You\'re on the latest version');
   }
@@ -3322,7 +3343,7 @@ async function init() {
   buildChrome();
   bind();
   // App-lock gate: if the user has set a PIN, block here until they unlock.
-  // Data load happens *after* unlock — so even if the overlay is somehow
+  // Data load happens *after* unlock - so even if the overlay is somehow
   // bypassed, the in-memory state is still empty until verification succeeds.
   try { await showLockScreen(); } catch (e) { console.error('lock screen error', e); }
   // Load the stock data (render() no-ops while appMode==='home'), then show the
@@ -3332,7 +3353,7 @@ async function init() {
   if ('serviceWorker' in navigator) {
     try {
       // updateViaCache: 'none' ensures any update check (manual or browser-
-      // initiated) bypasses the HTTP cache for the SW script — so we always
+      // initiated) bypasses the HTTP cache for the SW script - so we always
       // see the bumped CACHE = 'vNN'. We do NOT auto-call reg.update() here:
       // updates apply only when the user taps Menu → "Check for updates".
       const reg = await navigator.serviceWorker.register('service-worker.js', { updateViaCache: 'none' });
@@ -3373,7 +3394,7 @@ async function init() {
   // Idempotent: back-fills wife-in (and reverse) months with the peer's Nifty
   // where one side is missing it. Cheap; a no-op once everything's in sync.
   syncNiftyAll().catch(() => {});
-  // Silent feed refresh on app open — so the user doesn't have to visit the
+  // Silent feed refresh on app open - so the user doesn't have to visit the
   // Feed tab to get fresh news. Fires for the active portfolio when its
   // session-anchor sync is stale.
   _autoRefreshFeedOnInit().catch(() => {});
