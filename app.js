@@ -32,10 +32,10 @@ const state = {
 };
 
 // Mutual-fund view state (only used inside the MF surface).
-let _mfSort = 'xirr';   // 'xirr' | 'ret' | 'inv' | 'name'
-let _mfFilter = 'all';  // 'all' | 'active' | 'stopped'
+let _mfSort = 'xirr';        // 'xirr' | 'ret' | 'inv' | 'name'
+let _mfFilter = 'investing'; // 'investing' | 'sold' (holding vs redeemed — not SIP status)
 const MF_TYPES = ['Multi Cap', 'Flexi Cap', 'Large Cap', 'Mid Cap', 'Small Cap', 'Tax Saver', 'Technology', 'Pharma', 'Energy', 'International', 'Index', 'Debt', 'Hybrid'];
-const MF_STATUS = ['Investing', 'Investing On/Off', 'Investing Variable', 'Stopped'];
+const MF_STATUS = ['Investing', 'Investing On/Off', 'Investing Variable', 'Stopped', 'Sold'];
 
 let deferredInstall = null;
 
@@ -1454,6 +1454,27 @@ async function openMF() {
         await DB.put('meta', { key: 'mfSeeded', value: true });
       }
     }
+    // One-time: add Quant Mid Cap as a Sold entry so it shows on the Sold tab.
+    // Seeded as a stub (no fabricated figures) — the user fills invested + sold
+    // value/date from Paytm Money. Guarded so it's added only once.
+    const midDone = await DB.get('meta', 'mfMidCapAdded').catch(() => null);
+    if (!midDone || !midDone.value) {
+      const all = (await DB.byIndex('funds', 'owner', 'me')) || [];
+      if (!all.some((x) => /quant\s*mid\s*cap/i.test(x.name || ''))) {
+        const iso = new Date().toISOString();
+        await DB.put('funds', {
+          owner: 'me', name: 'Quant Mid Cap Fund Direct - Growth', type: 'Mid Cap',
+          category: 'Equity', benchmark: '', status: 'Sold', sip: 0, targetYear: 2030,
+          benchXirr: null, goodReturn: '', judgeAfter: '',
+          remarks: 'Sold — tap to add your invested amounts and the sold value/date.',
+          contributions: [], valueHistory: [], valueAsOf: null,
+          soldValue: null, soldDate: null, seedXirrRef: null,
+          xirrLow: null, xirrHigh: null, returnLow: null, returnHigh: null,
+          seeded: false, createdAt: iso, updatedAt: iso,
+        });
+      }
+      await DB.put('meta', { key: 'mfMidCapAdded', value: true });
+    }
   } catch (e) { console.error('MF seed failed', e); }
   setAppMode('mf');
 }
@@ -1471,30 +1492,12 @@ async function renderMF() {
   const now = Date.now();
   const rows = funds.map((f) => ({ f, c: mod.computeFund(f, now) }));
 
-  // Totals
-  let totInv = 0, totVal = 0, projStay = 0, beat = 0, benchCount = 0, wSum = 0, wW = 0;
-  rows.forEach(({ c }) => {
-    totInv += c.invested; totVal += c.value; projStay += c.projCorpusStay;
-    if (c.beatsBenchmark !== null) { benchCount++; if (c.beatsBenchmark) beat++; }
-    if (c.xirr != null && c.value > 0) { wSum += c.xirr * c.value; wW += c.value; }
-  });
-  const gainPct = totInv > 0 ? ((totVal - totInv) / totInv) * 100 : 0;
-  const wXirr = wW > 0 ? (wSum / wW) * 100 : null;
-
-  host.appendChild(el('section', { class: 'summary' }, [
-    el('div', { class: 'label', text: 'Current value' }),
-    el('div', { class: 'big', text: fmtCur(totVal, 'INR') }),
-    el('div', { class: 'grid' }, [
-      _mfCell('Invested', fmtCur(totInv, 'INR')),
-      _mfCell('Overall gain', fmtPct(gainPct), pctClass(gainPct)),
-      _mfCell('Portfolio XIRR', wXirr != null ? fmtPct(wXirr) : '—', wXirr != null ? pctClass(wXirr) : ''),
-      _mfCell('Beating benchmark', benchCount ? `${beat} of ${benchCount}` : '—'),
-      _mfCell('Proj. 2030 · stay', fmtCur(projStay, 'INR')),
-      _mfCell('Funds', String(funds.length)),
-    ]),
-  ]));
-
+  // No funds at all → simple empty state (tabs would be pointless).
   if (!funds.length) {
+    host.appendChild(el('section', { class: 'summary' }, [
+      el('div', { class: 'label', text: 'Current value' }),
+      el('div', { class: 'big', text: fmtCur(0, 'INR') }),
+    ]));
     host.appendChild(el('div', { class: 'empty' }, [
       el('div', { class: 'e-icon', text: '📊' }),
       el('p', { text: 'No funds yet.' }),
@@ -1503,17 +1506,56 @@ async function renderMF() {
     return;
   }
 
-  // Sort + status filter
+  // Holding vs sold split (SIP state is irrelevant — a paused SIP is still held).
+  const soldRows = rows.filter(({ c }) => c.sold);
+  const heldRows = rows.filter(({ c }) => !c.sold);
+  const viewSold = _mfFilter === 'sold';
+  const list = (viewSold ? soldRows : heldRows).slice();
+
+  // Totals over the funds currently shown.
+  let totInv = 0, totVal = 0, projStay = 0, beat = 0, benchCount = 0, wSum = 0, wW = 0;
+  list.forEach(({ c }) => {
+    totInv += c.invested; totVal += c.value; projStay += (c.projCorpusStay || 0);
+    if (c.beatsBenchmark !== null) { benchCount++; if (c.beatsBenchmark) beat++; }
+    if (c.xirr != null && c.value > 0) { wSum += c.xirr * c.value; wW += c.value; }
+  });
+  const gainPct = totInv > 0 ? ((totVal - totInv) / totInv) * 100 : 0;
+  const wXirr = wW > 0 ? (wSum / wW) * 100 : null;
+
+  const cells = [
+    _mfCell('Invested', fmtCur(totInv, 'INR')),
+    _mfCell(viewSold ? 'Realized gain' : 'Overall gain', fmtPct(gainPct), pctClass(gainPct)),
+    _mfCell(viewSold ? 'Realized XIRR' : 'Portfolio XIRR', wXirr != null ? fmtPct(wXirr) : '—', wXirr != null ? pctClass(wXirr) : ''),
+    _mfCell('Beating benchmark', benchCount ? `${beat} of ${benchCount}` : '—'),
+  ];
+  if (!viewSold) cells.push(_mfCell('Proj. 2030 · stay', fmtCur(projStay, 'INR')));
+  cells.push(_mfCell(viewSold ? 'Sold funds' : 'Funds', String(list.length)));
+  host.appendChild(el('section', { class: 'summary' }, [
+    el('div', { class: 'label', text: viewSold ? 'Realized value' : 'Current value' }),
+    el('div', { class: 'big', text: fmtCur(totVal, 'INR') }),
+    el('div', { class: 'grid' }, cells),
+  ]));
+
+  // Common OCR / bulk value update (updates every held fund's current value at once).
+  host.appendChild(el('div', { class: 'btn-row mf-actions' }, [
+    el('button', { class: 'btn ghost small', type: 'button', text: '📷 Update current values', onclick: () => openMfValueSheet() }),
+  ]));
+
+  // Tabs (Investing | Sold, with counts) + sort — always shown so the user can switch.
+  const filterSeg = el('div', { class: 'seg' }, [['investing', `Investing (${heldRows.length})`], ['sold', `Sold (${soldRows.length})`]].map(([v, l]) =>
+    el('button', { class: (_mfFilter === v ? 'active' : ''), 'data-filter': v, type: 'button', text: l, onclick: () => { _mfFilter = v; renderMF(); } })));
   const sortbar = el('div', { class: 'sortbar mf-sortbar' }, [['xirr', 'XIRR'], ['ret', 'Return'], ['inv', 'Invested'], ['name', 'Name']].map(([v, l]) =>
     el('button', { class: 'sort-btn' + (_mfSort === v ? ' active' : ''), type: 'button', text: l, onclick: () => { _mfSort = v; renderMF(); } })));
-  const filterSeg = el('div', { class: 'seg' }, [['all', 'All'], ['active', 'Investing'], ['stopped', 'Stopped']].map(([v, l]) =>
-    el('button', { class: (_mfFilter === v ? 'active' : ''), 'data-filter': v, type: 'button', text: l, onclick: () => { _mfFilter = v; renderMF(); } })));
   host.appendChild(el('div', { class: 'toolbar mf-toolbar' }, [filterSeg, sortbar]));
 
-  // Filter + sort
-  let list = rows.slice();
-  if (_mfFilter === 'active') list = list.filter(({ f }) => /investing/i.test(f.status || ''));
-  else if (_mfFilter === 'stopped') list = list.filter(({ f }) => /stop/i.test(f.status || ''));
+  if (!list.length) {
+    host.appendChild(el('div', { class: 'empty' }, [
+      el('div', { class: 'e-icon', text: viewSold ? '🧾' : '📈' }),
+      el('p', { text: viewSold ? 'No sold funds.' : 'No funds you are holding.' }),
+    ]));
+    return;
+  }
+
   list.sort((a, b) => {
     if (_mfSort === 'name') return (a.f.name || '').localeCompare(b.f.name || '');
     if (_mfSort === 'inv') return b.c.invested - a.c.invested;
@@ -1526,9 +1568,9 @@ async function renderMF() {
   list.forEach(({ f, c }) => listWrap.appendChild(_mfCard(f, c)));
   host.appendChild(listWrap);
 
-  // Allocation by fund type
+  // Allocation by fund type (over the funds shown).
   const byType = {};
-  rows.forEach(({ f, c }) => { const k = f.type || 'Other'; byType[k] = (byType[k] || 0) + c.invested; });
+  list.forEach(({ f, c }) => { const k = f.type || 'Other'; byType[k] = (byType[k] || 0) + c.invested; });
   const types = Object.keys(byType).sort((a, b) => byType[b] - byType[a]);
   if (types.length && totInv > 0) {
     const alloc = el('div', { class: 'chart-card' }, [el('h3', { text: 'Allocation by type' })]);
@@ -1543,7 +1585,9 @@ async function renderMF() {
     host.appendChild(alloc);
   }
 
-  host.appendChild(el('p', { class: 'hint mf-foot', text: 'XIRR is computed from your dated investments. Funds marked “(sheet)” still use your sheet’s figure — add a real investment to switch to app-computed XIRR. Not investment advice.' }));
+  host.appendChild(el('p', { class: 'hint mf-foot', text: viewSold
+    ? 'Sold funds show your realized XIRR — from your dated investments to the sold value. Not investment advice.'
+    : 'XIRR is computed from your dated investments. Funds marked “(sheet)” still use your sheet’s figure — add a real investment to switch to app-computed XIRR. Not investment advice.' }));
 }
 
 function _mfCard(f, c) {
@@ -1551,8 +1595,11 @@ function _mfCard(f, c) {
   const benchTxt = c.benchXirrPct != null ? fmtPct(c.benchXirrPct) : '—';
   const beatBadge = c.beatsBenchmark === true ? el('span', { class: 'badge good mf-beat', text: 'beats' })
     : c.beatsBenchmark === false ? el('span', { class: 'badge bad mf-beat', text: 'lags' }) : null;
-  const catLine = el('div', { class: 'cat mf-catline' }, [(f.type || '') + (f.status ? ' · ' + f.status : '')]);
-  if (beatBadge) catLine.appendChild(beatBadge);
+  const statusTxt = c.sold ? ('Sold' + (c.soldDate ? ' · ' + c.soldDate : '')) : (f.status || '');
+  const catLine = el('div', { class: 'cat mf-catline' }, [(f.type || '') + (statusTxt ? ' · ' + statusTxt : '')]);
+  if (c.sold) catLine.appendChild(el('span', { class: 'badge muted mf-beat', text: 'sold' }));
+  else if (beatBadge) catLine.appendChild(beatBadge);
+  const xirrLabel = c.xirrSource === 'sheet' ? 'XIRR (sheet)' : c.xirrSource === 'realized' ? 'Realized XIRR' : 'XIRR';
   const card = el('div', { class: 'card', onclick: () => openFundForm(f) }, [
     el('div', { class: 'top' }, [
       el('div', { class: 'card-left' }, [
@@ -1561,18 +1608,27 @@ function _mfCard(f, c) {
       ]),
       el('div', { class: 'card-right' }, [
         el('div', { class: 'pct ' + pctClass(c.xirrPct || 0), text: xirrTxt }),
-        el('div', { class: 'meta-line', text: c.xirrSource === 'sheet' ? 'XIRR (sheet)' : 'XIRR' }),
+        el('div', { class: 'meta-line', text: xirrLabel }),
       ]),
     ]),
     el('div', { class: 'sub' }, [
       el('span', {}, ['Invested ', b(fmtCur(c.invested, 'INR'))]),
-      el('span', {}, ['Value ', b(fmtCur(c.value, 'INR'))]),
+      el('span', {}, [(c.sold ? 'Sold for ' : 'Value '), b(fmtCur(c.value, 'INR'))]),
     ]),
     el('div', { class: 'sub' }, [
       el('span', {}, ['Return ', el('b', { class: pctClass(c.absReturnPct) }, [fmtPct(c.absReturnPct)])]),
       el('span', {}, ['Bench ', b(benchTxt)]),
     ]),
   ]);
+  // Auto-tracked swing range (lowest–highest seen over time), when it has moved.
+  const rng = (lo, hi) => (lo != null && hi != null && Math.abs(hi - lo) >= 0.1) ? `${Number(lo).toFixed(1)}%–${Number(hi).toFixed(1)}%` : null;
+  const xr = rng(f.xirrLow, f.xirrHigh), rr = rng(f.returnLow, f.returnHigh);
+  if (xr || rr) {
+    const parts = [];
+    if (xr) parts.push('XIRR ' + xr);
+    if (rr) parts.push('Return ' + rr);
+    card.appendChild(el('div', { class: 'meta-line mf-range', text: 'Range · ' + parts.join(' · ') }));
+  }
   if (f.remarks) card.appendChild(el('p', { class: 'note', text: f.remarks }));
   return card;
 }
@@ -1623,7 +1679,20 @@ function buildContribEditor(contributions, getSip) {
     out.sort((a, b2) => (a.date || '').localeCompare(b2.date || ''));
     return out;
   };
-  return { node, collect };
+  // Merge OCR/imported rows in. Date is the unique key — no fund invests twice a
+  // day — so a matching date updates that row's amount instead of duplicating.
+  const merge = (newRows) => {
+    let added = 0, updated = 0;
+    for (const r of (newRows || [])) {
+      if (!r.date || r.amount == null) continue;
+      const amt = Math.round(Number(r.amount) * 100) / 100;
+      const ex = refs.find((x) => !x.removed && x.d.value === r.date);
+      if (ex) { ex.amt.value = amt; updated++; }
+      else { addRow(r.date, amt); added++; }
+    }
+    return { added, updated };
+  };
+  return { node, collect, merge };
 }
 
 function openFundForm(existing) {
@@ -1651,6 +1720,12 @@ function openFundForm(existing) {
   const curValue = numInput(latestVal, 'Current value ₹');
   const valueAsOf = el('input', { type: 'date', value: f.valueAsOf || todayISO() });
 
+  // Sold funds (Option 2): a single sold value + sold date drives the realized XIRR.
+  const soldValue = numInput(f.soldValue, 'Sold value ₹');
+  const soldDate = el('input', { type: 'date', value: f.soldDate || '' });
+  const soldRow = el('div', { class: 'field-row' + (f.status === 'Sold' ? '' : ' hidden') }, [field('Sold value', soldValue), field('Sold on', soldDate)]);
+  status.addEventListener('change', () => { soldRow.classList.toggle('hidden', status.value !== 'Sold'); });
+
   const contribEditor = buildContribEditor(f.contributions, () => num(sip.value) || 0);
 
   const del = async () => {
@@ -1663,6 +1738,7 @@ function openFundForm(existing) {
   const save = async () => {
     const nm = name.value.trim();
     if (!nm) { toast('Enter a fund name'); return; }
+    const mod = await import('./mf.js');
     const contributions = contribEditor.collect();
     const cv = num(curValue.value);
     const asOf = valueAsOf.value || todayISO();
@@ -1674,6 +1750,8 @@ function openFundForm(existing) {
     }
     vh.sort((a, b2) => (a.ym || '').localeCompare(b2.ym || ''));
     const bx = num(benchXirr.value);
+    const isSold = status.value === 'Sold';
+    const sv = num(soldValue.value);
     const rec = {
       owner: 'me',
       name: nm,
@@ -1690,11 +1768,19 @@ function openFundForm(existing) {
       contributions,
       valueHistory: vh,
       valueAsOf: asOf,
+      soldValue: isSold ? (sv != null ? sv : null) : null,
+      soldDate: isSold ? (soldDate.value || null) : null,
       seedXirrRef: f.seedXirrRef != null ? f.seedXirrRef : null,
       seeded: false, // user has reviewed/edited → compute XIRR from their cashflows
       createdAt: f.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
+    // Auto-track the lowest/highest return & XIRR this fund has hit over time.
+    const c2 = mod.computeFund(rec, Date.now());
+    const lo = (prev, v) => v == null ? (prev != null ? prev : null) : (prev == null ? v : Math.min(prev, v));
+    const hi = (prev, v) => v == null ? (prev != null ? prev : null) : (prev == null ? v : Math.max(prev, v));
+    rec.xirrLow = lo(f.xirrLow, c2.xirrPct); rec.xirrHigh = hi(f.xirrHigh, c2.xirrPct);
+    rec.returnLow = lo(f.returnLow, c2.absReturnPct); rec.returnHigh = hi(f.returnHigh, c2.absReturnPct);
     if (isEdit) rec.id = f.id;
     await DB.put('funds', rec);
     closeModal();
@@ -1709,10 +1795,14 @@ function openFundForm(existing) {
     el('div', { class: 'field-row' }, [field('Type', type), field('Category', category)]),
     el('div', { class: 'field-row' }, [field('Status', status), field('Monthly SIP', sip)]),
     el('div', { class: 'field-row' }, [field('Current value', curValue), field('Value as of', valueAsOf)]),
+    soldRow,
     el('div', { class: 'field' }, [
       el('label', { text: 'Investments (date + amount)' }),
       el('p', { class: 'hint', text: 'Log each investment with its date — that is what makes XIRR accurate. No daily NAV needed; just refresh the current value now and then.' }),
       contribEditor.node,
+      el('div', { class: 'btn-row' }, [
+        el('button', { class: 'btn ghost small', type: 'button', text: '📷 Import transactions (Paytm)', onclick: () => _mfOcrTransactions(contribEditor) }),
+      ]),
     ]),
     el('div', { class: 'field-row' }, [field('Benchmark XIRR %', benchXirr), field('Target year', targetYear)]),
     field('Benchmark name', benchmark),
@@ -1726,6 +1816,153 @@ function openFundForm(existing) {
   children.push(el('div', { class: 'btn-row', style: 'flex-wrap:wrap' }, btns));
 
   openModal(el('div', { class: 'sheet' }, children));
+}
+
+// Per-fund transaction OCR: read a Paytm Money transaction-history screenshot and
+// merge the Buy rows into the open fund form's investment editor. Dedupes by date
+// (one investment per day) — never opens a nested modal, so the form stays put.
+async function _mfOcrTransactions(editor) {
+  const input = el('input', { type: 'file', accept: 'image/*', multiple: '' });
+  input.addEventListener('change', async () => {
+    const files = Array.from(input.files || []);
+    if (!files.length) return;
+    showLoader('Loading OCR engine…');
+    try {
+      const [ocr, mod] = await Promise.all([import('./ocr.js'), import('./mf.js')]);
+      const total = files.length;
+      const texts = await ocr.ocrImages(files, (m) => {
+        if (!m || !m.status) return;
+        const idx = (m.fileIndex || 0) + 1;
+        const pct = (m.progress != null && !isNaN(m.progress)) ? Math.round(m.progress * 100) : null;
+        const status = m.status.charAt(0).toUpperCase() + m.status.slice(1);
+        const prefix = total > 1 ? 'Image ' + idx + '/' + total + ' · ' : '';
+        setLoader(prefix + status + (pct != null ? ' · ' + pct + '%' : ''));
+      });
+      // Merge across images, dedupe by date (first read wins), buys only.
+      const seen = new Set(); const buys = [];
+      for (const t of texts) {
+        for (const r of mod.parsePaytmTransactions(t)) {
+          if (r.type !== 'buy' || !r.date || seen.has(r.date)) continue;
+          seen.add(r.date); buys.push(r);
+        }
+      }
+      hideLoader();
+      if (!buys.length) {
+        console.warn('MF transaction OCR — raw text:\n', texts.join('\n----- next -----\n'));
+        toast('No transactions detected — try a clearer/cropped screenshot');
+        return;
+      }
+      const { added, updated } = editor.merge(buys);
+      toast(`${buys.length} read · ${added} added${updated ? ', ' + updated + ' updated' : ''} — review & Save`);
+    } catch (e) {
+      hideLoader();
+      alert('OCR failed: ' + e.message);
+    }
+  });
+  input.click();
+}
+
+function _findFundMatch(parsedName, funds) {
+  const t = _normName(parsedName);
+  if (!t) return null;
+  let best = null;
+  for (const f of funds) {
+    const nn = _normName(f.name);
+    if (!nn) continue;
+    if (nn === t) return f;
+    if (nn.includes(t) || t.includes(nn)) {
+      const s = Math.min(nn.length, t.length) / Math.max(nn.length, t.length);
+      if (!best || s > best.s) best = { f, s };
+      continue;
+    }
+    let k = 0; const lim = Math.min(nn.length, t.length);
+    while (k < lim && nn.charCodeAt(k) === t.charCodeAt(k)) k++;
+    if (k >= 4) { const s = k / Math.max(nn.length, t.length); if (!best || s > best.s) best = { f, s }; }
+  }
+  return best && best.s >= 0.35 ? best.f : null;
+}
+
+// Common OCR: bulk "update current values" sheet. Lists every held fund with an
+// editable value; a screenshot scan pre-fills matched funds. Saving upserts one
+// value per fund for the as-of month (dedupe by ym → never a duplicate) and
+// refreshes the auto-tracked low/high.
+async function openMfValueSheet() {
+  const mod = await import('./mf.js');
+  const funds = ((await DB.byIndex('funds', 'owner', 'me')) || []).filter((f) => !(f.status === 'Sold' || f.soldDate));
+  if (!funds.length) { toast('No holding funds to update'); return; }
+  const asOf = el('input', { type: 'date', value: todayISO() });
+  const refs = funds.map((f) => {
+    const vh = (f.valueHistory || []).slice().sort((a, b) => (a.ym || '').localeCompare(b.ym || ''));
+    const cur = vh.length ? vh[vh.length - 1].value : null;
+    const inp = el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: cur != null ? cur : '', placeholder: 'Current value ₹' });
+    return { f, inp };
+  });
+  const rowsWrap = el('div', { class: 'mf-value-list' }, refs.map(({ f, inp }) =>
+    el('div', { class: 'mf-value-row' }, [el('div', { class: 'mf-value-name', text: f.name }), inp])));
+  const scan = () => {
+    const input = el('input', { type: 'file', accept: 'image/*', multiple: '' });
+    input.addEventListener('change', async () => {
+      const files = Array.from(input.files || []);
+      if (!files.length) return;
+      showLoader('Loading OCR engine…');
+      try {
+        const ocr = await import('./ocr.js');
+        const texts = await ocr.ocrImages(files, (m) => {
+          if (!m || !m.status) return;
+          const pct = (m.progress != null && !isNaN(m.progress)) ? Math.round(m.progress * 100) : null;
+          setLoader(m.status.charAt(0).toUpperCase() + m.status.slice(1) + (pct != null ? ' · ' + pct + '%' : ''));
+        });
+        const holdings = [];
+        for (const t of texts) holdings.push(...mod.parsePaytmHoldings(t));
+        hideLoader();
+        let filled = 0;
+        for (const h of holdings) {
+          const match = _findFundMatch(h.name, funds);
+          if (!match) continue;
+          const ref = refs.find((r) => r.f.id === match.id);
+          if (ref && h.value > 0) { ref.inp.value = Math.round(h.value * 100) / 100; filled++; }
+        }
+        if (!filled) console.warn('MF holdings OCR — raw text:\n', texts.join('\n----- next -----\n'));
+        toast(filled ? `${filled} value${filled > 1 ? 's' : ''} pre-filled — review & Save` : 'No funds matched — enter values manually');
+      } catch (e) { hideLoader(); alert('OCR failed: ' + e.message); }
+    });
+    input.click();
+  };
+  const save = async () => {
+    const asOfV = asOf.value || todayISO();
+    const ym = asOfV.slice(0, 7);
+    let n = 0;
+    for (const { f, inp } of refs) {
+      const v = num(inp.value);
+      if (v == null) continue;
+      const vh = (f.valueHistory || []).slice();
+      const i = vh.findIndex((x) => x.ym === ym);
+      if (i >= 0) vh[i] = { ym, value: v }; else vh.push({ ym, value: v });
+      vh.sort((a, b) => (a.ym || '').localeCompare(b.ym || ''));
+      const rec = Object.assign({}, f, { valueHistory: vh, valueAsOf: asOfV, seeded: false, updatedAt: new Date().toISOString() });
+      const c = mod.computeFund(rec, Date.now());
+      const lo = (p, x) => x == null ? (p != null ? p : null) : (p == null ? x : Math.min(p, x));
+      const hi = (p, x) => x == null ? (p != null ? p : null) : (p == null ? x : Math.max(p, x));
+      rec.xirrLow = lo(f.xirrLow, c.xirrPct); rec.xirrHigh = hi(f.xirrHigh, c.xirrPct);
+      rec.returnLow = lo(f.returnLow, c.absReturnPct); rec.returnHigh = hi(f.returnHigh, c.absReturnPct);
+      await DB.put('funds', rec);
+      n++;
+    }
+    closeModal();
+    toast(n ? `Updated ${n} fund${n > 1 ? 's' : ''}` : 'Nothing to update');
+    renderMF();
+  };
+  openModal(el('div', { class: 'sheet' }, [
+    el('h2', { text: 'Update current values' }),
+    el('p', { class: 'hint', text: 'Enter each fund’s current value from Paytm Money, or scan the holdings screen to pre-fill. Saved as one value per fund for the as-of month — updating again the same month overwrites, never duplicates.' }),
+    el('div', { class: 'field' }, [el('label', { text: 'Value as of' }), asOf]),
+    el('div', { class: 'btn-row' }, [el('button', { class: 'btn ghost', type: 'button', text: '📷 Scan holdings screenshot', onclick: scan })]),
+    rowsWrap,
+    el('div', { class: 'btn-row', style: 'flex-wrap:wrap' }, [
+      el('button', { class: 'btn primary', text: 'Save all', onclick: save }),
+      el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }),
+    ]),
+  ]));
 }
 
 // ---------- heatmap (sheet-style grid) ----------

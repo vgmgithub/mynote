@@ -912,3 +912,11 @@ body.locked { overflow: hidden; }
 .mf-sortbar { margin-left: auto; }
 .mf-foot { margin-top: 14px; padding-bottom: 20px; }
 .mf-view .stock-list { padding-bottom: 20px; }
+.mf-catline { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.mf-beat { font-size: 0.62rem; padding: 1px 6px; }
+.mf-range { margin-top: 6px; font-size: 0.66rem; color: var(--muted); }
+.mf-actions { margin-top: 10px; }
+.mf-value-list { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 4px; max-height: 46vh; overflow-y: auto; }
+.mf-value-row { display: flex; align-items: center; gap: 10px; }
+.mf-value-name { flex: 1; min-width: 0; font-size: 0.82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mf-value-row input { flex: 0 0 42%; }

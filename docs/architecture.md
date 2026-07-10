@@ -16,6 +16,7 @@ C:\Apache24\htdocs\mynote\
 ├── lock.js                 ← PIN + WebAuthn biometric (data layer + crypto)
 ├── backup.js               ← folder-based backup & restore (File System Access)
 ├── feed.js                 ← news fetch (Marketaux) + offline recommendation engine
+├── mf.js                   ← mutual-fund logic (XIRR, projections) + seed data (lazy-loaded)
 ├── icons/
 │   ├── icon-192.png
 │   └── icon-512.png
@@ -32,20 +33,23 @@ app.js  ──→  core.js   (pure helpers, formatters, calculations)
        ──→  csv.js    (dynamic import)
        ──→  ocr.js    (dynamic import)
        ──→  feed.js   (dynamic import)
+       ──→  mf.js     (dynamic import)
 
 lock.js   ──→  db.js   (meta store)
 backup.js ──→  db.js   (meta store — folder handle persistence)
 feed.js   ──→  db.js   (meta store + feed store)
+mf.js     ──→  (pure — no db.js; app.js does the funds-store CRUD)
 ```
 
-`csv.js` and `ocr.js` use `import('./csv.js')` / `import('./ocr.js')` — code-split so users who never import a sheet or use OCR never download those modules. Tesseract.js itself loads from CDN on first OCR use only.
+`csv.js`, `ocr.js`, `feed.js` and `mf.js` use dynamic `import('./…')` — code-split so users who never import a sheet, use OCR, open the Feed, or open Mutual Funds never download those modules. Tesseract.js itself loads from CDN on first OCR use only.
 
 ## State shape (in-memory, `app.js`)
 
 ```js
 state = {
+  appMode: 'home',             // 'home' | 'stocks' | 'mf' — top-level surface (above `view`)
   portfolio: 'me-in',          // 'me-in' | 'wife-in' | 'me-us'
-  view: 'holdings',            // 'holdings' | 'monthly' | 'heatmap' | 'trends'
+  view: 'holdings',            // 'holdings' | 'monthly' | 'heatmap' | 'trends' | 'feed'
   filter: 'holding',           // 'all' | 'holding' | 'sold' (default Holding)
   sortField: 'name',           // 'name' | 'pct' | 'value'
   sortStage: 0,                // 0 default (name A-Z), 1 primary, 2 secondary
@@ -55,11 +59,11 @@ state = {
 }
 ```
 
-`refresh()` reloads `state.stocks` + `state.months` from IndexedDB. `render()` is the master view dispatcher — it toggles which section is `.hidden` and calls the right sub-renderer.
+`refresh()` reloads `state.stocks` + `state.months` from IndexedDB. `render()` is the master view dispatcher for the **Stocks** surface — it toggles which section is `.hidden` and calls the right sub-renderer, and early-returns unless `appMode === 'stocks'`. `setAppMode()` sits above it and switches between Home / Stocks / Mutual Funds. See [mutual-funds.md](mutual-funds.md).
 
 ## IndexedDB schema
 
-Database: `mynote-stocks`, version `3`.
+Database: `mynote-stocks`, version `4`.
 
 ### `stocks` store
 - Key: `id` (auto-increment).
@@ -132,6 +136,15 @@ Known keys:
 Meta keys added in v3:
 - `feedApiKey` → user's Marketaux API token (or empty string).
 - `feedLastFetch_<portfolio>` → ms timestamp of last successful fetch per portfolio.
+
+### `funds` store (v4+)
+- Key: `id` (auto-increment).
+- Index: `owner` (currently only `'me'`).
+- One row per mutual fund: dated `contributions`, monthly `valueHistory`, `soldValue`/`soldDate`, auto-tracked `xirrLow/High` + `returnLow/High`, seed metadata. Full shape and logic in [mutual-funds.md](mutual-funds.md).
+
+Meta keys added in v4:
+- `mfSeeded` → `true` once the 11 sheet funds have been seeded.
+- `mfMidCapAdded` → `true` once the Quant Mid Cap sold stub has been added.
 
 ## Service worker — caching strategy
 

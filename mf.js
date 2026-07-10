@@ -97,38 +97,50 @@ export function computeFund(fund, nowMs) {
   const now = nowMs || Date.now();
   const nowDate = new Date(now);
   const invested = investedOf(fund);
-  const value = latestValue(fund);
+  // A fund is "sold" (holding vs redeemed — independent of SIP status) when its
+  // status is Sold or it carries a sold date. Sold funds realise at their sold
+  // value/date; held funds use the latest value snapshot as a notional sell.
+  const sold = fund.status === 'Sold' || !!fund.soldDate;
+  const value = sold ? (Number(fund.soldValue) || 0) : latestValue(fund);
+  const valueDate = (sold ? (fund.soldDate || fund.valueAsOf) : fund.valueAsOf) || nowDate.toISOString().slice(0, 10);
   const absReturnPct = invested > 0 ? ((value - invested) / invested) * 100 : 0;
 
   const times = (fund.contributions || []).map((c) => Date.parse(c.date)).filter((t) => !isNaN(t)).sort((a, b) => a - b);
-  const ageYears = times.length ? (now - times[0]) / (365.25 * DAY) : 0;
+  const endT = sold ? (Date.parse(valueDate) || now) : now;
+  const ageYears = times.length ? (endT - times[0]) / (365.25 * DAY) : 0;
 
-  // XIRR: seeded funds show the sheet's figure until the user logs real
-  // investments (then `seeded` is cleared and we compute from the cashflows).
+  // XIRR: a held seeded fund shows the sheet's figure until the user logs real
+  // investments (then `seeded` is cleared). Sold funds always compute a realised
+  // XIRR from the dated investments to the sold value.
   let rate = null, xirrSource = 'none';
-  if (fund.seeded && fund.seedXirrRef != null) {
+  if (!sold && fund.seeded && fund.seedXirrRef != null) {
     rate = Number(fund.seedXirrRef);
     xirrSource = 'sheet';
   } else if (invested > 0 && value > 0 && times.length) {
     const cfs = (fund.contributions || []).map((c) => ({ date: c.date, amount: -Math.abs(Number(c.amount) || 0) }));
-    cfs.push({ date: fund.valueAsOf || nowDate.toISOString().slice(0, 10), amount: value });
+    cfs.push({ date: valueDate, amount: value });
     rate = xirr(cfs);
-    xirrSource = rate != null ? 'computed' : 'none';
+    xirrSource = rate != null ? (sold ? 'realized' : 'computed') : 'none';
   }
 
   const benchXirr = fund.benchXirr != null && fund.benchXirr !== '' ? Number(fund.benchXirr) : null;
   const beatsBenchmark = rate != null && benchXirr != null ? rate >= benchXirr : null;
 
+  // Projections only apply to funds you still hold.
   const targetYear = Number(fund.targetYear) || 2030;
-  const monthsLeft = monthsToTargetEnd(nowDate, targetYear);
   const sip = Number(fund.sip) || 0;
-  const projRate = rate != null ? rate : (benchXirr != null ? benchXirr : 0.10);
-  const projInvested2030 = invested + sip * monthsLeft;
-  const projCorpusStop = projectCorpus(value, sip, projRate, monthsLeft, false);
-  const projCorpusStay = projectCorpus(value, sip, projRate, monthsLeft, true);
+  let monthsLeft = 0, projInvested2030 = null, projCorpusStop = null, projCorpusStay = null;
+  if (!sold) {
+    monthsLeft = monthsToTargetEnd(nowDate, targetYear);
+    const projRate = rate != null ? rate : (benchXirr != null ? benchXirr : 0.10);
+    projInvested2030 = invested + sip * monthsLeft;
+    projCorpusStop = projectCorpus(value, sip, projRate, monthsLeft, false);
+    projCorpusStay = projectCorpus(value, sip, projRate, monthsLeft, true);
+  }
 
   return {
-    invested, value, absReturnPct, ageYears,
+    invested, value, absReturnPct, ageYears, sold,
+    soldValue: sold ? value : null, soldDate: sold ? valueDate : null,
     xirr: rate, xirrPct: rate != null ? rate * 100 : null, xirrSource,
     benchXirr, benchXirrPct: benchXirr != null ? benchXirr * 100 : null, beatsBenchmark,
     targetYear, monthsLeft, projInvested2030, projCorpusStop, projCorpusStay,
@@ -155,6 +167,88 @@ function monthsInclusive(startYm, endYm) {
   const [ay, am] = startYm.split('-').map(Number);
   const [by, bm] = endYm.split('-').map(Number);
   return (by - ay) * 12 + (bm - am) + 1;
+}
+
+// ---------- Paytm Money OCR parsers (pure) ----------
+const _MON3 = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+// "6th Jul 26" / "22nd Jan 26" → "2026-07-06". 2-digit years are 20xx.
+function _mfDate(day, mon, yr) {
+  const d = parseInt(day, 10);
+  const mo = _MON3[String(mon).slice(0, 3).toLowerCase()];
+  let y = parseInt(String(yr).replace(/[^\d]/g, ''), 10);
+  if (!d || !mo || isNaN(y) || d < 1 || d > 31) return null;
+  if (y < 100) y += 2000;
+  return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+
+// Per-fund transaction history screen (Paytm Money): rows of
+// "Buy · <date>" + "<units> / <nav>" + "₹<amount>". Returns
+// [{ date, amount, units, nav, type }] — only 'buy' rows feed contributions.
+// Amount falls back to units×nav when the ₹ figure is misread.
+export function parsePaytmTransactions(text) {
+  const lines = (text || '').split(/\r?\n/).map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const TYPE = /\b(buy|sell|sip|invest|redeem|withdraw|purchase)\b/i;
+  const DATE = /(\d{1,2})\s*(?:st|nd|rd|th)?\s+([A-Za-z]{3,})\.?\s+('?\d{2,4})\b/;
+  const UNITS_NAV = /(\d+(?:\.\d+)?)\s*[\/|]\s*([\d,]+(?:\.\d+)?)/;
+  const AMOUNT = /(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d+)?)/i;
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const dm = lines[i].match(DATE);
+    if (!dm) continue;
+    // Confirm this is a transaction row: a Buy/Sell token on this or the previous line.
+    const tType = (lines[i].match(TYPE) || (lines[i - 1] || '').match(TYPE));
+    if (!tType) continue;
+    const date = _mfDate(dm[1], dm[2], dm[3]);
+    if (!date) continue;
+    let units = null, nav = null, amount = null;
+    for (let k = i; k < Math.min(lines.length, i + 4); k++) {
+      if (units == null) {
+        const un = lines[k].match(UNITS_NAV);
+        if (un) { units = parseFloat(un[1]); nav = parseFloat(un[2].replace(/,/g, '')); }
+      }
+      if (amount == null) {
+        const am = lines[k].match(AMOUNT);
+        if (am) amount = parseFloat(am[1].replace(/,/g, ''));
+      }
+      if (units != null && amount != null) break;
+    }
+    if (amount == null && units != null && nav != null) amount = Math.round(units * nav);
+    if (amount == null || !(amount > 0)) continue;
+    const t = (tType[1] || 'buy').toLowerCase();
+    out.push({ date, amount: Math.round(amount * 100) / 100, units, nav, type: /sell|redeem|withdraw/.test(t) ? 'sell' : 'buy' });
+  }
+  return out;
+}
+
+function _cleanFundName(s) {
+  return (s || '')
+    .replace(/[₹₨$€£]?\s*[\d][\d,]*(?:\.\d+)?\s*%?/g, ' ') // strip embedded amounts/percents
+    .replace(/\s+/g, ' ')
+    .replace(/^[^\p{L}]+|[^\p{L})%]+$/gu, '')
+    .trim();
+}
+
+// Common holdings/summary screen (Paytm Money): best-effort pairing of a fund
+// name line with the ₹ value that follows it → [{ name, value }]. Used only to
+// PRE-FILL the bulk value sheet; the user reviews before saving. Tuned further
+// once a real holdings screenshot is available.
+export function parsePaytmHoldings(text) {
+  const lines = (text || '').split(/\r?\n/).map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const AMT = /(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d+)?)/i;
+  const HAS_NAME = /\p{L}{3,}/u;
+  const LABEL = /^(current|invested|value|returns?|xirr|units?|nav|today|1d|1y|total|gains?|loss|amount|folio|direct|growth|regular)\b/i;
+  const out = [];
+  let name = null;
+  for (const ln of lines) {
+    const looksName = HAS_NAME.test(ln) && !AMT.test(ln) && !LABEL.test(ln) && !/^[\d.,%+\-₹$\s]+$/.test(ln);
+    if (looksName) { name = _cleanFundName(ln); continue; }
+    const am = ln.match(AMT);
+    if (am && name) {
+      const value = parseFloat(am[1].replace(/,/g, ''));
+      if (value > 0) { out.push({ name, value }); name = null; }
+    }
+  }
+  return out;
 }
 
 // ---------- seed data (from the user's Google Sheet "Mutual Fund" tab) ----------
@@ -204,6 +298,10 @@ export function buildSeedFund(seed, nowMs) {
   }
   const value = Math.round(seed.invested * (1 + (Number(seed.returns) || 0)) * 100) / 100;
   const iso = nowDate.toISOString();
+  // Auto-tracked low/high (in %) start at the seed figures and widen as the user
+  // refreshes values over time.
+  const seedRetPct = Math.round((Number(seed.returns) || 0) * 10000) / 100;
+  const seedXirrPct = seed.seedXirrRef != null ? Math.round(seed.seedXirrRef * 10000) / 100 : null;
   return {
     owner: 'me',
     name: seed.name, type: seed.type, category: seed.category,
@@ -215,7 +313,10 @@ export function buildSeedFund(seed, nowMs) {
     contributions,
     valueHistory: [{ ym: curYm, value }],
     valueAsOf: iso.slice(0, 10),
+    soldValue: null, soldDate: null,
     seedXirrRef: seed.seedXirrRef != null ? seed.seedXirrRef : null,
+    xirrLow: seedXirrPct, xirrHigh: seedXirrPct,
+    returnLow: seedRetPct, returnHigh: seedRetPct,
     seeded: true,
     createdAt: iso, updatedAt: iso,
   };
