@@ -62,11 +62,11 @@ Verified (Node, real module): 200 units × ₹150 = ₹30 000 value, return 36.3
 
 ## Benchmark status (mf.js)
 
-Four optional **user-defined** thresholds (`benchReturnLow/High`, `benchXirrLow/High`) — never touched automatically. On every recompute `computeFund` derives `benchStatus`:
+**Return-only** — XIRR does not factor into `benchStatus` at all. On every recompute `computeFund` derives it from `absReturnPct`, in priority order:
 
-- **Below** if current return < `benchReturnLow` **OR** current XIRR < `benchXirrLow`.
-- **Above** if current return > `benchReturnHigh` **OR** current XIRR > `benchXirrHigh`.
-- **Within** otherwise. Below takes precedence (worst case wins) — a fund whose return is under its low bound but whose XIRR is over its high bound reads **Below**. Any blank threshold is skipped; no thresholds → `benchStatus: null`.
+1. **Manual override** — if the user set `benchReturnLow`/`benchReturnHigh` (own aspirational target, never auto-modified), those win: **Below** under the low bound, **Above** over the high bound, **Within** between. A lone bound is the bar to beat (exceeding a lone low bound reads Above, not stuck Within).
+2. **Auto-tracked fallback** (used when no manual return threshold is set — the common case) — compares current return to the fund's own **observed** historical range, `returnLow`/`returnHigh`. These are updated to the running min/max every time a fund's value changes (fund-form save, bulk NAV-update sheet, AMFI online fetch all refresh them in the same write as the new value) — so **Above**/**Below** appear the moment a new all-time high/low return lands, with no separate save step. A ±0.01 epsilon absorbs float noise between the stored and freshly-recomputed value (matters most for a fund with only one data point, where `returnLow === returnHigh`).
+3. No status (`null`) only when there's no invested amount or no observed range yet (fresh/unseeded fund).
 
 `computeFund(fund, nowMs)` returns `{ invested, value, absReturnPct, ageYears, sold, valueSource, totalUnits, avgNav, latestNav, soldValue, soldDate, xirr, xirrPct, xirrSource, benchStatus, beatsBenchmark, benchReturnLowPct, benchReturnHighPct, benchXirrLowPct, benchXirrHighPct, targetYear, monthsLeft, projInvested2030, projCorpusStop, projCorpusStay }`.
 

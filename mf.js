@@ -141,35 +141,44 @@ export function computeFund(fund, nowMs) {
     xirrSource = rate != null ? (sold ? 'realized' : 'computed') : 'none';
   }
 
-  // ---------- benchmark status (user-defined thresholds, never auto-modified) ----------
-  // Four optional thresholds stored as decimals: low/high absolute return, low/high
-  // XIRR. Legacy funds carry a single `benchXirr` → treated as the low XIRR bound.
-  // Per-dimension verdict: Below its low bound, Above its high bound, Within between
-  // both. When only ONE bound is defined for a dimension, that lone bound is the bar
-  // to beat (this is how the legacy single `benchXirr` value was always meant to be
-  // read) — clearing a lone low bound reads Above, not stuck at Within forever;
-  // failing to clear a lone high bound reads Within, not Below.
+  // ---------- benchmark status (return only — XIRR no longer factors in) ----------
+  // A manual return target (benchReturnLow/High, user-defined, never auto-modified)
+  // wins when the user has set one. Otherwise this falls back to the fund's own
+  // auto-tracked historical range (returnLow/returnHigh — updated every time the
+  // value changes, in every NAV-update path), so status always reflects reality
+  // without requiring a separate manual "benchmark" to be saved first: hitting a
+  // new all-time-high return reads Above the moment that NAV update lands.
   const th = (v) => (v != null && v !== '' ? Number(v) : null);
   const benchRetLo = th(fund.benchReturnLow), benchRetHi = th(fund.benchReturnHigh);
+  // No longer used for benchStatus (return-only now), but still read for the
+  // projection-rate fallback below and returned to the UI's Benchmark tab readout.
   const benchXirrLo = th(fund.benchXirrLow != null && fund.benchXirrLow !== '' ? fund.benchXirrLow : fund.benchXirr);
   const benchXirrHi = th(fund.benchXirrHigh);
-  const retDec = invested > 0 ? (value - invested) / invested : null;
-  const xirrDec = rate;
-  const dimVerdict = (lo, hi, val) => {
-    if (val == null) return null;
-    if (lo != null && val < lo) return 'below';
-    if (hi != null && val > hi) return 'above';
-    if (lo != null && hi == null) return 'above';   // lone low bound cleared → beats it
-    if (hi != null && lo == null) return 'within';  // lone high bound not exceeded
-    if (lo != null && hi != null) return 'within';
-    return null;
-  };
-  const retVerdict = dimVerdict(benchRetLo, benchRetHi, retDec);
-  const xirrVerdict = dimVerdict(benchXirrLo, benchXirrHi, xirrDec);
   let benchStatus = null;
-  if (retVerdict != null || xirrVerdict != null) {
-    benchStatus = (retVerdict === 'below' || xirrVerdict === 'below') ? 'below'
-      : (retVerdict === 'above' || xirrVerdict === 'above') ? 'above' : 'within';
+  if (invested > 0) {
+    if (benchRetLo != null || benchRetHi != null) {
+      const loP = benchRetLo != null ? benchRetLo * 100 : null;
+      const hiP = benchRetHi != null ? benchRetHi * 100 : null;
+      if (loP != null && absReturnPct < loP) benchStatus = 'below';
+      else if (hiP != null && absReturnPct > hiP) benchStatus = 'above';
+      else if (loP != null && hiP == null) benchStatus = 'above';   // lone low bound cleared → beats it
+      else benchStatus = 'within';
+    } else {
+      const obsLo = fund.returnLow != null ? Number(fund.returnLow) : null;
+      const obsHi = fund.returnHigh != null ? Number(fund.returnHigh) : null;
+      if (obsLo != null && obsHi != null) {
+        // >= / <= (not strict, with a small epsilon): matching your own best/worst
+        // -ever return IS the Above/Below moment, not something that needs to be
+        // exceeded further. The epsilon absorbs float noise between the value
+        // stored at the last save and the value recomputed live right now — a
+        // fund with only one data point (returnLow === returnHigh) would otherwise
+        // flip between Above/Below on sub-cent rounding differences.
+        const EPS = 0.01;
+        if (absReturnPct >= obsHi - EPS) benchStatus = 'above';
+        else if (absReturnPct <= obsLo + EPS) benchStatus = 'below';
+        else benchStatus = 'within';
+      }
+    }
   }
   const beatsBenchmark = benchStatus === 'above' ? true : benchStatus === 'below' ? false : null;
 

@@ -1701,15 +1701,23 @@ async function renderMF() {
   // metricPct (c.absReturnPct / c.xirrPct from mf.js) is percent-number already and
   // must NOT be multiplied or divided again — that double-conversion was the bug
   // behind "79.27% shows as 0.79%".
+  // Low/high bound: the user's manual target wins when set (same priority as
+  // mf.js's benchStatus); otherwise falls back to the fund's own auto-tracked
+  // historical range (returnLow/High, xirrLow/High) so the graph always reflects
+  // reality — no stale bound left behind after a new all-time high/low lands.
   const createBenchViz = (funds, metricPct, metricKey, colorScheme) => {
     const container = el('div', { class: 'mf-bench-list' });
     funds.forEach(({ f, c }) => {
-      const lowKey = metricKey === 'return' ? 'benchReturnLow' : 'benchXirrLow';
-      const highKey = metricKey === 'return' ? 'benchReturnHigh' : 'benchXirrHigh';
-      const hasLowBench = f[lowKey] != null;
-      const hasHighBench = f[highKey] != null;
-      const low = hasLowBench ? (f[lowKey] * 100) : 0;
-      const high = hasHighBench ? (f[highKey] * 100) : (metricKey === 'return' ? 30 : 15);
+      const manualLowKey = metricKey === 'return' ? 'benchReturnLow' : 'benchXirrLow';
+      const manualHighKey = metricKey === 'return' ? 'benchReturnHigh' : 'benchXirrHigh';
+      const obsLowKey = metricKey === 'return' ? 'returnLow' : 'xirrLow';
+      const obsHighKey = metricKey === 'return' ? 'returnHigh' : 'xirrHigh';
+      const manualLow = f[manualLowKey] != null ? f[manualLowKey] * 100 : null;
+      const manualHigh = f[manualHighKey] != null ? f[manualHighKey] * 100 : null;
+      const obsLow = f[obsLowKey] != null ? Number(f[obsLowKey]) : null;
+      const obsHigh = f[obsHighKey] != null ? Number(f[obsHighKey]) : null;
+      const low = manualLow != null ? manualLow : (obsLow != null ? obsLow : 0);
+      const high = manualHigh != null ? manualHigh : (obsHigh != null ? obsHigh : (metricKey === 'return' ? 30 : 15));
       const current = metricPct || 0;
       // At the high threshold = all-time high (🏆, green). At the low threshold =
       // all-time low (🔻, red). Peak wins if somehow both (degenerate zero range).
