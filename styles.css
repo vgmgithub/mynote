@@ -1000,9 +1000,9 @@ html[data-theme="light"] .mf-value-card.negative {
 .mf-bench-low, .mf-bench-high { color: var(--muted); flex: 0 0 auto; min-width: 35px; }
 .mf-bench-low { text-align: right; }
 .mf-bench-high { text-align: left; }
-.mf-bench-track { flex: 1; height: 24px; background: var(--card-2); border-radius: 12px; position: relative; overflow: hidden; }
-.mf-bench-fill { position: absolute; left: 0; top: 0; height: 100%; background: linear-gradient(90deg, rgba(52,211,153,0.2), rgba(52,211,153,0.3)); border-radius: 12px; display: flex; align-items: center; justify-content: flex-end; padding-right: 4px; }
-.mf-bench-marker { font-size: 1rem; cursor: default; filter: drop-shadow(0 0 2px rgba(0,0,0,0.2)); }
+.mf-bench-track { flex: 1; height: 24px; background: var(--card-2); border-radius: 12px; position: relative; overflow: visible; }
+.mf-bench-fill { position: absolute; left: 0; top: 0; height: 100%; background: linear-gradient(90deg, rgba(52,211,153,0.2), rgba(52,211,153,0.3)); border-radius: 12px 0 0 12px; }
+.mf-bench-marker { position: absolute; top: 50%; transform: translate(-50%, -50%); font-size: 1.1rem; cursor: default; filter: drop-shadow(0 0 2px rgba(0,0,0,0.2)); z-index: 2; }
 .mf-bench-marker.pos { color: var(--good); }
 .mf-bench-marker.neg { color: var(--bad); }
 .mf-bench-current { font-weight: 600; min-width: 50px; text-align: right; }

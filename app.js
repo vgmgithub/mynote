@@ -1565,8 +1565,8 @@ async function renderMF() {
   if (!viewSold) cells.push(_mfCell('Proj. 2030 · stay', fmtCur(projStay, 'INR')));
   cells.push(_mfCell(viewSold ? 'Sold funds' : 'Funds', String(list.length)));
 
-  // Summary is common to both tabs — rendered above the tab content below.
-  const summarySec = el('section', { class: 'summary' }, [
+  // Summary is common to Holdings/Overview tabs only (hidden for Benchmark tab).
+  const summarySec = el('section', { class: 'summary' + (_mfTab === 'benchmark' ? ' hidden' : '') }, [
     el('div', { class: 'label', text: viewSold ? 'Realized value' : 'Current value' }),
     el('div', { class: 'big', text: fmtCur(totVal, 'INR') }),
     el('div', { class: 'grid' }, cells),
@@ -1676,35 +1676,33 @@ async function renderMF() {
     }
   }
 
-  // Benchmark tab content: visual range of benchmark thresholds vs current return
+  // Benchmark tab content: visual range of benchmark thresholds vs current return (all funds)
   if (heldRows.length > 0) {
     const benchList = el('div', { class: 'mf-bench-list' });
     heldRows.forEach(({ f, c }) => {
       const hasLowBench = f.benchReturnLow != null;
       const hasHighBench = f.benchReturnHigh != null;
-      if (!hasLowBench && !hasHighBench) return; // skip if no benchmarks set
-      const low = (f.benchReturnLow || 0) * 100;
-      const high = (f.benchReturnHigh || 100) * 100;
+      const low = hasLowBench ? (f.benchReturnLow * 100) : 0;
+      const high = hasHighBench ? (f.benchReturnHigh * 100) : 30; // default ceiling 30% if no high bench
       const current = c.absReturnPct || 0;
-      // Clamp current to range for visual positioning
-      const clamped = Math.max(low, Math.min(high, current));
-      const pct = (clamped - low) / (high - low) * 100;
+      // Calculate position within the full range (low to high)
+      const range = high - low;
+      const position = ((current - low) / range) * 100;
+      const clampedPct = Math.max(0, Math.min(100, position)); // position as % of bar width
       benchList.appendChild(el('div', { class: 'mf-bench-row' }, [
         el('div', { class: 'mf-bench-name' }, f.name),
         el('div', { class: 'mf-bench-bar' }, [
           el('span', { class: 'mf-bench-low', text: fmtPct(low / 100) }),
           el('div', { class: 'mf-bench-track' }, [
-            el('div', { class: 'mf-bench-fill', style: `width:${pct}%` }, [
-              el('span', { class: 'mf-bench-marker ' + pctClass(current), title: 'Current: ' + fmtPct(current / 100), text: '◆' }),
-            ]),
+            el('div', { class: 'mf-bench-fill', style: `width:${clampedPct}%` }),
+            el('span', { class: 'mf-bench-marker ' + pctClass(current), style: `left:${clampedPct}%`, title: 'Current: ' + fmtPct(current / 100), text: '◆' }),
           ]),
           el('span', { class: 'mf-bench-high', text: fmtPct(high / 100) }),
         ]),
         el('div', { class: 'mf-bench-current ' + pctClass(current), text: fmtPct(current / 100) }),
       ]));
     });
-    if (benchList.childElementCount > 0) benchContent.appendChild(benchList);
-    else benchContent.appendChild(el('p', { class: 'hint', text: 'No benchmarks set. Edit funds to set return thresholds on the Benchmark tab.' }));
+    benchContent.appendChild(benchList);
   }
 
   // Assemble the view — summary common (both tabs), then the active tab's content.
