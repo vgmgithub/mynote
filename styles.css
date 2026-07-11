@@ -1015,25 +1015,41 @@ html[data-theme="light"] .mf-value-card.negative {
 
 /* Gradient colors for different benchmark metrics */
 :root {
-  --bench-ret-low: #be123c;    /* Wine red for poor return */
-  --bench-ret-high: #047857;   /* Forest green for good return */
-  --bench-xirr-low: #ea580c;   /* Orange for poor XIRR */
-  --bench-xirr-high: #d97706;  /* Amber for good XIRR */
+  --bench-ret-low: #ff6b6b;    /* Light coral/red for poor return */
+  --bench-ret-high: #51cf66;   /* Light green for good return */
+  --bench-xirr-low: #fb923c;   /* Light orange for poor XIRR */
+  --bench-xirr-high: #fcd34d;  /* Light yellow for good XIRR */
 }
 
 html[data-theme="light"] {
-  --bench-ret-low: #7f1d1d;
-  --bench-ret-high: #065f46;
-  --bench-xirr-low: #b45309;
-  --bench-xirr-high: #92400e;
+  --bench-ret-low: #f87171;
+  --bench-ret-high: #4ade80;
+  --bench-xirr-low: #f97316;
+  --bench-xirr-high: #fbbf24;
+}
+
+@keyframes gradientShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
 }
 
 .mf-bench-track.ret .mf-bench-fill {
-  background: linear-gradient(90deg, var(--bench-ret-low), var(--bench-ret-high));
+  background: linear-gradient(90deg, var(--bench-ret-low), var(--bench-ret-high), var(--bench-ret-low));
+  background-size: 200% 100%;
+  animation: gradientShift 3s ease-in-out infinite;
 }
 
 .mf-bench-track.xirr .mf-bench-fill {
-  background: linear-gradient(90deg, var(--bench-xirr-low), var(--bench-xirr-high));
+  background: linear-gradient(90deg, var(--bench-xirr-low), var(--bench-xirr-high), var(--bench-xirr-low));
+  background-size: 200% 100%;
+  animation: gradientShift 3s ease-in-out infinite;
 }
 
 .mf-bench-marker { color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.3); }
