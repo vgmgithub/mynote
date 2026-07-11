@@ -1648,11 +1648,9 @@ function _mfCard(f, c) {
         el('div', { class: 'meta-line', text: 'Return' }),
       ]),
     ]),
-    el('div', { class: 'sub' }, [
+    el('div', { class: 'sub mf-sub3' }, [
       el('span', {}, ['Invested ', b(fmtCur(c.invested, 'INR'))]),
       el('span', {}, [(c.sold ? 'Sold for ' : 'Value '), b(fmtCur(c.value, 'INR'))]),
-    ]),
-    el('div', { class: 'sub' }, [
       el('span', {}, [xirrLabel + ' ', el('b', { class: pctClass(c.xirrPct || 0) }, [xirrTxt])]),
     ]),
   ]);

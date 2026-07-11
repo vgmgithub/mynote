@@ -914,6 +914,10 @@ body.locked { overflow: hidden; }
 .mf-view .stock-list { padding-bottom: 20px; }
 .mf-catline { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .mf-beat { font-size: 0.62rem; padding: 1px 6px; }
+/* Invested · Value · XIRR on one line — XIRR pinned to the right end */
+.card .sub.mf-sub3 { gap: 8px; font-size: 0.78rem; }
+.card .sub.mf-sub3 span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card .sub.mf-sub3 span:last-child { margin-left: auto; text-align: right; }
 .mf-actions { margin-top: 10px; }
 .mf-value-list { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 4px; max-height: 46vh; overflow-y: auto; }
 .mf-value-row { display: flex; align-items: center; gap: 10px; }
