@@ -34,7 +34,7 @@ Key `id` (auto-increment), index `owner` (currently only `'me'` — room for a w
   benchReturnLow, benchReturnHigh,
   benchXirrLow, benchXirrHigh,   // legacy single `benchXirr` is read as benchXirrLow
   goodReturn, judgeAfter, remarks,
-  contributions: [{ date:'YYYY-MM-DD', amount, units, nav, notes }],  // dated buys; units→totalUnits, amount→invested, nav per-unit, notes free text
+  contributions: [{ date:'YYYY-MM-DD', amount, units, nav, type }],  // dated buys (type omitted/'buy') and partial sells (type:'sell'); a sell reduces units/invested via average-cost-basis (mf.js's _rollup) and is a POSITIVE XIRR cashflow
   valueHistory: [{ ym:'YYYY-MM', value }],         // FALLBACK value when a fund has no units yet (seeded/legacy)
   valueAsOf: 'YYYY-MM-DD',
   soldValue, soldDate,           // set when status='Sold' (realized XIRR terminal)
@@ -46,13 +46,13 @@ Key `id` (auto-increment), index `owner` (currently only `'me'` — room for a w
 }
 ```
 
-- `invested` = Σ contributions.amount; `totalUnits` = Σ contributions.units; `avgNav` = invested ÷ totalUnits — all **derived** (never stored → no drift).
+- `invested`/`totalUnits` are **derived** (never stored → no drift) by processing `contributions` chronologically: a **buy** adds `amount`/`units`; a **sell** removes `units` and reduces `invested` proportionally (average-cost-basis — a partial redemption doesn't leave the remaining units looking like a paper loss). `avgNav` = invested ÷ totalUnits, of the units still held.
 - **Current value** = `totalUnits × latestNav` when both are known (`valueSource: 'nav'`), else the last `valueHistory` entry (`valueSource: 'manual'`, for seeded/legacy funds with no units), else `soldValue` for sold funds. This is the one design pivot: the periodic update is now a single **latest NAV** per fund, not a hand-typed value.
 - **Storage:** ~5 KB/fund over 10 yr; ~55 KB for 11 funds — flat, like `monthly`/`feed`.
 
 ## XIRR (mf.js)
 
-`xirr(cashflows)` — annualised IRR over irregular dated cashflows (Newton-Raphson from several seeds, bisection fallback). Needs both signs. **No daily NAV** — only (a) each investment dated, and (b) one terminal value:
+`xirr(cashflows)` — annualised IRR over irregular dated cashflows (Newton-Raphson from several seeds, bisection fallback). Needs both signs. **No daily NAV** — only (a) each investment dated (buys negative, partial-sell rows positive), and (b) one terminal value:
 
 - **Held fund:** terminal = current value (`totalUnits × latestNav`, or the `valueHistory` fallback) at `navAsOf`.
 - **Sold fund:** terminal = `soldValue` at `soldDate` → *realized* XIRR (`xirrSource: 'realized'`). Projections are `null`.
@@ -81,11 +81,14 @@ Verified (Node, real module): 200 units × ₹150 = ₹30 000 value, return 36.3
   - **Overview** — the summary card (*Current value / Invested / Overall gain / Portfolio XIRR / Above benchmark / Proj 2030* for Investing; *Realized value / Realized gain / Realized XIRR / Sold funds* for Sold) + **Allocation by type** (`.bar-row`).
 - **Fund cards** (`.card`) — name, type · status, **benchmark status** badge (`above bench` green / `within bench` grey / `below bench` red) or `sold`, XIRR (labelled `XIRR` / `XIRR (sheet)` / `Realized XIRR`), Invested, Value, Return, a value-source tag (*From NAV* / *Value entered*), a **units · avg NAV · latest NAV** line when unit data exists, the auto-tracked observed **Range** line, and remarks.
 - **Update latest NAV** — an icon button (📷) next to the filter/sort row on the Holdings tab, opens `openMfValueSheet()` (see OCR below).
-- **`openFundForm`** — a **three-tab sheet** (`.seg`, plain — not the bottom nav):
-  - **Edit fund** — name, type, category, status, SIP, **Latest NAV / NAV as of**, sold value/date (when Status=Sold), good return, target year, remarks. (Current-value, single-benchmark-XIRR, benchmark-name and judge-after inputs were removed — value comes from NAV, benchmark from its own tab; the removed fields' stored values are preserved through save.)
-  - **Fund Holdings** — the investment log (each row is two lines: **date · amount invested**, then **units purchased · NAV**; leave units *or* NAV blank and it derives from the other two on blur) + a 📷 icon bottom-right for OCR import. (Per-transaction notes were dropped.)
-  - **Benchmark** — the four user-defined thresholds (low/high return, low/high XIRR) + a live readout of current return/XIRR and the resulting Below/Within/Above badge.
-  - On save: `buildRec()` gathers all three tabs; `computeFund` then updates `xirrLow/High` and `returnLow/High` (the observed auto min/max — separate from the benchmark thresholds); `seeded` is cleared. `valueHistory` is preserved untouched as the fallback value.
+- **`openFundForm`** — a **three-tab sheet** (`.seg`, plain — not the bottom nav). The sheet's `<h2>` shows the **fund's name** when editing (just "Add fund" when creating one) rather than a generic "Edit fund" label, and has a fixed Save/Delete/Cancel footer (`.sheet.has-fixed-footer`) — Delete only renders on the Edit fund tab.
+  - **Edit fund** — name, type, category, status, SIP, **Latest NAV / NAV as of**, sold value/date (when Status=Sold), good return, target year, remarks.
+  - **Fund Holdings** (`buildContribEditor`) — its own **Buy | Sell** sub-tabs (`.seg`, Buy default). No label/hint above the log anymore.
+    - **Buy** — the investment log (each row is two lines: **date · amount invested**, then **units purchased · NAV**; leave any one of the three blank and it derives from the other two on blur) + **+ Add investment** + **Generate SIP schedule**.
+    - **Sell** — a separate log of partial redemptions (each row: **date · proceeds received**, then **units sold · NAV**; units sold is the one required field) + **+ Add sale**. A sell reduces `totalUnits`/`invested` via average-cost-basis and is a positive XIRR cashflow (money back), independent of the full-redemption `soldValue`/`soldDate`/Status=Sold flow for exiting a fund entirely.
+    - Both sub-tabs share one `refs` array under the hood, so `collect()` returns a single combined, date-sorted log tagged by `type`; **Generate SIP schedule** only wipes Buy rows, never Sell rows.
+  - **Benchmark** — the four user-defined thresholds (low/high return, low/high XIRR) + a live readout of current return/XIRR and the resulting Below/Within/Above badge. These bands widen (never narrow) automatically on NAV update — see Benchmark status above.
+  - On save: `buildRec()` gathers all three tabs; `computeFund` then updates `xirrLow/High` and `returnLow/High` (the observed auto min/max — separate from the benchmark thresholds) and runs `widenBenchBands`; `seeded` is cleared. `valueHistory` is preserved untouched as the fallback value.
 
 ## Online NAV fetch (AMFI via mfapi.in — free, no key)
 
@@ -100,7 +103,7 @@ The **☁️ secondary FAB** (next to + on the MF surface, `#mfFetchBtn` → `fe
 
 Reuses `ocr.js` (`ocrImages` — shared Tesseract worker) and pure parsers in `mf.js`. Neither persists the image; only parsed numbers reach the app.
 
-- **Per-fund transaction import** — *removed from the UI.* The 📷 icon on the fund form's Fund Holdings tab (and its `_mfOcrTransactions` handler) was dropped at the user's request; investments are logged by hand there now. `parsePaytmTransactions(text)` and `editor.merge()` remain in the code, just no longer wired to a button.
+- **Per-fund transaction import** — *removed from the UI.* The 📷 icon on the fund form's Fund Holdings tab (and its `_mfOcrTransactions` handler) was dropped at the user's request; investments are logged by hand (Buy/Sell sub-tabs) there now. `parsePaytmTransactions(text)` remains in mf.js unused; `buildContribEditor`'s `merge()` was removed along with the button since nothing called it.
 - **Bulk latest-NAV update** (`📷 Update latest NAV` on the Holdings tab → `openMfValueSheet`). A grid of every **held** fund with an editable **latest NAV** (pre-filled with the fund's stored `latestNav`); each row shows `units → derived value` live. `📷 Scan holdings screenshot` runs `parsePaytmHoldings(text)`, fuzzy-matches funds (`_findFundMatch`), and pre-fills **NAV = parsed current value ÷ known total units** (so it needs units logged). Save stores `latestNav` + `navAsOf` per filled fund and refreshes the observed auto min/max. Works fully by manual entry. `parsePaytmHoldings` is best-effort until a real holdings screenshot is captured.
 
 ## Seeding (once)

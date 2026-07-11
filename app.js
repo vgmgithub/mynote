@@ -1841,20 +1841,25 @@ function _mfCard(f, c) {
   return card;
 }
 
-// Dated-investment editor: rows of { date, amount, units, nav, notes }. Units +
-// amount drive total-units and invested; NAV is per-unit (auto-derived from
-// amount/units when left blank). Powers XIRR and the units × latest-NAV value.
+// Dated-investment editor: rows of { date, amount, units, nav, type }, type is
+// 'buy' (default) or 'sell'. Units + amount drive total-units and invested (a
+// sell reduces both, via average-cost-basis in mf.js); NAV is per-unit
+// (auto-derived from amount/units when left blank). Powers XIRR and the
+// units × latest-NAV value. Buy and Sell are separate sub-tabs (Buy default) -
+// one shared `refs` array backs both so collect() sees a single combined log.
 function buildContribEditor(contributions, getSip) {
-  const rowsWrap = el('div', { class: 'hist-rows mf-txn-rows' });
+  const buyRowsWrap = el('div', { class: 'hist-rows mf-txn-rows' });
+  const sellRowsWrap = el('div', { class: 'hist-rows mf-txn-rows' });
   const refs = [];
-  const addRow = (date, amount, units, nav) => {
+  const addRow = (date, amount, units, nav, type) => {
+    const isSell = type === 'sell';
     const d = el('input', { class: 'txn-date', type: 'date', value: date || todayISO() });
-    const amt = el('input', { class: 'txn-amt', type: 'number', inputmode: 'decimal', step: 'any', value: amount != null ? amount : '', placeholder: 'Amount invested ₹' });
-    const u = el('input', { class: 'txn-units', type: 'number', inputmode: 'decimal', step: 'any', value: units != null ? units : '', placeholder: 'Units purchased' });
+    const amt = el('input', { class: 'txn-amt', type: 'number', inputmode: 'decimal', step: 'any', value: amount != null ? amount : '', placeholder: isSell ? 'Proceeds received ₹' : 'Amount invested ₹' });
+    const u = el('input', { class: 'txn-units', type: 'number', inputmode: 'decimal', step: 'any', value: units != null ? units : '', placeholder: isSell ? 'Units sold' : 'Units purchased' });
     const nv = el('input', { class: 'txn-nav', type: 'number', inputmode: 'decimal', step: 'any', value: nav != null ? nav : '', placeholder: 'NAV' });
     const del = el('button', { class: 'icon-btn', type: 'button', text: '×' });
-    // Convenience: fill NAV from amount/units (or units from amount/NAV) when the
-    // third is blank, so a Paytm row where one field was misread still completes.
+    // Convenience: derive whichever of amount/units/NAV is left blank from the
+    // other two, so the user only ever has to type two of the three numbers.
     amt.addEventListener('blur', () => autofill());
     u.addEventListener('blur', () => autofill());
     nv.addEventListener('blur', () => autofill());
@@ -1862,26 +1867,28 @@ function buildContribEditor(contributions, getSip) {
       const a = num(amt.value), uu = num(u.value), vv = num(nv.value);
       if (a != null && uu != null && uu > 0 && vv == null) nv.value = Math.round((a / uu) * 10000) / 10000;
       else if (a != null && vv != null && vv > 0 && uu == null) u.value = Math.round((a / vv) * 10000) / 10000;
+      else if (uu != null && vv != null && a == null) amt.value = Math.round(uu * vv * 100) / 100;
     }
-    const ref = { d, amt, u, nv, removed: false };
+    const ref = { d, amt, u, nv, type: isSell ? 'sell' : 'buy', removed: false };
     // Two tidy lines: (date · amount) then (units · NAV); delete sits on line 1.
-    const row = el('div', { class: 'mf-txn-row' }, [
+    const row = el('div', { class: 'mf-txn-row' + (isSell ? ' mf-txn-row--sell' : '') }, [
       el('div', { class: 'txn-line' }, [d, amt, del]),
       el('div', { class: 'txn-line' }, [u, nv]),
     ]);
     del.addEventListener('click', () => { row.remove(); ref.removed = true; });
     refs.push(ref);
-    rowsWrap.appendChild(row);
+    (isSell ? sellRowsWrap : buyRowsWrap).appendChild(row);
   };
-  (contributions || []).slice().sort((a, b2) => (a.date || '').localeCompare(b2.date || '')).forEach((c) => addRow(c.date, c.amount, c.units, c.nav));
+  (contributions || []).slice().sort((a, b2) => (a.date || '').localeCompare(b2.date || '')).forEach((c) => addRow(c.date, c.amount, c.units, c.nav, c.type));
 
-  const addBtn = el('button', {
+  const lastDateOf = (type) => refs.reduce((max, r) => (!r.removed && r.type === type && r.d.value && r.d.value > (max || '')) ? r.d.value : max, null);
+
+  const addBuyBtn = el('button', {
     class: 'btn ghost small', type: 'button', text: '+ Add investment',
     onclick: () => {
       // Default the new row's date to the latest transaction already logged
       // (not today) - most adds are "the next SIP month", so this saves a tap.
-      const lastDate = refs.reduce((max, r) => (!r.removed && r.d.value && r.d.value > (max || '')) ? r.d.value : max, null);
-      addRow(lastDate, null, null, null);
+      addRow(lastDateOf('buy'), null, null, null, 'buy');
     },
   });
   const genBtn = el('button', {
@@ -1894,49 +1901,56 @@ function buildContribEditor(contributions, getSip) {
       const mod = await import('./mf.js');
       const sched = mod.generateSipSchedule(startYm, sipVal, thisYm());
       if (!sched.length) { toast('Nothing to add for that range'); return; }
-      refs.forEach((r) => (r.removed = true));
-      rowsWrap.innerHTML = '';
-      refs.length = 0;
-      sched.forEach((c) => addRow(c.date, c.amount, null, null));
+      // Wipe existing BUY rows only - a Sell log is a separate history and must
+      // survive a SIP-schedule regenerate untouched.
+      for (let i = refs.length - 1; i >= 0; i--) { if (refs[i].type === 'buy') refs.splice(i, 1); }
+      buyRowsWrap.innerHTML = '';
+      sched.forEach((c) => addRow(c.date, c.amount, null, null, 'buy'));
       toast(sched.length + ' months added - add units/NAV or leave blank, edit On/Off months');
     },
   });
-  const node = el('div', {}, [rowsWrap, el('div', { class: 'btn-row' }, [addBtn, genBtn])]);
+  const addSellBtn = el('button', {
+    class: 'btn ghost small', type: 'button', text: '+ Add sale',
+    onclick: () => addRow(lastDateOf('sell'), null, null, null, 'sell'),
+  });
+
+  const buyTabBtn = el('button', { type: 'button', text: 'Buy', class: 'active' });
+  const sellTabBtn = el('button', { type: 'button', text: 'Sell' });
+  const buyPane = el('div', {}, [buyRowsWrap, el('div', { class: 'btn-row' }, [addBuyBtn, genBtn])]);
+  const sellPane = el('div', { class: 'hidden' }, [sellRowsWrap, el('div', { class: 'btn-row' }, [addSellBtn])]);
+  buyTabBtn.addEventListener('click', () => {
+    buyTabBtn.classList.add('active'); sellTabBtn.classList.remove('active');
+    buyPane.classList.remove('hidden'); sellPane.classList.add('hidden');
+  });
+  sellTabBtn.addEventListener('click', () => {
+    sellTabBtn.classList.add('active'); buyTabBtn.classList.remove('active');
+    sellPane.classList.remove('hidden'); buyPane.classList.add('hidden');
+  });
+
+  const node = el('div', {}, [el('div', { class: 'seg' }, [buyTabBtn, sellTabBtn]), buyPane, sellPane]);
   const collect = () => {
     const out = [];
     for (const r of refs) {
       if (r.removed) continue;
-      const dv = r.d.value, av = num(r.amt.value);
-      if (!dv || av == null) continue;
-      let uu = num(r.u.value), vv = num(r.nv.value);
-      if (uu == null && vv != null && vv > 0) uu = Math.round((av / vv) * 10000) / 10000;
-      if (vv == null && uu != null && uu > 0) vv = Math.round((av / uu) * 10000) / 10000;
-      out.push({
-        date: dv, amount: Math.round(av * 100) / 100,
-        units: uu != null ? uu : null, nav: vv != null ? vv : null,
-      });
+      const dv = r.d.value;
+      let av = num(r.amt.value), uu = num(r.u.value), vv = num(r.nv.value);
+      if (r.type === 'sell') {
+        if (!dv || uu == null) continue; // units sold is the one required field for a sale
+        if (vv == null && av != null && uu > 0) vv = Math.round((av / uu) * 10000) / 10000;
+        if (av == null && vv != null) av = Math.round(uu * vv * 100) / 100;
+        if (av == null) continue; // no proceeds figure derivable yet - skip incomplete row
+        out.push({ date: dv, amount: Math.round(av * 100) / 100, units: uu, nav: vv, type: 'sell' });
+      } else {
+        if (!dv || av == null) continue;
+        if (uu == null && vv != null && vv > 0) uu = Math.round((av / vv) * 10000) / 10000;
+        if (vv == null && uu != null && uu > 0) vv = Math.round((av / uu) * 10000) / 10000;
+        out.push({ date: dv, amount: Math.round(av * 100) / 100, units: uu != null ? uu : null, nav: vv != null ? vv : null, type: 'buy' });
+      }
     }
     out.sort((a, b2) => (a.date || '').localeCompare(b2.date || ''));
     return out;
   };
-  // Merge OCR/imported rows in. Date is the unique key - no fund invests twice a
-  // day - so a matching date updates that row's fields instead of duplicating.
-  const merge = (newRows) => {
-    let added = 0, updated = 0;
-    for (const r of (newRows || [])) {
-      if (!r.date || r.amount == null) continue;
-      const amt = Math.round(Number(r.amount) * 100) / 100;
-      const ex = refs.find((x) => !x.removed && x.d.value === r.date);
-      if (ex) {
-        ex.amt.value = amt;
-        if (r.units != null) ex.u.value = r.units;
-        if (r.nav != null) ex.nv.value = r.nav;
-        updated++;
-      } else { addRow(r.date, amt, r.units, r.nav); added++; }
-    }
-    return { added, updated };
-  };
-  return { node, collect, merge };
+  return { node, collect };
 }
 
 // Widen the user's benchmark bands outward when a freshly computed value crosses
@@ -2073,11 +2087,7 @@ async function openFundForm(existing) {
   editTabContent.appendChild(el('p', { class: 'hint', text: 'Current value = total units × latest NAV. Log each buy (with units) on the Fund Holdings tab, then just refresh the latest NAV here to update value, return, XIRR and benchmark status.' }));
 
   const holdTabContent = el('div', { class: 'tab-content hidden' }, [
-    el('div', { class: 'field' }, [
-      el('label', { text: 'Investment log' }),
-      el('p', { class: 'hint', text: 'Each buy: date · amount invested, then units purchased · NAV. Leave Units or NAV blank and it fills from the other two.' }),
-      contribEditor.node,
-    ]),
+    contribEditor.node,
   ]);
 
   // Benchmark tab: 4 optional thresholds + a live status readout.
@@ -2126,7 +2136,7 @@ async function openFundForm(existing) {
   benchTabBtn.addEventListener('click', () => showTab(tabs[2]));
 
   const scrollChildren = [
-    el('h2', { text: isEdit ? 'Edit fund' : 'Add fund' }),
+    el('h2', { text: isEdit ? (f.name || 'Edit fund') : 'Add fund' }),
     el('div', { class: 'seg' }, [editTabBtn, holdTabBtn, benchTabBtn]),
     editTabContent,
     holdTabContent,

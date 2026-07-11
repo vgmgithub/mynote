@@ -13,13 +13,34 @@ const CLAMP_LO = -0.5;   // projection-rate floor (a −50%/yr fund is already d
 const CLAMP_HI = 0.35;   // projection-rate ceiling (35%/yr is generous long-term)
 
 // ---------- derived totals ----------
-export function investedOf(fund) {
-  return (fund.contributions || []).reduce((s, c) => s + (Number(c.amount) || 0), 0);
+// A partial redemption (type: 'sell') reduces units held and, via average-cost-
+// basis, reduces invested proportionally to the units sold - so a sell doesn't
+// leave a phantom "loss" on units you no longer hold. Must process chronologically
+// (a sell can only draw down units/invested accumulated by then), hence the shared
+// rollup rather than two independent reduces.
+function _rollup(fund) {
+  const rows = (fund.contributions || []).slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  let invested = 0, units = 0;
+  for (const c of rows) {
+    if (c.type === 'sell') {
+      const soldUnits = Math.min(Number(c.units) || 0, units);
+      if (soldUnits > 0 && units > 0) {
+        invested -= (soldUnits / units) * invested;
+        units -= soldUnits;
+      }
+    } else {
+      invested += Number(c.amount) || 0;
+      units += Number(c.units) || 0;
+    }
+  }
+  return { invested, units };
 }
-// Total units held = Σ units across transactions (buys add, sells could subtract
-// but the current model logs buys only; a sold fund realises via soldValue).
+export function investedOf(fund) {
+  return _rollup(fund).invested;
+}
+// Total units currently held = buys minus sells, processed in date order.
 export function totalUnitsOf(fund) {
-  return (fund.contributions || []).reduce((s, c) => s + (Number(c.units) || 0), 0);
+  return _rollup(fund).units;
 }
 // Weighted average purchase NAV = total invested ÷ total units.
 export function avgNavOf(fund) {
@@ -142,7 +163,12 @@ export function computeFund(fund, nowMs) {
     rate = Number(fund.seedXirrRef);
     xirrSource = 'sheet';
   } else if (invested > 0 && value > 0 && times.length) {
-    const cfs = (fund.contributions || []).map((c) => ({ date: c.date, amount: -Math.abs(Number(c.amount) || 0) }));
+    // Buys are money out (negative); a partial-sell row is money back (positive) -
+    // same sign convention as the terminal value pushed on below.
+    const cfs = (fund.contributions || []).map((c) => ({
+      date: c.date,
+      amount: c.type === 'sell' ? Math.abs(Number(c.amount) || 0) : -Math.abs(Number(c.amount) || 0),
+    }));
     cfs.push({ date: valueDate, amount: value });
     rate = xirr(cfs);
     xirrSource = rate != null ? (sold ? 'realized' : 'computed') : 'none';
