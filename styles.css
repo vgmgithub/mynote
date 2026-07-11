@@ -176,7 +176,7 @@ main { padding: 14px; }
 .card .name { font-weight: 600; font-size: 1rem; }
 .card .cat { color: var(--muted); font-size: 0.76rem; margin-top: 2px; }
 .card .pct { font-size: 1.05rem; font-weight: 700; white-space: nowrap; }
-.card .sub { display: flex; justify-content: space-between; gap: 8px; margin-top: 6px; color: var(--muted); font-size: 0.82rem; }
+.card .sub { display: flex; justify-content: space-between; gap: 8px; margin-top: 2px; color: var(--muted); font-size: 0.82rem; }
 .card .sub b { color: var(--text); font-weight: 600; }
 .card .cat { font-size: 0.72rem; }
 .card-left { min-width: 0; flex: 1 1 auto; }
@@ -915,8 +915,10 @@ body.locked { overflow: hidden; }
 .mf-catline { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .mf-beat { font-size: 0.62rem; padding: 1px 6px; }
 /* Invested · Value on one line with Value emphasized */
-.card .sub.mf-sub2 { gap: 8px; font-size: 0.78rem; display: flex; align-items: center; justify-content: space-between; }
-.card .sub.mf-sub2 span { display: flex; align-items: center; gap: 4px; }
+.card .sub.mf-sub2 { gap: 8px; font-size: 0.78rem; display: flex; align-items: flex-start; justify-content: space-between; }
+.card .sub.mf-sub2 span { display: flex; flex-direction: column; gap: 0px; }
+.card .sub.mf-sub2 span:first-child { align-items: flex-start; }
+.card .sub.mf-sub2 span:last-child { align-items: flex-end; }
 .card .sub.mf-sub2 .value-emphasis { font-size: 0.88rem; font-weight: 600; }
 .card .sub.mf-sub2 .value-emphasis .mf-value-card { font-size: 0.82rem; font-weight: 600; padding: 6px 10px; }
 .mf-meta-mini { font-size: 0.68rem; color: var(--muted); margin-top: 2px; }

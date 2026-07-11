@@ -1851,7 +1851,7 @@ function _mfCard(f, c) {
       ]),
     ]),
     el('div', { class: 'sub mf-sub2' }, [
-      el('span', {}, [el('div', {}, ['Invested ', b(fmtCur(c.invested, 'INR'))]), el('div', { class: 'mf-meta-mini' }, [fundStartTxt + ' | ' + lastInvestTxt])]),
+      el('span', {}, [el('div', {}, ['Invested ', b(fmtCur(c.invested, 'INR'))]), el('div', { class: 'mf-meta-mini' }, ['Started ' + fundStartTxt + ' | Last Invested ' + lastInvestTxt])]),
       el('span', { class: 'value-emphasis' }, [(c.sold ? 'Sold for ' : 'Value '), _mfValueCard(c.value, c.invested, c.sold)]),
     ]),
   ]);
