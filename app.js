@@ -2002,23 +2002,6 @@ async function openFundForm(existing) {
     const hi = (prev, v) => v == null ? (prev != null ? prev : null) : (prev == null ? v : Math.max(prev, v));
     rec.xirrLow = lo(f.xirrLow, c2.xirrPct); rec.xirrHigh = hi(f.xirrHigh, c2.xirrPct);
     rec.returnLow = lo(f.returnLow, c2.absReturnPct); rec.returnHigh = hi(f.returnHigh, c2.absReturnPct);
-    // Auto-update benchmark thresholds if current metrics exceed them.
-    // Both sides must be in the SAME unit (decimal, e.g. 0.15 == 15%) — benchReturnLow/High
-    // and benchXirrLow/High are stored as decimals, so convert the computed metrics
-    // (which come back as percent numbers, e.g. 79.27) down to decimals before comparing.
-    // Comparing raw percent-numbers against decimals previously made the "exceeds" check
-    // true for almost any value, silently collapsing both thresholds onto the current
-    // reading every save (the benchmark range would flatten to a single point).
-    const retDec = c2.absReturnPct != null ? c2.absReturnPct / 100 : null;
-    const xirrDec = c2.xirr; // mf.js already returns this as a decimal rate
-    if (retDec != null) {
-      if (rec.benchReturnLow != null && retDec < rec.benchReturnLow) rec.benchReturnLow = retDec;
-      if (rec.benchReturnHigh != null && retDec > rec.benchReturnHigh) rec.benchReturnHigh = retDec;
-    }
-    if (xirrDec != null) {
-      if (rec.benchXirrLow != null && xirrDec < rec.benchXirrLow) rec.benchXirrLow = xirrDec;
-      if (rec.benchXirrHigh != null && xirrDec > rec.benchXirrHigh) rec.benchXirrHigh = xirrDec;
-    }
     if (isEdit) rec.id = f.id;
     await DB.put('funds', rec);
     closeModal();
