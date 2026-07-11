@@ -1775,9 +1775,7 @@ async function openFundForm(existing) {
   const pctInput = (dec, ph) => numInput(dec != null && dec !== '' ? Math.round(Number(dec) * 10000) / 100 : '', ph);
   const sip = numInput(f.sip, 'Monthly SIP ₹ (0 if lumpsum)');
   const targetYear = numInput(f.targetYear || 2030, '2030');
-  const benchmark = el('input', { type: 'text', value: f.benchmark || '', placeholder: 'Benchmark name (optional)' });
   const goodReturn = el('input', { type: 'text', value: f.goodReturn || '', placeholder: 'e.g. 15%+ XIRR' });
-  const judgeAfter = el('input', { type: 'text', value: f.judgeAfter || '', placeholder: 'e.g. 2030' });
   const remarks = el('textarea', { placeholder: 'Your notes' });
   remarks.value = f.remarks || '';
 
@@ -1812,7 +1810,7 @@ async function openFundForm(existing) {
       name: name.value.trim(),
       type: type.value.trim(),
       category: category.value.trim() || 'Equity',
-      benchmark: benchmark.value.trim(),
+      benchmark: f.benchmark || '',       // field removed from form; stored value preserved
       status: status.value,
       sip: num(sip.value) || 0,
       targetYear: num(targetYear.value) || 2030,
@@ -1821,7 +1819,7 @@ async function openFundForm(existing) {
       benchReturnLow: toDec(benchRetLo), benchReturnHigh: toDec(benchRetHi),
       benchXirrLow: toDec(benchXirrLo), benchXirrHigh: toDec(benchXirrHi),
       goodReturn: goodReturn.value.trim(),
-      judgeAfter: judgeAfter.value.trim(),
+      judgeAfter: f.judgeAfter || '',     // field removed from form; stored value preserved
       remarks: remarks.value.trim(),
       contributions,
       valueHistory: (f.valueHistory || []).slice(),   // preserved as the fallback value
@@ -1870,8 +1868,7 @@ async function openFundForm(existing) {
     el('div', { class: 'field-row' }, [field('Status', status), field('Monthly SIP', sip)]),
     el('div', { class: 'field-row' }, [field('Latest NAV', latestNav), field('NAV as of', navAsOf)]),
     soldRow,
-    el('div', { class: 'field-row' }, [field('Benchmark name', benchmark), field('Target year', targetYear)]),
-    el('div', { class: 'field-row' }, [field('Good return', goodReturn), field('Judge after', judgeAfter)]),
+    el('div', { class: 'field-row' }, [field('Good return', goodReturn), field('Target year', targetYear)]),
     field('Remarks', remarks),
   ]);
   editTabContent.appendChild(el('p', { class: 'hint', text: 'Current value = total units × latest NAV. Log each buy (with units) on the Fund Holdings tab, then just refresh the latest NAV here to update value, return, XIRR and benchmark status.' }));
