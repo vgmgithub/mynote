@@ -223,24 +223,30 @@ function _mfDate(day, mon, yr) {
 // Per-fund transaction history screen (Paytm Money): rows of
 // "Buy · <date>" + "<units> / <nav>" + "₹<amount>". Returns
 // [{ date, amount, units, nav, type }] — only 'buy' rows feed contributions.
-// Amount falls back to units×nav when the ₹ figure is misread.
+//
+// Robustness (this is a one-time bulk import, so missing a row hurts): we anchor
+// each transaction on its DATE line and require a financial signal (units/NAV or a
+// ₹ amount) in that row's block — we do NOT require the word "Buy", because OCR
+// frequently mangles it ("8uy", "Buv") or floats it onto a far line, which used to
+// silently drop otherwise-perfect rows. Type defaults to buy; only a nearby
+// sell/redeem token flips it to sell. Amount falls back to units×nav when the ₹ is
+// misread; the inner scan stops at the next date so it can't steal the next row's figures.
 export function parsePaytmTransactions(text) {
   const lines = (text || '').split(/\r?\n/).map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
-  const TYPE = /\b(buy|sell|sip|invest|redeem|withdraw|purchase)\b/i;
-  const DATE = /(\d{1,2})\s*(?:st|nd|rd|th)?\s+([A-Za-z]{3,})\.?\s+('?\d{2,4})\b/;
+  const SELL = /\b(sell|sold|redeem|redemption|withdraw|switch\s*out)\b/i;
+  const DATE = /(\d{1,2})\s*(?:st|nd|rd|th)?[\s,.\-]+([A-Za-z]{3,9})\.?[\s,.\-]+('?\d{2,4})\b/;
   const UNITS_NAV = /(\d+(?:\.\d+)?)\s*[\/|]\s*([\d,]+(?:\.\d+)?)/;
   const AMOUNT = /(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d+)?)/i;
   const out = [];
   for (let i = 0; i < lines.length; i++) {
     const dm = lines[i].match(DATE);
     if (!dm) continue;
-    // Confirm this is a transaction row: a Buy/Sell token on this or the previous line.
-    const tType = (lines[i].match(TYPE) || (lines[i - 1] || '').match(TYPE));
-    if (!tType) continue;
     const date = _mfDate(dm[1], dm[2], dm[3]);
     if (!date) continue;
     let units = null, nav = null, amount = null;
-    for (let k = i; k < Math.min(lines.length, i + 4); k++) {
+    // Scan this transaction's block: date line up to 6 lines, stopping at the next date.
+    for (let k = i; k < Math.min(lines.length, i + 6); k++) {
+      if (k > i && DATE.test(lines[k])) break;   // next transaction begins
       if (units == null) {
         const un = lines[k].match(UNITS_NAV);
         if (un) { units = parseFloat(un[1]); nav = parseFloat(un[2].replace(/,/g, '')); }
@@ -252,9 +258,10 @@ export function parsePaytmTransactions(text) {
       if (units != null && amount != null) break;
     }
     if (amount == null && units != null && nav != null) amount = Math.round(units * nav);
+    // Need a real money signal to count as a transaction (filters stray/header dates).
     if (amount == null || !(amount > 0)) continue;
-    const t = (tType[1] || 'buy').toLowerCase();
-    out.push({ date, amount: Math.round(amount * 100) / 100, units, nav, type: /sell|redeem|withdraw/.test(t) ? 'sell' : 'buy' });
+    const neigh = (lines[i - 1] || '') + ' ' + lines[i] + ' ' + (lines[i + 1] || '');
+    out.push({ date, amount: Math.round(amount * 100) / 100, units, nav, type: SELL.test(neigh) ? 'sell' : 'buy' });
   }
   return out;
 }
