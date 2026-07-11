@@ -144,20 +144,32 @@ export function computeFund(fund, nowMs) {
   // ---------- benchmark status (user-defined thresholds, never auto-modified) ----------
   // Four optional thresholds stored as decimals: low/high absolute return, low/high
   // XIRR. Legacy funds carry a single `benchXirr` → treated as the low XIRR bound.
-  // Status (Below-precedence — the worst case wins, which is conservative for an
-  // investor): Below if current return OR XIRR is under its low bound; Above if
-  // current return OR XIRR is over its high bound; Within otherwise.
+  // Per-dimension verdict: Below its low bound, Above its high bound, Within between
+  // both. When only ONE bound is defined for a dimension, that lone bound is the bar
+  // to beat (this is how the legacy single `benchXirr` value was always meant to be
+  // read) — clearing a lone low bound reads Above, not stuck at Within forever;
+  // failing to clear a lone high bound reads Within, not Below.
   const th = (v) => (v != null && v !== '' ? Number(v) : null);
   const benchRetLo = th(fund.benchReturnLow), benchRetHi = th(fund.benchReturnHigh);
   const benchXirrLo = th(fund.benchXirrLow != null && fund.benchXirrLow !== '' ? fund.benchXirrLow : fund.benchXirr);
   const benchXirrHi = th(fund.benchXirrHigh);
   const retDec = invested > 0 ? (value - invested) / invested : null;
   const xirrDec = rate;
+  const dimVerdict = (lo, hi, val) => {
+    if (val == null) return null;
+    if (lo != null && val < lo) return 'below';
+    if (hi != null && val > hi) return 'above';
+    if (lo != null && hi == null) return 'above';   // lone low bound cleared → beats it
+    if (hi != null && lo == null) return 'within';  // lone high bound not exceeded
+    if (lo != null && hi != null) return 'within';
+    return null;
+  };
+  const retVerdict = dimVerdict(benchRetLo, benchRetHi, retDec);
+  const xirrVerdict = dimVerdict(benchXirrLo, benchXirrHi, xirrDec);
   let benchStatus = null;
-  if ([benchRetLo, benchRetHi, benchXirrLo, benchXirrHi].some((x) => x != null)) {
-    const below = (benchRetLo != null && retDec != null && retDec < benchRetLo) || (benchXirrLo != null && xirrDec != null && xirrDec < benchXirrLo);
-    const above = (benchRetHi != null && retDec != null && retDec > benchRetHi) || (benchXirrHi != null && xirrDec != null && xirrDec > benchXirrHi);
-    benchStatus = below ? 'below' : above ? 'above' : 'within';
+  if (retVerdict != null || xirrVerdict != null) {
+    benchStatus = (retVerdict === 'below' || xirrVerdict === 'below') ? 'below'
+      : (retVerdict === 'above' || xirrVerdict === 'above') ? 'above' : 'within';
   }
   const beatsBenchmark = benchStatus === 'above' ? true : benchStatus === 'below' ? false : null;
 
