@@ -1912,7 +1912,7 @@ function buildContribEditor(contributions, getSip, onChange) {
     (isSell ? sellRowsWrap : buyRowsWrap).appendChild(row);
     refreshSummary(ref.type);
   };
-  (contributions || []).slice().sort((a, b2) => (a.date || '').localeCompare(b2.date || '')).forEach((c) => addRow(c.date, c.amount, c.units, c.nav, c.type));
+  (contributions || []).slice().sort((a, b2) => (b2.date || '').localeCompare(a.date || '')).forEach((c) => addRow(c.date, c.amount, c.units, c.nav, c.type));
   refreshSummary('buy'); refreshSummary('sell'); // covers the empty-fund case (no addRow calls above)
 
   const lastDateOf = (type) => refs.reduce((max, r) => (!r.removed && r.type === type && r.d.value && r.d.value > (max || '')) ? r.d.value : max, null);
@@ -1963,7 +1963,7 @@ function buildContribEditor(contributions, getSip, onChange) {
         out.push({ date: dv, amount: Math.round(av * 100) / 100, units: uu != null ? uu : null, nav: vv != null ? vv : null, type: 'buy' });
       }
     }
-    out.sort((a, b2) => (a.date || '').localeCompare(b2.date || ''));
+    out.sort((a, b2) => (b2.date || '').localeCompare(a.date || ''));
     return out;
   };
   return { node, collect };
