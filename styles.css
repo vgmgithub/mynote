@@ -914,7 +914,12 @@ body.locked { overflow: hidden; }
 .mf-view .stock-list { padding-bottom: 20px; }
 .mf-catline { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .mf-beat { font-size: 0.62rem; padding: 1px 6px; }
-/* Invested · Value · XIRR on one line — XIRR pinned to the right end */
+/* Invested · Value on one line with Value emphasized */
+.card .sub.mf-sub2 { gap: 8px; font-size: 0.78rem; display: flex; align-items: center; justify-content: space-between; }
+.card .sub.mf-sub2 span { display: flex; align-items: center; gap: 4px; }
+.card .sub.mf-sub2 .value-emphasis { font-size: 0.88rem; font-weight: 600; }
+.card .sub.mf-sub2 .value-emphasis .mf-value-card { font-size: 0.95rem; font-weight: 700; padding: 10px 14px; }
+/* Legacy: Invested · Value · XIRR on one line — XIRR pinned to the right end */
 .card .sub.mf-sub3 { gap: 8px; font-size: 0.78rem; }
 .card .sub.mf-sub3 span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card .sub.mf-sub3 span:last-child { margin-left: auto; text-align: right; }
@@ -955,3 +960,34 @@ body.locked { overflow: hidden; }
   border-top: 1px solid var(--line);
 }
 .mf-hold-footer .icon-btn { padding: 8px 10px; }
+
+/* Fund value card with gradient backgrounds */
+.mf-value-card {
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, #10b981, #34d399);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+  display: inline-block;
+}
+
+.mf-value-card.positive {
+  background: linear-gradient(135deg, #10b981, #34d399);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+.mf-value-card.negative {
+  background: linear-gradient(135deg, #ef4444, #f87171);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+}
+
+html[data-theme="light"] .mf-value-card.positive {
+  background: linear-gradient(135deg, #15803d, #22c55e);
+  box-shadow: 0 4px 12px rgba(21, 128, 61, 0.25);
+}
+
+html[data-theme="light"] .mf-value-card.negative {
+  background: linear-gradient(135deg, #dc2626, #ef4444);
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.25);
+}

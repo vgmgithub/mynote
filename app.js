@@ -1623,6 +1623,13 @@ async function renderMF() {
   host.appendChild(ovrvContent);
 }
 
+function _mfValueCard(value, invested, sold) {
+  const gain = value - invested;
+  const isPositive = gain >= 0;
+  const cardClass = 'mf-value-card ' + (isPositive ? 'positive' : 'negative');
+  return el('span', { class: cardClass }, fmtCur(value, 'INR'));
+}
+
 function _mfCard(f, c) {
   const xirrTxt = c.xirrPct != null ? fmtPct(c.xirrPct) : '-';
   // Benchmark status badge (user-defined thresholds → Below / Within / Above).
@@ -1644,14 +1651,13 @@ function _mfCard(f, c) {
         catLine,
       ]),
       el('div', { class: 'card-right' }, [
-        el('div', { class: 'pct ' + pctClass(c.absReturnPct), text: fmtPct(c.absReturnPct) }),
-        el('div', { class: 'meta-line', text: 'Return' }),
+        el('div', { class: 'pct ' + pctClass(c.xirrPct || 0), text: xirrTxt }),
+        el('div', { class: 'meta-line', text: xirrLabel }),
       ]),
     ]),
-    el('div', { class: 'sub mf-sub3' }, [
+    el('div', { class: 'sub mf-sub2' }, [
       el('span', {}, ['Invested ', b(fmtCur(c.invested, 'INR'))]),
-      el('span', {}, [(c.sold ? 'Sold for ' : 'Value '), b(fmtCur(c.value, 'INR'))]),
-      el('span', {}, [xirrLabel + ' ', el('b', { class: pctClass(c.xirrPct || 0) }, [xirrTxt])]),
+      el('span', { class: 'value-emphasis' }, [(c.sold ? 'Sold for ' : 'Value '), _mfValueCard(c.value, c.invested, c.sold)]),
     ]),
   ]);
   return card;
