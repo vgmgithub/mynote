@@ -1691,7 +1691,7 @@ async function renderMF() {
       const hasHighBench = f[highKey] != null;
       const low = hasLowBench ? (f[lowKey] * 100) : 0;
       const high = hasHighBench ? (f[highKey] * 100) : (metricKey === 'return' ? 30 : 15);
-      const current = metric || 0;
+      const current = (metric || 0) * 100; // Convert decimal to percentage form
       const isAtPeak = Math.abs(current - high) < 0.01;
       const range = high - low;
       const position = ((current - low) / range) * 100;
@@ -1727,7 +1727,7 @@ async function renderMF() {
   if (heldRows.length > 0) {
     const xirrList = el('div');
     heldRows.forEach(({ f, c }) => {
-      const vizNode = createBenchViz([{ f, c }], (c.xirrPct || 0) * 100, 'xirr', 'xirr');
+      const vizNode = createBenchViz([{ f, c }], c.xirrPct || 0, 'xirr', 'xirr');
       xirrList.appendChild(vizNode.firstChild);
     });
     benchXirrContent.appendChild(xirrList);
