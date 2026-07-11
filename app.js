@@ -35,6 +35,7 @@ const state = {
 let _mfSort = 'ret';        // 'ret' | 'xirr' | 'inv' | 'name' (default: Return %)
 let _mfFilter = 'investing'; // 'investing' | 'sold' (holding vs redeemed - not SIP status)
 let _mfTab = 'holdings';     // 'holdings' | 'overview' | 'benchmark' (bottom nav)
+let _mfBenchTab = 'returns';  // 'returns' | 'xirr' (sub-tabs within benchmark)
 const MF_TYPES = ['Multi Cap', 'Flexi Cap', 'Large Cap', 'Mid Cap', 'Small Cap', 'Tax Saver', 'Technology', 'Pharma', 'Energy', 'International', 'Index', 'Debt', 'Hybrid'];
 const MF_STATUS = ['Investing', 'Investing On/Off', 'Investing Variable', 'Stopped', 'Sold'];
 
@@ -1676,36 +1677,68 @@ async function renderMF() {
     }
   }
 
-  // Benchmark tab content: visual range of benchmark thresholds vs current return (all funds)
-  if (heldRows.length > 0) {
-    const benchList = el('div', { class: 'mf-bench-list' });
-    heldRows.forEach(({ f, c }) => {
-      const hasLowBench = f.benchReturnLow != null;
-      const hasHighBench = f.benchReturnHigh != null;
-      const low = hasLowBench ? (f.benchReturnLow * 100) : 0;
-      const high = hasHighBench ? (f.benchReturnHigh * 100) : 30;
-      const current = c.absReturnPct || 0;
-      const isAtPeak = Math.abs(current - high) < 0.01; // current equals high threshold (within 0.01%)
-      // Calculate position within the full range (low to high)
+  // Benchmark tab content: sub-tabs for Returns and XIRR with different color schemes
+  const benchRetContent = el('div', { class: 'tab-content' + (_mfBenchTab === 'returns' ? '' : ' hidden') });
+  const benchXirrContent = el('div', { class: 'tab-content' + (_mfBenchTab === 'xirr' ? '' : ' hidden') });
+
+  // Helper to create benchmark visualization with custom gradient
+  const createBenchViz = (funds, metric, metricKey, colorScheme) => {
+    const container = el('div', { class: 'mf-bench-list' });
+    funds.forEach(({ f, c }) => {
+      const lowKey = metricKey === 'return' ? 'benchReturnLow' : 'benchXirrLow';
+      const highKey = metricKey === 'return' ? 'benchReturnHigh' : 'benchXirrHigh';
+      const hasLowBench = f[lowKey] != null;
+      const hasHighBench = f[highKey] != null;
+      const low = hasLowBench ? (f[lowKey] * 100) : 0;
+      const high = hasHighBench ? (f[highKey] * 100) : (metricKey === 'return' ? 30 : 15);
+      const current = metric || 0;
+      const isAtPeak = Math.abs(current - high) < 0.01;
       const range = high - low;
       const position = ((current - low) / range) * 100;
       const clampedPct = Math.max(0, Math.min(100, position));
       const barElements = [
         el('span', { class: 'mf-bench-low', text: fmtPct(low / 100) }),
-        el('div', { class: 'mf-bench-track' }, [
+        el('div', { class: 'mf-bench-track ' + colorScheme }, [
           el('div', { class: 'mf-bench-fill', style: `width:${clampedPct}%` }),
-          el('span', { class: 'mf-bench-marker ' + pctClass(current), style: `left:${clampedPct}%`, title: 'Current: ' + fmtPct(current / 100), text: '◆' }),
+          el('span', { class: 'mf-bench-marker', style: `left:${clampedPct}%;background:linear-gradient(to right, var(--bench-${colorScheme}-low), var(--bench-${colorScheme}-high))`, title: 'Current: ' + fmtPct(current / 100), text: '◆' }),
         ]),
         isAtPeak ? el('span', { class: 'mf-bench-peak', text: '🏆 ' + fmtPct(current / 100), title: 'All-time high!' }) : el('span', { class: 'mf-bench-high', text: fmtPct(high / 100) }),
       ];
-      benchList.appendChild(el('div', { class: 'mf-bench-row' + (isAtPeak ? ' mf-bench-peak-row' : '') }, [
+      container.appendChild(el('div', { class: 'mf-bench-row' + (isAtPeak ? ' mf-bench-peak-row' : ''), style: isAtPeak ? `background:linear-gradient(90deg, rgba(${colorScheme === 'ret' ? '34,197,94' : '251,191,36'},0.1), transparent)` : '' }, [
         el('div', { class: 'mf-bench-name' }, f.name),
         el('div', { class: 'mf-bench-bar' }, barElements),
-        !isAtPeak && el('div', { class: 'mf-bench-current ' + pctClass(current), text: fmtPct(current / 100) }),
+        !isAtPeak && el('div', { class: 'mf-bench-current', style: `color:var(--bench-${colorScheme}-${current < (low + high) / 2 ? 'low' : 'high'})`, text: fmtPct(current / 100) }),
       ]));
     });
-    benchContent.appendChild(benchList);
+    return container;
+  };
+
+  // Returns tab (Red-Green gradient)
+  if (heldRows.length > 0) {
+    const retList = el('div');
+    heldRows.forEach(({ f, c }) => {
+      const vizNode = createBenchViz([{ f, c }], c.absReturnPct || 0, 'return', 'ret');
+      retList.appendChild(vizNode.firstChild);
+    });
+    benchRetContent.appendChild(retList);
   }
+
+  // XIRR tab (Orange-Yellow gradient)
+  if (heldRows.length > 0) {
+    const xirrList = el('div');
+    heldRows.forEach(({ f, c }) => {
+      const vizNode = createBenchViz([{ f, c }], (c.xirrPct || 0) * 100, 'xirr', 'xirr');
+      xirrList.appendChild(vizNode.firstChild);
+    });
+    benchXirrContent.appendChild(xirrList);
+  }
+
+  // Add sub-tabs to Benchmark tab
+  const benchRetBtn = el('button', { class: 'sort-btn' + (_mfBenchTab === 'returns' ? ' active' : ''), type: 'button', text: 'Returns', onclick: () => { _mfBenchTab = 'returns'; renderMF(); } });
+  const benchXirrBtn = el('button', { class: 'sort-btn' + (_mfBenchTab === 'xirr' ? ' active' : ''), type: 'button', text: 'XIRR', onclick: () => { _mfBenchTab = 'xirr'; renderMF(); } });
+  benchContent.appendChild(el('div', { class: 'mf-bench-tabs' }, [benchRetBtn, benchXirrBtn]));
+  benchContent.appendChild(benchRetContent);
+  benchContent.appendChild(benchXirrContent);
 
   // Assemble the view — summary common (both tabs), then the active tab's content.
   host.appendChild(summarySec);
@@ -1932,10 +1965,13 @@ async function openFundForm(existing) {
     const hi = (prev, v) => v == null ? (prev != null ? prev : null) : (prev == null ? v : Math.max(prev, v));
     rec.xirrLow = lo(f.xirrLow, c2.xirrPct); rec.xirrHigh = hi(f.xirrHigh, c2.xirrPct);
     rec.returnLow = lo(f.returnLow, c2.absReturnPct); rec.returnHigh = hi(f.returnHigh, c2.absReturnPct);
-    // Auto-update benchmark thresholds if current return exceeds them
+    // Auto-update benchmark thresholds if current metrics exceed them
     const absRet = c2.absReturnPct || 0;
+    const xirrPct = (c2.xirrPct || 0) * 100;
     if (rec.benchReturnLow != null && absRet < rec.benchReturnLow) rec.benchReturnLow = absRet / 100;
     if (rec.benchReturnHigh != null && absRet > rec.benchReturnHigh) rec.benchReturnHigh = absRet / 100;
+    if (rec.benchXirrLow != null && xirrPct < rec.benchXirrLow) rec.benchXirrLow = xirrPct / 100;
+    if (rec.benchXirrHigh != null && xirrPct > rec.benchXirrHigh) rec.benchXirrHigh = xirrPct / 100;
     if (isEdit) rec.id = f.id;
     await DB.put('funds', rec);
     closeModal();
