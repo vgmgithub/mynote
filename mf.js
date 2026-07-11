@@ -172,8 +172,10 @@ export function computeFund(fund, nowMs) {
     if (benchRetLo != null || benchRetHi != null) {
       const loP = benchRetLo != null ? benchRetLo * 100 : null;
       const hiP = benchRetHi != null ? benchRetHi * 100 : null;
-      if (loP != null && absReturnPct < loP) benchStatus = 'below';
-      else if (hiP != null && absReturnPct > hiP) benchStatus = 'above';
+      // <= / >= (not strict): landing exactly on the target IS the Above/Below
+      // moment, same tie-break as the auto-tracked fallback below.
+      if (loP != null && absReturnPct <= loP) benchStatus = 'below';
+      else if (hiP != null && absReturnPct >= hiP) benchStatus = 'above';
       else if (loP != null && hiP == null) benchStatus = 'above';   // lone low bound cleared → beats it
       else benchStatus = 'within';
     } else {
