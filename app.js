@@ -102,6 +102,15 @@ function isPriceStale(s) {
   return d != null && d >= STALE_PRICE_DAYS;
 }
 
+function formatTimeDuration(days) {
+  if (days == null) return null;
+  if (days < 30) return Math.round(days) + 'd';
+  const months = Math.round(days / 30.44);
+  if (months < 12) return months + 'm';
+  const years = Math.round(days / 365.25);
+  return years + 'y';
+}
+
 function isMonthEndReminderWindow(now) {
   const d = now || new Date();
   const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
@@ -1819,6 +1828,14 @@ function _mfCard(f, c) {
   if (c.sold) catLine.appendChild(el('span', { class: 'badge muted mf-beat', text: 'sold' }));
   if (benchBadge) catLine.appendChild(benchBadge);
   const xirrLabel = c.xirrSource === 'sheet' ? 'XIRR (sheet)' : c.xirrSource === 'realized' ? 'Realized XIRR' : 'XIRR';
+
+  // Calculate fund start date and last invested date
+  const contribDates = (f.contributions || []).filter(c => c.date).map(c => c.date).sort();
+  const fundStartDays = contribDates.length ? daysSince(contribDates[0]) : null;
+  const lastInvestDays = contribDates.length ? daysSince(contribDates[contribDates.length - 1]) : null;
+  const fundStartTxt = fundStartDays != null ? formatTimeDuration(fundStartDays) : '-';
+  const lastInvestTxt = lastInvestDays != null ? formatTimeDuration(lastInvestDays) : '-';
+
   // Balanced card: name + status badge, Return headline (the intuitive number),
   // then Value/XIRR + Invested. Everything else (units, avg/latest NAV, observed
   // range, remarks) lives in the fund form which opens on tap.
@@ -1834,7 +1851,7 @@ function _mfCard(f, c) {
       ]),
     ]),
     el('div', { class: 'sub mf-sub2' }, [
-      el('span', {}, ['Invested ', b(fmtCur(c.invested, 'INR'))]),
+      el('span', {}, [el('div', {}, ['Invested ', b(fmtCur(c.invested, 'INR'))]), el('div', { class: 'mf-meta-mini' }, [fundStartTxt + ' | ' + lastInvestTxt])]),
       el('span', { class: 'value-emphasis' }, [(c.sold ? 'Sold for ' : 'Value '), _mfValueCard(c.value, c.invested, c.sold)]),
     ]),
   ]);

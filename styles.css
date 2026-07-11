@@ -919,6 +919,7 @@ body.locked { overflow: hidden; }
 .card .sub.mf-sub2 span { display: flex; align-items: center; gap: 4px; }
 .card .sub.mf-sub2 .value-emphasis { font-size: 0.88rem; font-weight: 600; }
 .card .sub.mf-sub2 .value-emphasis .mf-value-card { font-size: 0.82rem; font-weight: 600; padding: 6px 10px; }
+.mf-meta-mini { font-size: 0.68rem; color: var(--muted); margin-top: 2px; }
 /* Legacy: Invested · Value · XIRR on one line — XIRR pinned to the right end */
 .card .sub.mf-sub3 { gap: 8px; font-size: 0.78rem; }
 .card .sub.mf-sub3 span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
