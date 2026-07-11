@@ -1681,8 +1681,14 @@ async function renderMF() {
   const benchRetContent = el('div', { class: 'tab-content' + (_mfBenchTab === 'returns' ? '' : ' hidden') });
   const benchXirrContent = el('div', { class: 'tab-content' + (_mfBenchTab === 'xirr' ? '' : ' hidden') });
 
-  // Helper to create benchmark visualization with custom gradient
-  const createBenchViz = (funds, metric, metricKey, colorScheme) => {
+  // Helper to create benchmark visualization with custom gradient.
+  // `metricPct` must already be a percent NUMBER (e.g. 79.27 for 79.27%) — same unit
+  // fmtPct expects. f.benchReturnLow/High and f.benchXirrLow/High are stored as
+  // DECIMALS (e.g. 0.1 for 10%), so those need *100 to reach percent-number form;
+  // metricPct (c.absReturnPct / c.xirrPct from mf.js) is percent-number already and
+  // must NOT be multiplied or divided again — that double-conversion was the bug
+  // behind "79.27% shows as 0.79%".
+  const createBenchViz = (funds, metricPct, metricKey, colorScheme) => {
     const container = el('div', { class: 'mf-bench-list' });
     funds.forEach(({ f, c }) => {
       const lowKey = metricKey === 'return' ? 'benchReturnLow' : 'benchXirrLow';
@@ -1691,24 +1697,25 @@ async function renderMF() {
       const hasHighBench = f[highKey] != null;
       const low = hasLowBench ? (f[lowKey] * 100) : 0;
       const high = hasHighBench ? (f[highKey] * 100) : (metricKey === 'return' ? 30 : 15);
-      const current = (metric || 0) * 100; // Convert decimal to percentage form
+      const current = metricPct || 0;
       const isAtPeak = Math.abs(current - high) < 0.01;
       const range = high - low;
-      const position = ((current - low) / range) * 100;
+      const position = range !== 0 ? ((current - low) / range) * 100 : 100;
       const clampedPct = Math.max(0, Math.min(100, position));
       const barElements = [
-        el('span', { class: 'mf-bench-low', text: fmtPct(low / 100) }),
+        el('span', { class: 'mf-bench-low', text: fmtPct(low) }),
         el('div', { class: 'mf-bench-track ' + colorScheme }, [
           el('div', { class: 'mf-bench-fill', style: `width:${clampedPct}%` }),
-          el('span', { class: 'mf-bench-marker', style: `left:${clampedPct}%`, title: 'Current: ' + fmtPct(current / 100) }),
+          el('span', { class: 'mf-bench-marker', style: `left:${clampedPct}%`, title: 'Current: ' + fmtPct(current) }),
         ]),
-        isAtPeak ? el('span', { class: 'mf-bench-peak', text: fmtPct(current / 100) + ' 🏆', title: 'All-time high!' }) : el('span', { class: 'mf-bench-high', text: fmtPct(high / 100) }),
+        isAtPeak ? el('span', { class: 'mf-bench-peak', text: fmtPct(current) + ' 🏆', title: 'All-time high!' }) : el('span', { class: 'mf-bench-high', text: fmtPct(high) }),
       ];
-      container.appendChild(el('div', { class: 'mf-bench-row' + (isAtPeak ? ' mf-bench-peak-row' : ''), style: isAtPeak ? `background:linear-gradient(90deg, rgba(${colorScheme === 'ret' ? '34,197,94' : '251,191,36'},0.1), transparent)` : '' }, [
+      const rowChildren = [
         el('div', { class: 'mf-bench-name' }, f.name),
         el('div', { class: 'mf-bench-bar' }, barElements),
-        !isAtPeak && el('div', { class: 'mf-bench-current', style: `color:var(--bench-${colorScheme}-${current < (low + high) / 2 ? 'low' : 'high'})`, text: fmtPct(current / 100) }),
-      ]));
+      ];
+      if (!isAtPeak) rowChildren.push(el('div', { class: 'mf-bench-current', style: `color:var(--bench-${colorScheme}-${current < (low + high) / 2 ? 'low' : 'high'})`, text: fmtPct(current) }));
+      container.appendChild(el('div', { class: 'mf-bench-row' + (isAtPeak ? ' mf-bench-peak-row' : '') }, rowChildren));
     });
     return container;
   };
@@ -1965,13 +1972,23 @@ async function openFundForm(existing) {
     const hi = (prev, v) => v == null ? (prev != null ? prev : null) : (prev == null ? v : Math.max(prev, v));
     rec.xirrLow = lo(f.xirrLow, c2.xirrPct); rec.xirrHigh = hi(f.xirrHigh, c2.xirrPct);
     rec.returnLow = lo(f.returnLow, c2.absReturnPct); rec.returnHigh = hi(f.returnHigh, c2.absReturnPct);
-    // Auto-update benchmark thresholds if current metrics exceed them
-    const absRet = c2.absReturnPct || 0;
-    const xirrPct = (c2.xirrPct || 0) * 100;
-    if (rec.benchReturnLow != null && absRet < rec.benchReturnLow) rec.benchReturnLow = absRet / 100;
-    if (rec.benchReturnHigh != null && absRet > rec.benchReturnHigh) rec.benchReturnHigh = absRet / 100;
-    if (rec.benchXirrLow != null && xirrPct < rec.benchXirrLow) rec.benchXirrLow = xirrPct / 100;
-    if (rec.benchXirrHigh != null && xirrPct > rec.benchXirrHigh) rec.benchXirrHigh = xirrPct / 100;
+    // Auto-update benchmark thresholds if current metrics exceed them.
+    // Both sides must be in the SAME unit (decimal, e.g. 0.15 == 15%) — benchReturnLow/High
+    // and benchXirrLow/High are stored as decimals, so convert the computed metrics
+    // (which come back as percent numbers, e.g. 79.27) down to decimals before comparing.
+    // Comparing raw percent-numbers against decimals previously made the "exceeds" check
+    // true for almost any value, silently collapsing both thresholds onto the current
+    // reading every save (the benchmark range would flatten to a single point).
+    const retDec = c2.absReturnPct != null ? c2.absReturnPct / 100 : null;
+    const xirrDec = c2.xirr; // mf.js already returns this as a decimal rate
+    if (retDec != null) {
+      if (rec.benchReturnLow != null && retDec < rec.benchReturnLow) rec.benchReturnLow = retDec;
+      if (rec.benchReturnHigh != null && retDec > rec.benchReturnHigh) rec.benchReturnHigh = retDec;
+    }
+    if (xirrDec != null) {
+      if (rec.benchXirrLow != null && xirrDec < rec.benchXirrLow) rec.benchXirrLow = xirrDec;
+      if (rec.benchXirrHigh != null && xirrDec > rec.benchXirrHigh) rec.benchXirrHigh = xirrDec;
+    }
     if (isEdit) rec.id = f.id;
     await DB.put('funds', rec);
     closeModal();
