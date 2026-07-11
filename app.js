@@ -1698,24 +1698,36 @@ async function renderMF() {
       const low = hasLowBench ? (f[lowKey] * 100) : 0;
       const high = hasHighBench ? (f[highKey] * 100) : (metricKey === 'return' ? 30 : 15);
       const current = metricPct || 0;
+      // At the high threshold = all-time high (🏆, green). At the low threshold =
+      // all-time low (🔻, red). Peak wins if somehow both (degenerate zero range).
       const isAtPeak = Math.abs(current - high) < 0.01;
+      const isAtLow = !isAtPeak && Math.abs(current - low) < 0.01;
       const range = high - low;
       const position = range !== 0 ? ((current - low) / range) * 100 : 100;
       const clampedPct = Math.max(0, Math.min(100, position));
+      const lowLabel = isAtLow
+        ? el('span', { class: 'mf-bench-bottom', text: fmtPct(current) + ' 🔻', title: 'All-time low!' })
+        : el('span', { class: 'mf-bench-low', text: fmtPct(low) });
+      const highLabel = isAtPeak
+        ? el('span', { class: 'mf-bench-peak', text: fmtPct(current) + ' 🏆', title: 'All-time high!' })
+        : el('span', { class: 'mf-bench-high', text: fmtPct(high) });
       const barElements = [
-        el('span', { class: 'mf-bench-low', text: fmtPct(low) }),
+        lowLabel,
         el('div', { class: 'mf-bench-track ' + colorScheme }, [
           el('div', { class: 'mf-bench-fill', style: `width:${clampedPct}%` }),
           el('span', { class: 'mf-bench-marker', style: `left:${clampedPct}%`, title: 'Current: ' + fmtPct(current) }),
         ]),
-        isAtPeak ? el('span', { class: 'mf-bench-peak', text: fmtPct(current) + ' 🏆', title: 'All-time high!' }) : el('span', { class: 'mf-bench-high', text: fmtPct(high) }),
+        highLabel,
       ];
       const rowChildren = [
         el('div', { class: 'mf-bench-name' }, f.name),
         el('div', { class: 'mf-bench-bar' }, barElements),
       ];
-      if (!isAtPeak) rowChildren.push(el('div', { class: 'mf-bench-current', style: `color:var(--bench-${colorScheme}-${current < (low + high) / 2 ? 'low' : 'high'})`, text: fmtPct(current) }));
-      container.appendChild(el('div', { class: 'mf-bench-row' + (isAtPeak ? ' mf-bench-peak-row' : '') }, rowChildren));
+      // The extra current-value cell is redundant when the value is already shown
+      // merged into the peak/low label, so only add it in the normal (mid-range) case.
+      if (!isAtPeak && !isAtLow) rowChildren.push(el('div', { class: 'mf-bench-current', style: `color:var(--bench-${colorScheme}-${current < (low + high) / 2 ? 'low' : 'high'})`, text: fmtPct(current) }));
+      const rowCls = 'mf-bench-row' + (isAtPeak ? ' mf-bench-peak-row' : isAtLow ? ' mf-bench-bottom-row' : '');
+      container.appendChild(el('div', { class: rowCls }, rowChildren));
     });
     return container;
   };

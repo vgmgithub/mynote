@@ -1001,6 +1001,7 @@ html[data-theme="light"] .mf-value-card.negative {
 .mf-bench-low { text-align: right; }
 .mf-bench-high { text-align: left; }
 .mf-bench-peak-row { border-color: var(--good); }
+.mf-bench-bottom-row { border-color: var(--bad); }
 
 /* Benchmark sub-tabs */
 .mf-bench-tabs { display: flex; gap: 8px; margin-bottom: 12px; }
@@ -1043,6 +1044,7 @@ html[data-theme="light"] {
 /* Current % readout — bigger and bolder than the bar itself */
 .mf-bench-current { font-weight: 700; font-size: 1rem; min-width: 60px; text-align: right; }
 .mf-bench-peak { color: var(--good); font-weight: 700; font-size: 1rem; min-width: 90px; text-align: right; }
+.mf-bench-bottom { color: var(--bad); font-weight: 700; font-size: 1rem; min-width: 90px; text-align: right; }
 
 /* Overview tab enhancements */
 .mf-perf-section { margin-bottom: 12px; }
