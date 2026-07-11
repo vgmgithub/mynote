@@ -1534,9 +1534,9 @@ async function renderMF() {
   const list = (viewSold ? soldRows : heldRows).slice();
 
   // Totals over the funds currently shown.
-  let totInv = 0, totVal = 0, projStay = 0, aboveBench = 0, benchCount = 0, wSum = 0, wW = 0;
+  let totInv = 0, totVal = 0, aboveBench = 0, benchCount = 0, wSum = 0, wW = 0;
   list.forEach(({ c }) => {
-    totInv += c.invested; totVal += c.value; projStay += (c.projCorpusStay || 0);
+    totInv += c.invested; totVal += c.value;
     if (c.benchStatus) { benchCount++; if (c.benchStatus === 'above') aboveBench++; }
     if (c.xirr != null && c.value > 0) { wSum += c.xirr * c.value; wW += c.value; }
   });
@@ -1563,8 +1563,6 @@ async function renderMF() {
     _mfCell(viewSold ? 'Realized XIRR' : 'Portfolio XIRR', wXirr != null ? fmtPct(wXirr) : '-', wXirr != null ? pctClass(wXirr) : ''),
     _mfCell('Above benchmark', benchCount ? `${aboveBench} of ${benchCount}` : '-'),
   ];
-  if (!viewSold) cells.push(_mfCell('Proj. 2030 · stay', fmtCur(projStay, 'INR')));
-  cells.push(_mfCell(viewSold ? 'Sold funds' : 'Funds', String(list.length)));
 
   // Summary is common to Holdings/Overview tabs only (hidden for Benchmark tab).
   const summarySec = el('section', { class: 'summary' + (_mfTab === 'benchmark' ? ' hidden' : '') }, [
