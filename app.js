@@ -2263,7 +2263,7 @@ async function openMfValueSheet() {
   ]));
 }
 
-// ---------- online NAV fetch (AMFI via mfapi.in — free, no key, once/day) ----------
+// ---------- online NAV fetch (AMFI via mfapi.in — free, no key, no rate limit) ----------
 // Marketaux can't do Indian MF NAV; AMFI (official) publishes daily and mfapi.in
 // wraps it as CORS-friendly JSON. We resolve each held fund's AMFI scheme code from
 // its name once (preferring Direct + Growth, rejecting IDCW/Regular), cache it on
@@ -2307,11 +2307,6 @@ async function _resolveSchemeCode(fund) {
 
 async function fetchMfNavs() {
   const today = todayISO();
-  const done = await DB.get('meta', 'mfNavFetchedYmd').catch(() => null);
-  if (done && done.value === today) {
-    toast('NAVs already updated today · AMFI publishes once daily');
-    return;
-  }
   const funds = ((await DB.byIndex('funds', 'owner', 'me')) || []).filter((f) => !(f.status === 'Sold' || f.soldDate));
   if (!funds.length) { toast('No holding funds to update'); return; }
   showLoader('Fetching latest NAV…');
@@ -2351,8 +2346,6 @@ async function fetchMfNavs() {
       await DB.put('funds', rec);
       updated++;
     }
-    // Only mark the day done once at least one fund updated (so an all-offline run retries).
-    if (updated) await DB.put('meta', { key: 'mfNavFetchedYmd', value: today });
   } catch (e) {
     hideLoader();
     alert('NAV fetch failed: ' + e.message + '\n\nAre you online? NAV comes from AMFI via mfapi.in.');

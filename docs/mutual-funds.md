@@ -92,8 +92,8 @@ Verified (Node, real module): 200 units × ₹150 = ₹30 000 value, return 36.3
 The **☁️ secondary FAB** (next to + on the MF surface, `#mfFetchBtn` → `fetchMfNavs`) pulls the latest NAV for every held fund. Marketaux (the news API) can't do Indian MF NAVs; **AMFI** publishes them daily and **mfapi.in** wraps that as CORS-friendly JSON, so it works straight from the browser with no backend/key.
 
 - **Scheme resolution:** first run resolves each fund's AMFI scheme code from its name via `GET /mf/search?q=…`, scored to prefer **Direct + Growth** and reject IDCW/Regular (`_scoreScheme`), then **caches `schemeCode`/`schemeName` on the fund** so later runs skip the search.
-- **Update:** `GET /mf/{code}/latest` → sets `latestNav` + `navAsOf` (AMFI's `dd-mm-yyyy` → ISO); value/return/XIRR/benchmark recompute; observed `xirrLow/High` + `returnLow/High` refresh.
-- **Once per day:** guarded by `meta.mfNavFetchedYmd` — a same-day second click just toasts and makes no network call (NAVs publish once daily). The marker is only set once ≥1 fund updated, so an all-offline attempt can retry.
+- **Update:** `GET /mf/{code}/latest` → sets `latestNav` + `navAsOf` (AMFI's `dd-mm-yyyy` → ISO); value/return/XIRR/benchmark recompute; observed `xirrLow/High` + `returnLow/High` refresh; `widenBenchBands` runs too.
+- **No once-per-day gate** — the user removed it (mfapi.in has no stated rate limit), so every click re-fetches all held funds. AMFI itself only publishes once daily, so a same-day re-click typically just confirms the same NAV — harmless, no real limitation to guard against.
 - **Cross-origin** so it bypasses the same-origin service-worker fetch handler; fails gracefully offline. Funds not on AMFI (e.g. ULIPs like HDFC Click2Wealth) are reported as unmatched → set NAV manually.
 
 ## OCR (Paytm Money)
