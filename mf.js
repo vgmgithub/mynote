@@ -210,10 +210,28 @@ function monthsInclusive(startYm, endYm) {
 
 // ---------- Paytm Money OCR parsers (pure) ----------
 const _MON3 = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+// Resolve a (possibly OCR-mangled) month token → 1-12. OCR frequently swaps
+// letters for look-alike digits inside a month ("Jul"→"Ju1", "Jun"→"Jvn"), which
+// used to make the whole transaction unparseable. We (a) undo the common
+// digit→letter confusions, then (b) if the 3-letter prefix still isn't an exact
+// month, accept the nearest month whose prefix differs by at most one character.
+function _monthNum(tok) {
+  if (tok == null) return null;
+  let s = String(tok).toLowerCase().replace(/[^a-z0-9]/g, '');
+  s = s.replace(/0/g, 'o').replace(/1/g, 'l').replace(/5/g, 's').replace(/8/g, 'b').replace(/6/g, 'g').replace(/2/g, 'z');
+  s = s.slice(0, 3);
+  if (_MON3[s] != null) return _MON3[s];
+  let best = null, bestD = 99;
+  for (const n of Object.keys(_MON3)) {
+    let d = 0; for (let j = 0; j < 3; j++) if (s[j] !== n[j]) d++;
+    if (d < bestD) { bestD = d; best = n; }
+  }
+  return bestD <= 1 ? _MON3[best] : null;
+}
 // "6th Jul 26" / "22nd Jan 26" → "2026-07-06". 2-digit years are 20xx.
 function _mfDate(day, mon, yr) {
   const d = parseInt(day, 10);
-  const mo = _MON3[String(mon).slice(0, 3).toLowerCase()];
+  const mo = _monthNum(mon);
   let y = parseInt(String(yr).replace(/[^\d]/g, ''), 10);
   if (!d || !mo || isNaN(y) || d < 1 || d > 31) return null;
   if (y < 100) y += 2000;
@@ -224,50 +242,54 @@ function _mfDate(day, mon, yr) {
 // "Buy · <date>" + "<units> / <nav>" + "₹<amount>". Returns
 // [{ date, amount, units, nav, type }] — only 'buy' rows feed contributions.
 //
-// Robustness (this is a one-time bulk import, so missing a row hurts): we anchor
-// each transaction on its DATE line and require a financial signal (units/NAV or a
-// ₹ amount) in that row's block — we do NOT require the word "Buy", because OCR
-// frequently mangles it ("8uy", "Buv") or floats it onto a far line, which used to
-// silently drop otherwise-perfect rows. Type defaults to buy; only a nearby
-// sell/redeem token flips it to sell. Amount falls back to units×nav when the ₹ is
-// misread; the inner scan stops at the next date so it can't steal the next row's figures.
+// Robustness (this is a one-time bulk import, so a dropped row hurts): we anchor
+// each transaction on its UNITS/NAV VALUE line (e.g. "42.443 / 11.7800"), NOT on
+// its date. The value line is the most reliable thing OCR reads — the digits and
+// the "/" come through cleanly — whereas the date is error-prone ("Jul"→"Ju1"),
+// and anchoring on the date meant a single garbled month silently dropped the whole
+// card (the classic "only 3 of 4 imported" bug). For each value line we then find
+// the amount (same line or the next couple of lines; falls back to units×nav when
+// the ₹ is misread) and the nearest date line at or above it (with fuzzy month
+// parsing via _monthNum). Type defaults to buy; a nearby sell/redeem token flips it.
 export function parsePaytmTransactions(text) {
   const lines = (text || '').split(/\r?\n/).map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
   const SELL = /\b(sell|sold|redeem|redemption|withdraw|switch\s*out)\b/i;
-  const DATE = /(\d{1,2})\s*(?:st|nd|rd|th)?[\s,.\-]+([A-Za-z]{3,9})\.?[\s,.\-]+('?\d{2,4})\b/;
-  const UNITS_NAV = /(\d+(?:\.\d+)?)\s*[\/|]\s*([\d,]+(?:\.\d+)?)/;
-  const AMOUNT = /(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d+)?)/i;
+  // Allow a mangled month token (letters or OCR-substituted digits) — _mfDate/_monthNum validate it.
+  const DATE = /(\d{1,2})\s*(?:st|nd|rd|th)?[\s,.\-]+([A-Za-z0-9]{2,9})\.?[\s,.\-]+('?\d{2,4})\b/;
+  // NAV part must carry a decimal (11.7800) so the header "Units / NAV" (no digits)
+  // and stray fractions like "1 / 3" can't masquerade as a transaction row.
+  const UNITS_NAV = /(\d+(?:\.\d+)?)\s*[\/|]\s*(\d[\d,]*\.\d+)/;
+  const AMOUNT = /(?:₹|rs\.?|inr|z)\s*([\d,]+(?:\.\d+)?)/i;
   const out = [];
-  const debug = { dateMatches: [], parsed: [], skipped: [] };
-  for (let i = 0; i < lines.length; i++) {
-    const dm = lines[i].match(DATE);
-    if (!dm) continue;
-    const date = _mfDate(dm[1], dm[2], dm[3]);
-    if (!date) { debug.skipped.push({ line: lines[i], reason: 'Invalid date' }); continue; }
-    debug.dateMatches.push(date);
-    let units = null, nav = null, amount = null;
-    // Scan this transaction's block: date line up to 6 lines, stopping at the next date.
-    for (let k = i; k < Math.min(lines.length, i + 6); k++) {
-      if (k > i && DATE.test(lines[k])) break;   // next transaction begins
-      if (units == null) {
-        const un = lines[k].match(UNITS_NAV);
-        if (un) { units = parseFloat(un[1]); nav = parseFloat(un[2].replace(/,/g, '')); }
-      }
-      if (amount == null) {
-        const am = lines[k].match(AMOUNT);
-        if (am) amount = parseFloat(am[1].replace(/,/g, ''));
-      }
-      if (units != null && amount != null) break;
+  const debug = { anchors: [], parsed: [], skipped: [] };
+  lines.forEach((ln, idx) => {
+    const m = ln.match(UNITS_NAV);
+    if (!m) return;
+    const units = parseFloat(m[1]);
+    const nav = parseFloat(m[2].replace(/,/g, ''));
+    if (!(nav > 0)) return;
+    debug.anchors.push({ idx, line: ln });
+    // Amount: this line or the next two; else derive from units×nav.
+    let amount = null;
+    for (let k = idx; k <= idx + 2 && k < lines.length; k++) {
+      const am = lines[k].match(AMOUNT);
+      if (am) { amount = parseFloat(am[1].replace(/,/g, '')); break; }
     }
-    if (amount == null && units != null && nav != null) amount = Math.round(units * nav);
-    // Need a real money signal to count as a transaction (filters stray/header dates).
-    if (amount == null || !(amount > 0)) { debug.skipped.push({ date, units, nav, amount, reason: 'No valid amount' }); continue; }
-    const neigh = (lines[i - 1] || '') + ' ' + lines[i] + ' ' + (lines[i + 1] || '');
+    if (amount == null && units && nav) amount = Math.round(units * nav);
+    if (!(amount > 0)) { debug.skipped.push({ line: ln, reason: 'No valid amount' }); return; }
+    // Date: nearest parseable date at or above the value line (up to 5 lines up).
+    let date = null;
+    for (let k = idx; k >= 0 && k >= idx - 5; k--) {
+      const dm = lines[k].match(DATE);
+      if (dm) { const d = _mfDate(dm[1], dm[2], dm[3]); if (d) { date = d; break; } }
+    }
+    if (!date) { debug.skipped.push({ line: ln, reason: 'No date found near value line' }); return; }
+    const neigh = (lines[idx - 2] || '') + ' ' + (lines[idx - 1] || '') + ' ' + (lines[idx] || '');
     const txn = { date, amount: Math.round(amount * 100) / 100, units, nav, type: SELL.test(neigh) ? 'sell' : 'buy' };
     out.push(txn);
     debug.parsed.push(txn);
-  }
-  console.log('OCR Parse Debug:', { totalLines: lines.length, debug });
+  });
+  console.log('OCR Parse Debug:', { totalLines: lines.length, anchors: debug.anchors.length, parsed: debug.parsed.length, skipped: debug.skipped });
   return out;
 }
 
