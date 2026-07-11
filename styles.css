@@ -914,7 +914,6 @@ body.locked { overflow: hidden; }
 .mf-view .stock-list { padding-bottom: 20px; }
 .mf-catline { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .mf-beat { font-size: 0.62rem; padding: 1px 6px; }
-.mf-range { margin-top: 6px; font-size: 0.66rem; color: var(--muted); }
 .mf-actions { margin-top: 10px; }
 .mf-value-list { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 4px; max-height: 46vh; overflow-y: auto; }
 .mf-value-row { display: flex; align-items: center; gap: 10px; }
@@ -930,7 +929,6 @@ body.locked { overflow: hidden; }
 .mf-txn-row input.txn-units, .mf-txn-row input.txn-nav { flex: 1 1 30%; width: auto; }
 .mf-txn-row input.txn-notes { flex: 1 1 100%; width: auto; }
 .mf-txn-row .icon-btn { flex: 0 0 auto; margin-left: auto; }
-.mf-units { margin-top: 6px; font-size: 0.66rem; color: var(--muted); }
 
 /* Benchmark tab live readout */
 .mf-bench-readout { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }

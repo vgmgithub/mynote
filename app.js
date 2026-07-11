@@ -1633,6 +1633,9 @@ function _mfCard(f, c) {
   if (c.sold) catLine.appendChild(el('span', { class: 'badge muted mf-beat', text: 'sold' }));
   if (benchBadge) catLine.appendChild(benchBadge);
   const xirrLabel = c.xirrSource === 'sheet' ? 'XIRR (sheet)' : c.xirrSource === 'realized' ? 'Realized XIRR' : 'XIRR';
+  // Balanced card: name + status badge, XIRR headline, then Value/Return + Invested.
+  // Everything else (units, avg/latest NAV, observed range, remarks) lives in the
+  // fund form which opens on tap.
   const card = el('div', { class: 'card', onclick: () => openFundForm(f) }, [
     el('div', { class: 'top' }, [
       el('div', { class: 'card-left' }, [
@@ -1645,31 +1648,13 @@ function _mfCard(f, c) {
       ]),
     ]),
     el('div', { class: 'sub' }, [
-      el('span', {}, ['Invested ', b(fmtCur(c.invested, 'INR'))]),
       el('span', {}, [(c.sold ? 'Sold for ' : 'Value '), b(fmtCur(c.value, 'INR'))]),
+      el('span', {}, ['Return ', el('b', { class: pctClass(c.absReturnPct) }, [fmtPct(c.absReturnPct)])]),
     ]),
     el('div', { class: 'sub' }, [
-      el('span', {}, ['Return ', el('b', { class: pctClass(c.absReturnPct) }, [fmtPct(c.absReturnPct)])]),
-      el('span', {}, [(c.valueSource === 'manual' ? 'Value entered' : c.valueSource === 'nav' ? 'From NAV' : 'Sold')]),
+      el('span', {}, ['Invested ', b(fmtCur(c.invested, 'INR'))]),
     ]),
   ]);
-  // Units · avg NAV · latest NAV, when unit data is present.
-  if (c.totalUnits > 0) {
-    const parts = [`${c.totalUnits.toFixed(3)} units`];
-    if (c.avgNav != null) parts.push('Avg NAV ' + fmtCur(c.avgNav, 'INR'));
-    if (c.latestNav != null) parts.push('NAV ' + fmtCur(c.latestNav, 'INR'));
-    card.appendChild(el('div', { class: 'meta-line mf-units', text: parts.join(' · ') }));
-  }
-  // Auto-tracked swing range (lowest-highest seen over time), when it has moved.
-  const rng = (lo, hi) => (lo != null && hi != null && Math.abs(hi - lo) >= 0.1) ? `${Number(lo).toFixed(1)}%-${Number(hi).toFixed(1)}%` : null;
-  const xr = rng(f.xirrLow, f.xirrHigh), rr = rng(f.returnLow, f.returnHigh);
-  if (xr || rr) {
-    const parts = [];
-    if (xr) parts.push('XIRR ' + xr);
-    if (rr) parts.push('Return ' + rr);
-    card.appendChild(el('div', { class: 'meta-line mf-range', text: 'Range · ' + parts.join(' · ') }));
-  }
-  if (f.remarks) card.appendChild(el('p', { class: 'note', text: f.remarks }));
   return card;
 }
 
