@@ -1396,6 +1396,7 @@ function setAppMode(mode) {
   $('#bottomNav').classList.toggle('hidden', !isStocks);
   $('#mfBottomNav').classList.toggle('hidden', !isMF);
   $('#mfAddBtn').classList.toggle('hidden', !isMF);
+  $('#mfFetchBtn').classList.toggle('hidden', !isMF);
   $('#backBtn').classList.toggle('hidden', isHome);
   $('#appTitle').innerHTML = isHome ? 'MyNote' : (isMF ? 'Mutual&nbsp;Funds' : 'MyNote&nbsp;Stocks');
   if (isStocks) {
@@ -2086,6 +2087,107 @@ async function openMfValueSheet() {
       el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }),
     ]),
   ]));
+}
+
+// ---------- online NAV fetch (AMFI via mfapi.in — free, no key, once/day) ----------
+// Marketaux can't do Indian MF NAV; AMFI (official) publishes daily and mfapi.in
+// wraps it as CORS-friendly JSON. We resolve each held fund's AMFI scheme code from
+// its name once (preferring Direct + Growth, rejecting IDCW/Regular), cache it on
+// the fund, then pull the latest NAV. One network run per calendar day.
+const MFAPI = 'https://api.mfapi.in';
+
+// dd-mm-yyyy (AMFI) → yyyy-mm-dd.
+function _ddmmyyyyToIso(s) {
+  const m = /(\d{2})-(\d{2})-(\d{4})/.exec(s || '');
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : null;
+}
+
+// Score an mfapi search hit against a fund name. Reject IDCW/dividend plans; prefer
+// Direct + Growth; add core-name token overlap. Higher = better.
+function _scoreScheme(fundName, schemeName) {
+  const s = (schemeName || '').toLowerCase();
+  if (/idcw|dividend|payout|reinvest/.test(s)) return -Infinity;
+  let score = 0;
+  score += /\bdirect\b/.test(s) ? 3 : -3;
+  score += /\bgrowth\b/.test(s) ? 2 : -1;
+  if (/\bregular\b/.test(s)) score -= 3;
+  const strip = (x) => (x || '').toLowerCase().replace(/direct|regular|growth|idcw|dividend|plan|option|fund|the/g, ' ').replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(Boolean);
+  const a = new Set(strip(fundName));
+  for (const t of strip(schemeName)) if (a.has(t)) score += 1;
+  return score;
+}
+
+async function _resolveSchemeCode(fund) {
+  const q = (fund.name || '').replace(/direct|regular|growth|plan|option|[-–—]/gi, ' ').replace(/\s+/g, ' ').trim();
+  const r = await fetch(`${MFAPI}/mf/search?q=${encodeURIComponent(q)}`);
+  if (!r.ok) return null;
+  const list = await r.json();
+  if (!Array.isArray(list) || !list.length) return null;
+  let best = null, bestScore = -Infinity;
+  for (const it of list) {
+    const sc = _scoreScheme(fund.name, it.schemeName || '');
+    if (sc > bestScore) { bestScore = sc; best = it; }
+  }
+  return best && bestScore > 0 ? { code: best.schemeCode, name: best.schemeName } : null;
+}
+
+async function fetchMfNavs() {
+  const today = todayISO();
+  const done = await DB.get('meta', 'mfNavFetchedYmd').catch(() => null);
+  if (done && done.value === today) {
+    toast('NAVs already updated today · AMFI publishes once daily');
+    return;
+  }
+  const funds = ((await DB.byIndex('funds', 'owner', 'me')) || []).filter((f) => !(f.status === 'Sold' || f.soldDate));
+  if (!funds.length) { toast('No holding funds to update'); return; }
+  showLoader('Fetching latest NAV…');
+  const mod = await import('./mf.js');
+  let updated = 0; const unmatched = [];
+  try {
+    for (let i = 0; i < funds.length; i++) {
+      const f = funds[i];
+      setLoader(`Fetching NAV… ${i + 1}/${funds.length}`);
+      let code = f.schemeCode, schemeName = f.schemeName;
+      if (!code) {
+        const m = await _resolveSchemeCode(f).catch(() => null);
+        if (!m) { unmatched.push(f.name); continue; }
+        code = m.code; schemeName = m.name;
+      }
+      let navVal = null, navDate = null;
+      try {
+        const r = await fetch(`${MFAPI}/mf/${code}/latest`);
+        if (r.ok) {
+          const j = await r.json();
+          const d = j && j.data && j.data[0];
+          if (d && d.nav) { navVal = parseFloat(d.nav); navDate = _ddmmyyyyToIso(d.date); }
+        }
+      } catch (_) {}
+      if (navVal == null || !(navVal > 0)) { unmatched.push(f.name); continue; }
+      const rec = Object.assign({}, f, {
+        schemeCode: code, schemeName: schemeName || f.schemeName || '',
+        latestNav: navVal, navAsOf: navDate || today, seeded: false,
+        updatedAt: new Date().toISOString(),
+      });
+      const c = mod.computeFund(rec, Date.now());
+      const lo = (p, x) => x == null ? (p != null ? p : null) : (p == null ? x : Math.min(p, x));
+      const hi = (p, x) => x == null ? (p != null ? p : null) : (p == null ? x : Math.max(p, x));
+      rec.xirrLow = lo(f.xirrLow, c.xirrPct); rec.xirrHigh = hi(f.xirrHigh, c.xirrPct);
+      rec.returnLow = lo(f.returnLow, c.absReturnPct); rec.returnHigh = hi(f.returnHigh, c.absReturnPct);
+      await DB.put('funds', rec);
+      updated++;
+    }
+    // Only mark the day done once at least one fund updated (so an all-offline run retries).
+    if (updated) await DB.put('meta', { key: 'mfNavFetchedYmd', value: today });
+  } catch (e) {
+    hideLoader();
+    alert('NAV fetch failed: ' + e.message + '\n\nAre you online? NAV comes from AMFI via mfapi.in.');
+    return;
+  }
+  hideLoader();
+  if (unmatched.length) console.warn('MF NAV fetch — unmatched funds (set NAV manually):', unmatched);
+  if (!updated) { toast('Could not fetch any NAV — check connection or set manually'); return; }
+  toast(`${updated} NAV${updated === 1 ? '' : 's'} updated${unmatched.length ? ` · ${unmatched.length} unmatched` : ''}`);
+  renderMF();
 }
 
 // ---------- heatmap (sheet-style grid) ----------
@@ -3371,6 +3473,7 @@ function bind() {
   $('#addBtn').addEventListener('click', () => openStockForm(null));
   $('#ocrBtn').addEventListener('click', openOcrFlow);
   $('#mfAddBtn').addEventListener('click', () => openFundForm(null));
+  $('#mfFetchBtn').addEventListener('click', () => fetchMfNavs());
   $('#backBtn').addEventListener('click', () => setAppMode('home'));
   $('#menuBtn').addEventListener('click', openMenu);
   const onSearch = debounce(renderList, 120);

@@ -81,9 +81,18 @@ Four optional **user-defined** thresholds (`benchReturnLow/High`, `benchXirrLow/
 - **Update latest NAV** — an icon button (📷) next to the filter/sort row on the Holdings tab, opens `openMfValueSheet()` (see OCR below).
 - **`openFundForm`** — a **three-tab sheet** (`.seg`, plain — not the bottom nav):
   - **Edit fund** — name, type, category, status, SIP, **Latest NAV / NAV as of**, sold value/date (when Status=Sold), good return, target year, remarks. (Current-value, single-benchmark-XIRR, benchmark-name and judge-after inputs were removed — value comes from NAV, benchmark from its own tab; the removed fields' stored values are preserved through save.)
-  - **Fund Holdings** — the investment log (each row **date · amount · units · NAV · notes**; leave units *or* NAV blank and it derives from the other two on blur) + a 📷 icon bottom-right for OCR import.
+  - **Fund Holdings** — the investment log (each row is two lines: **date · amount invested**, then **units purchased · NAV**; leave units *or* NAV blank and it derives from the other two on blur) + a 📷 icon bottom-right for OCR import. (Per-transaction notes were dropped.)
   - **Benchmark** — the four user-defined thresholds (low/high return, low/high XIRR) + a live readout of current return/XIRR and the resulting Below/Within/Above badge.
   - On save: `buildRec()` gathers all three tabs; `computeFund` then updates `xirrLow/High` and `returnLow/High` (the observed auto min/max — separate from the benchmark thresholds); `seeded` is cleared. `valueHistory` is preserved untouched as the fallback value.
+
+## Online NAV fetch (AMFI via mfapi.in — free, no key)
+
+The **☁️ secondary FAB** (next to + on the MF surface, `#mfFetchBtn` → `fetchMfNavs`) pulls the latest NAV for every held fund. Marketaux (the news API) can't do Indian MF NAVs; **AMFI** publishes them daily and **mfapi.in** wraps that as CORS-friendly JSON, so it works straight from the browser with no backend/key.
+
+- **Scheme resolution:** first run resolves each fund's AMFI scheme code from its name via `GET /mf/search?q=…`, scored to prefer **Direct + Growth** and reject IDCW/Regular (`_scoreScheme`), then **caches `schemeCode`/`schemeName` on the fund** so later runs skip the search.
+- **Update:** `GET /mf/{code}/latest` → sets `latestNav` + `navAsOf` (AMFI's `dd-mm-yyyy` → ISO); value/return/XIRR/benchmark recompute; observed `xirrLow/High` + `returnLow/High` refresh.
+- **Once per day:** guarded by `meta.mfNavFetchedYmd` — a same-day second click just toasts and makes no network call (NAVs publish once daily). The marker is only set once ≥1 fund updated, so an all-offline attempt can retry.
+- **Cross-origin** so it bypasses the same-origin service-worker fetch handler; fails gracefully offline. Funds not on AMFI (e.g. ULIPs like HDFC Click2Wealth) are reported as unmatched → set NAV manually.
 
 ## OCR (Paytm Money) — two distinct flows
 
@@ -104,5 +113,5 @@ A second one-time step (guarded by `meta.mfMidCapAdded`) adds **Quant Mid Cap Fu
 
 ## Not built yet
 
-- **Holdings-parser tuning** — `parsePaytmHoldings` (the common current-value scan) is best-effort until a real Paytm Money holdings/summary screenshot is captured; manual bulk entry works today regardless. The transaction parser is tuned to the real screen.
-- No wife split (owner field reserved). No live NAV feed. Benchmark XIRR is manual.
+- **Holdings-parser tuning** — `parsePaytmHoldings` (the holdings-screenshot scan) is best-effort until a real Paytm Money holdings/summary screenshot is captured; manual bulk entry works today regardless. The transaction parser is tuned to the real screen and no longer requires the "Buy" keyword.
+- No wife split (owner field reserved). Live NAV **is** now fetched daily from AMFI (see above). Benchmark thresholds are user-defined.
