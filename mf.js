@@ -238,11 +238,13 @@ export function parsePaytmTransactions(text) {
   const UNITS_NAV = /(\d+(?:\.\d+)?)\s*[\/|]\s*([\d,]+(?:\.\d+)?)/;
   const AMOUNT = /(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d+)?)/i;
   const out = [];
+  const debug = { dateMatches: [], parsed: [], skipped: [] };
   for (let i = 0; i < lines.length; i++) {
     const dm = lines[i].match(DATE);
     if (!dm) continue;
     const date = _mfDate(dm[1], dm[2], dm[3]);
-    if (!date) continue;
+    if (!date) { debug.skipped.push({ line: lines[i], reason: 'Invalid date' }); continue; }
+    debug.dateMatches.push(date);
     let units = null, nav = null, amount = null;
     // Scan this transaction's block: date line up to 6 lines, stopping at the next date.
     for (let k = i; k < Math.min(lines.length, i + 6); k++) {
@@ -259,10 +261,13 @@ export function parsePaytmTransactions(text) {
     }
     if (amount == null && units != null && nav != null) amount = Math.round(units * nav);
     // Need a real money signal to count as a transaction (filters stray/header dates).
-    if (amount == null || !(amount > 0)) continue;
+    if (amount == null || !(amount > 0)) { debug.skipped.push({ date, units, nav, amount, reason: 'No valid amount' }); continue; }
     const neigh = (lines[i - 1] || '') + ' ' + lines[i] + ' ' + (lines[i + 1] || '');
-    out.push({ date, amount: Math.round(amount * 100) / 100, units, nav, type: SELL.test(neigh) ? 'sell' : 'buy' });
+    const txn = { date, amount: Math.round(amount * 100) / 100, units, nav, type: SELL.test(neigh) ? 'sell' : 'buy' };
+    out.push(txn);
+    debug.parsed.push(txn);
   }
+  console.log('OCR Parse Debug:', { totalLines: lines.length, debug });
   return out;
 }
 
