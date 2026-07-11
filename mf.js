@@ -122,6 +122,13 @@ export function computeFund(fund, nowMs) {
   else { value = latestValue(fund); valueSource = 'manual'; }
   const valueDate = (sold ? (fund.soldDate || fund.valueAsOf) : (fund.navAsOf || fund.valueAsOf)) || nowDate.toISOString().slice(0, 10);
   const absReturnPct = invested > 0 ? ((value - invested) / invested) * 100 : 0;
+  // The stored returnLow/High only move when a save persists them (see app.js's
+  // lo()/hi() merge in every NAV-update path). Between saves, a live recompute
+  // can already be a new high/low that hasn't been written yet - so anything
+  // displaying "your range" should use these, not the raw stored fields, or a
+  // fresh all-time-high would show above a stale (lower) high label.
+  const liveReturnLow = fund.returnLow != null ? Math.min(Number(fund.returnLow), absReturnPct) : absReturnPct;
+  const liveReturnHigh = fund.returnHigh != null ? Math.max(Number(fund.returnHigh), absReturnPct) : absReturnPct;
 
   const times = (fund.contributions || []).map((c) => Date.parse(c.date)).filter((t) => !isNaN(t)).sort((a, b) => a - b);
   const endT = sold ? (Date.parse(valueDate) || now) : now;
@@ -140,6 +147,12 @@ export function computeFund(fund, nowMs) {
     rate = xirr(cfs);
     xirrSource = rate != null ? (sold ? 'realized' : 'computed') : 'none';
   }
+  const xirrPct = rate != null ? rate * 100 : null;
+  // Same live-vs-stored staleness fix as liveReturnLow/High, for the XIRR viz.
+  const liveXirrLow = xirrPct == null ? (fund.xirrLow != null ? Number(fund.xirrLow) : null)
+    : fund.xirrLow != null ? Math.min(Number(fund.xirrLow), xirrPct) : xirrPct;
+  const liveXirrHigh = xirrPct == null ? (fund.xirrHigh != null ? Number(fund.xirrHigh) : null)
+    : fund.xirrHigh != null ? Math.max(Number(fund.xirrHigh), xirrPct) : xirrPct;
 
   // ---------- benchmark status (return only — XIRR no longer factors in) ----------
   // A manual return target (benchReturnLow/High, user-defined, never auto-modified)
@@ -196,10 +209,10 @@ export function computeFund(fund, nowMs) {
 
   const pct = (d) => (d != null ? d * 100 : null);
   return {
-    invested, value, absReturnPct, ageYears, sold, valueSource,
+    invested, value, absReturnPct, liveReturnLow, liveReturnHigh, ageYears, sold, valueSource,
     totalUnits, avgNav, latestNav,
     soldValue: sold ? value : null, soldDate: sold ? valueDate : null,
-    xirr: rate, xirrPct: rate != null ? rate * 100 : null, xirrSource,
+    xirr: rate, xirrPct, xirrSource, liveXirrLow, liveXirrHigh,
     benchStatus, beatsBenchmark,
     benchReturnLowPct: pct(benchRetLo), benchReturnHighPct: pct(benchRetHi),
     benchXirrLowPct: pct(benchXirrLo), benchXirrHighPct: pct(benchXirrHi),
