@@ -1651,14 +1651,12 @@ function _mfCard(f, c) {
       ]),
       el('div', { class: 'card-right' }, [
         el('div', { class: 'pct ' + pctClass(c.absReturnPct), text: fmtPct(c.absReturnPct) }),
+        el('div', { class: 'meta-line' }, [xirrLabel + ' ', el('b', { class: pctClass(c.xirrPct || 0) }, [xirrTxt])]),
       ]),
     ]),
     el('div', { class: 'sub mf-sub2' }, [
       el('span', {}, ['Invested ', b(fmtCur(c.invested, 'INR'))]),
       el('span', { class: 'value-emphasis' }, [(c.sold ? 'Sold for ' : 'Value '), _mfValueCard(c.value, c.invested, c.sold)]),
-    ]),
-    el('div', { class: 'sub mf-xirr-row' }, [
-      el('span', {}, [xirrLabel + ' ', el('b', { class: pctClass(c.xirrPct || 0) }, [xirrTxt])]),
     ]),
   ]);
   return card;
