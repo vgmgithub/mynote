@@ -1864,7 +1864,15 @@ function buildContribEditor(contributions, getSip) {
   };
   (contributions || []).slice().sort((a, b2) => (a.date || '').localeCompare(b2.date || '')).forEach((c) => addRow(c.date, c.amount, c.units, c.nav));
 
-  const addBtn = el('button', { class: 'btn ghost small', type: 'button', text: '+ Add investment', onclick: () => addRow(null, null, null, null) });
+  const addBtn = el('button', {
+    class: 'btn ghost small', type: 'button', text: '+ Add investment',
+    onclick: () => {
+      // Default the new row's date to the latest transaction already logged
+      // (not today) - most adds are "the next SIP month", so this saves a tap.
+      const lastDate = refs.reduce((max, r) => (!r.removed && r.d.value && r.d.value > (max || '')) ? r.d.value : max, null);
+      addRow(lastDate, null, null, null);
+    },
+  });
   const genBtn = el('button', {
     class: 'btn ghost small', type: 'button', text: 'Generate SIP schedule',
     onclick: async () => {
