@@ -1633,9 +1633,9 @@ function _mfCard(f, c) {
   if (c.sold) catLine.appendChild(el('span', { class: 'badge muted mf-beat', text: 'sold' }));
   if (benchBadge) catLine.appendChild(benchBadge);
   const xirrLabel = c.xirrSource === 'sheet' ? 'XIRR (sheet)' : c.xirrSource === 'realized' ? 'Realized XIRR' : 'XIRR';
-  // Balanced card: name + status badge, XIRR headline, then Value/Return + Invested.
-  // Everything else (units, avg/latest NAV, observed range, remarks) lives in the
-  // fund form which opens on tap.
+  // Balanced card: name + status badge, Return headline (the intuitive number),
+  // then Value/XIRR + Invested. Everything else (units, avg/latest NAV, observed
+  // range, remarks) lives in the fund form which opens on tap.
   const card = el('div', { class: 'card', onclick: () => openFundForm(f) }, [
     el('div', { class: 'top' }, [
       el('div', { class: 'card-left' }, [
@@ -1643,13 +1643,13 @@ function _mfCard(f, c) {
         catLine,
       ]),
       el('div', { class: 'card-right' }, [
-        el('div', { class: 'pct ' + pctClass(c.xirrPct || 0), text: xirrTxt }),
-        el('div', { class: 'meta-line', text: xirrLabel }),
+        el('div', { class: 'pct ' + pctClass(c.absReturnPct), text: fmtPct(c.absReturnPct) }),
+        el('div', { class: 'meta-line', text: 'Return' }),
       ]),
     ]),
     el('div', { class: 'sub' }, [
       el('span', {}, [(c.sold ? 'Sold for ' : 'Value '), b(fmtCur(c.value, 'INR'))]),
-      el('span', {}, ['Return ', el('b', { class: pctClass(c.absReturnPct) }, [fmtPct(c.absReturnPct)])]),
+      el('span', {}, [xirrLabel + ' ', el('b', { class: pctClass(c.xirrPct || 0) }, [xirrTxt])]),
     ]),
     el('div', { class: 'sub' }, [
       el('span', {}, ['Invested ', b(fmtCur(c.invested, 'INR'))]),
