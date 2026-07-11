@@ -1621,6 +1621,61 @@ async function renderMF() {
     ovrvContent.appendChild(alloc);
   }
 
+  // Top/Bottom performers by return
+  if (list.length > 0) {
+    const sorted = [...list].sort((a, b) => b.c.absReturnPct - a.c.absReturnPct);
+    const topBottom = el('div', { class: 'chart-card' }, [el('h3', { text: 'Top & bottom performers' })]);
+    const top3 = sorted.slice(0, 3);
+    const bottom3 = sorted.slice(-3).reverse();
+    [['Top', top3, 'mf-perf-top'], ['Bottom', bottom3, 'mf-perf-bottom']].forEach(([label, funds, cls]) => {
+      topBottom.appendChild(el('div', { class: 'mf-perf-section' }, [
+        el('div', { class: 'mf-perf-label', text: label }),
+        el('div', { class: cls }, funds.map(({ f, c }) =>
+          el('div', { class: 'mf-perf-item' }, [
+            el('span', { class: 'mf-perf-name', text: f.name.length > 25 ? f.name.substring(0, 22) + '…' : f.name }),
+            el('span', { class: 'mf-perf-ret ' + pctClass(c.absReturnPct), text: fmtPct(c.absReturnPct) }),
+          ]))),
+      ]));
+    });
+    ovrvContent.appendChild(topBottom);
+  }
+
+  // Performance attribution: top gains in INR
+  if (list.length > 0) {
+    const byGain = [...list].map(({ f, c }) => ({ f, c, gain: c.value - c.invested })).sort((a, b) => b.gain - a.gain);
+    const topGain = byGain.slice(0, 5);
+    const attr = el('div', { class: 'chart-card' }, [el('h3', { text: 'Top contributors (absolute gain)' })]);
+    topGain.forEach(({ f, c, gain }) => {
+      attr.appendChild(el('div', { class: 'bar-row' }, [
+        el('span', { class: 'bl', text: f.name.length > 20 ? f.name.substring(0, 17) + '…' : f.name }),
+        el('span', { class: 'bar-track' }, [el('span', { class: 'bar-fill', style: `width:${Math.max(2, (gain / (byGain[0].gain || 1)) * 100).toFixed(1)}%` })]),
+        el('span', { class: 'bn', text: fmtCur(gain, 'INR') }),
+      ]));
+    });
+    ovrvContent.appendChild(attr);
+  }
+
+  // Goal progress: toward 2030 target
+  if (!viewSold && totVal > 0) {
+    let target2030 = 0;
+    heldRows.forEach(({ c }) => {
+      if (c.targetYear === 2030 && c.projCorpusStay != null) target2030 += c.projCorpusStay;
+    });
+    if (target2030 > 0) {
+      const progress = Math.min(100, (totVal / target2030) * 100);
+      const goalCard = el('div', { class: 'chart-card' }, [
+        el('h3', { text: '2030 Goal progress' }),
+        el('div', { class: 'mf-goal-row' }, [
+          el('span', { class: 'mf-goal-current', text: fmtCur(totVal, 'INR') }),
+          el('span', { class: 'mf-goal-track' }, [el('div', { class: 'mf-goal-fill', style: `width:${progress}%` })]),
+          el('span', { class: 'mf-goal-target', text: fmtCur(target2030, 'INR') }),
+        ]),
+        el('div', { class: 'mf-goal-meta', text: progress.toFixed(0) + '% toward target' }),
+      ]);
+      ovrvContent.appendChild(goalCard);
+    }
+  }
+
   // Benchmark tab content: visual range of benchmark thresholds vs current return
   if (heldRows.length > 0) {
     const benchList = el('div', { class: 'mf-bench-list' });
