@@ -1683,23 +1683,25 @@ async function renderMF() {
       const hasLowBench = f.benchReturnLow != null;
       const hasHighBench = f.benchReturnHigh != null;
       const low = hasLowBench ? (f.benchReturnLow * 100) : 0;
-      const high = hasHighBench ? (f.benchReturnHigh * 100) : 30; // default ceiling 30% if no high bench
+      const high = hasHighBench ? (f.benchReturnHigh * 100) : 30;
       const current = c.absReturnPct || 0;
+      const isAtPeak = Math.abs(current - high) < 0.01; // current equals high threshold (within 0.01%)
       // Calculate position within the full range (low to high)
       const range = high - low;
       const position = ((current - low) / range) * 100;
-      const clampedPct = Math.max(0, Math.min(100, position)); // position as % of bar width
-      benchList.appendChild(el('div', { class: 'mf-bench-row' }, [
-        el('div', { class: 'mf-bench-name' }, f.name),
-        el('div', { class: 'mf-bench-bar' }, [
-          el('span', { class: 'mf-bench-low', text: fmtPct(low / 100) }),
-          el('div', { class: 'mf-bench-track' }, [
-            el('div', { class: 'mf-bench-fill', style: `width:${clampedPct}%` }),
-            el('span', { class: 'mf-bench-marker ' + pctClass(current), style: `left:${clampedPct}%`, title: 'Current: ' + fmtPct(current / 100), text: '◆' }),
-          ]),
-          el('span', { class: 'mf-bench-high', text: fmtPct(high / 100) }),
+      const clampedPct = Math.max(0, Math.min(100, position));
+      const barElements = [
+        el('span', { class: 'mf-bench-low', text: fmtPct(low / 100) }),
+        el('div', { class: 'mf-bench-track' }, [
+          el('div', { class: 'mf-bench-fill', style: `width:${clampedPct}%` }),
+          el('span', { class: 'mf-bench-marker ' + pctClass(current), style: `left:${clampedPct}%`, title: 'Current: ' + fmtPct(current / 100), text: '◆' }),
         ]),
-        el('div', { class: 'mf-bench-current ' + pctClass(current), text: fmtPct(current / 100) }),
+        isAtPeak ? el('span', { class: 'mf-bench-peak', text: '🏆 ' + fmtPct(current / 100), title: 'All-time high!' }) : el('span', { class: 'mf-bench-high', text: fmtPct(high / 100) }),
+      ];
+      benchList.appendChild(el('div', { class: 'mf-bench-row' + (isAtPeak ? ' mf-bench-peak-row' : '') }, [
+        el('div', { class: 'mf-bench-name' }, f.name),
+        el('div', { class: 'mf-bench-bar' }, barElements),
+        !isAtPeak && el('div', { class: 'mf-bench-current ' + pctClass(current), text: fmtPct(current / 100) }),
       ]));
     });
     benchContent.appendChild(benchList);
@@ -1930,6 +1932,10 @@ async function openFundForm(existing) {
     const hi = (prev, v) => v == null ? (prev != null ? prev : null) : (prev == null ? v : Math.max(prev, v));
     rec.xirrLow = lo(f.xirrLow, c2.xirrPct); rec.xirrHigh = hi(f.xirrHigh, c2.xirrPct);
     rec.returnLow = lo(f.returnLow, c2.absReturnPct); rec.returnHigh = hi(f.returnHigh, c2.absReturnPct);
+    // Auto-update benchmark thresholds if current return exceeds them
+    const absRet = c2.absReturnPct || 0;
+    if (rec.benchReturnLow != null && absRet < rec.benchReturnLow) rec.benchReturnLow = absRet / 100;
+    if (rec.benchReturnHigh != null && absRet > rec.benchReturnHigh) rec.benchReturnHigh = absRet / 100;
     if (isEdit) rec.id = f.id;
     await DB.put('funds', rec);
     closeModal();
