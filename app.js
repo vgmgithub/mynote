@@ -2038,9 +2038,6 @@ async function openFundForm(existing) {
       el('p', { class: 'hint', text: 'Each buy: date · amount invested, then units purchased · NAV. Leave Units or NAV blank and it fills from the other two.' }),
       contribEditor.node,
     ]),
-    el('div', { class: 'field mf-hold-footer' }, [
-      el('button', { class: 'btn ghost small icon-only', type: 'button', text: '📷', title: 'Import transactions from screenshot', onclick: () => _mfOcrTransactions(contribEditor) }),
-    ]),
   ]);
 
   // Benchmark tab: 4 optional thresholds + a live status readout.
@@ -2107,50 +2104,6 @@ async function openFundForm(existing) {
     el('div', { class: 'sheet-scroll' }, scrollChildren),
     footer,
   ]));
-}
-
-// Per-fund transaction OCR: read a Paytm Money transaction-history screenshot and
-// merge the Buy rows into the open fund form's investment editor. Dedupes by date
-// (one investment per day) - never opens a nested modal, so the form stays put.
-async function _mfOcrTransactions(editor) {
-  const input = el('input', { type: 'file', accept: 'image/*', multiple: '' });
-  input.addEventListener('change', async () => {
-    const files = Array.from(input.files || []);
-    if (!files.length) return;
-    showLoader('Loading OCR engine…');
-    try {
-      const [ocr, mod] = await Promise.all([import('./ocr.js'), import('./mf.js')]);
-      const total = files.length;
-      const texts = await ocr.ocrImages(files, (m) => {
-        if (!m || !m.status) return;
-        const idx = (m.fileIndex || 0) + 1;
-        const pct = (m.progress != null && !isNaN(m.progress)) ? Math.round(m.progress * 100) : null;
-        const status = m.status.charAt(0).toUpperCase() + m.status.slice(1);
-        const prefix = total > 1 ? 'Image ' + idx + '/' + total + ' · ' : '';
-        setLoader(prefix + status + (pct != null ? ' · ' + pct + '%' : ''));
-      });
-      // Merge across images, dedupe by date (first read wins), buys only.
-      const seen = new Set(); const buys = [];
-      for (const t of texts) {
-        for (const r of mod.parsePaytmTransactions(t)) {
-          if (r.type !== 'buy' || !r.date || seen.has(r.date)) continue;
-          seen.add(r.date); buys.push(r);
-        }
-      }
-      hideLoader();
-      if (!buys.length) {
-        console.warn('MF transaction OCR - raw text:\n', texts.join('\n----- next -----\n'));
-        toast('No transactions detected - try a clearer/cropped screenshot');
-        return;
-      }
-      const { added, updated } = editor.merge(buys);
-      toast(`${buys.length} read · ${added} added${updated ? ', ' + updated + ' updated' : ''} - review & Save`);
-    } catch (e) {
-      hideLoader();
-      alert('OCR failed: ' + e.message);
-    }
-  });
-  input.click();
 }
 
 function _findFundMatch(parsedName, funds) {

@@ -94,11 +94,11 @@ The **☁️ secondary FAB** (next to + on the MF surface, `#mfFetchBtn` → `fe
 - **Once per day:** guarded by `meta.mfNavFetchedYmd` — a same-day second click just toasts and makes no network call (NAVs publish once daily). The marker is only set once ≥1 fund updated, so an all-offline attempt can retry.
 - **Cross-origin** so it bypasses the same-origin service-worker fetch handler; fails gracefully offline. Funds not on AMFI (e.g. ULIPs like HDFC Click2Wealth) are reported as unmatched → set NAV manually.
 
-## OCR (Paytm Money) — two distinct flows
+## OCR (Paytm Money)
 
-Both reuse `ocr.js` (`ocrImages` — shared Tesseract worker) and pure parsers in `mf.js`. Neither persists the image; only parsed numbers reach the app.
+Reuses `ocr.js` (`ocrImages` — shared Tesseract worker) and pure parsers in `mf.js`. Neither persists the image; only parsed numbers reach the app.
 
-- **Per-fund transaction import** (📷 inside the fund form's Fund Holdings tab). `parsePaytmTransactions(text)` reads the transaction-history screen (`Buy · <date>` + `<units> / <nav>` + `₹<amount>`) → `[{date, amount, units, nav, type}]`. `_mfOcrTransactions(editor)` merges the **buy** rows via `editor.merge()`, which **dedupes by date** and now carries **units + NAV** onto each row (not just amount). Amount falls back to `units×nav` if the ₹ figure is misread. Verified against the real screen: 6/6 rows, exact dates/amounts.
+- **Per-fund transaction import** — *removed from the UI.* The 📷 icon on the fund form's Fund Holdings tab (and its `_mfOcrTransactions` handler) was dropped at the user's request; investments are logged by hand there now. `parsePaytmTransactions(text)` and `editor.merge()` remain in the code, just no longer wired to a button.
 - **Bulk latest-NAV update** (`📷 Update latest NAV` on the Holdings tab → `openMfValueSheet`). A grid of every **held** fund with an editable **latest NAV** (pre-filled with the fund's stored `latestNav`); each row shows `units → derived value` live. `📷 Scan holdings screenshot` runs `parsePaytmHoldings(text)`, fuzzy-matches funds (`_findFundMatch`), and pre-fills **NAV = parsed current value ÷ known total units** (so it needs units logged). Save stores `latestNav` + `navAsOf` per filled fund and refreshes the observed auto min/max. Works fully by manual entry. `parsePaytmHoldings` is best-effort until a real holdings screenshot is captured.
 
 ## Seeding (once)

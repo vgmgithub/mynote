@@ -954,13 +954,6 @@ body.locked { overflow: hidden; }
 .mf-toolbar-top .sortbar { margin-left: auto; flex: 1; }
 .mf-toolbar-top .icon-btn { flex: 0 0 auto; padding: 6px 8px; }
 
-/* Fund Holdings tab footer (OCR icon at bottom-right) */
-.mf-hold-footer {
-  display: flex; justify-content: flex-end; margin-top: 14px; padding-top: 10px;
-  border-top: 1px solid var(--line);
-}
-.mf-hold-footer .icon-btn { padding: 8px 10px; }
-
 /* Fund form: fixed Save/Cancel footer + independently scrollable body, so a long
    investment log doesn't bury the buttons or the +Add/OCR controls below it. */
 .sheet.has-fixed-footer { display: flex; flex-direction: column; padding: 0; max-height: 92vh; overflow: hidden; }
