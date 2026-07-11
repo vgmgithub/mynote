@@ -1719,9 +1719,17 @@ async function renderMF() {
       const manualHigh = f[manualHighKey] != null ? f[manualHighKey] * 100 : null;
       const obsLow = metricKey === 'return' ? c.liveReturnLow : c.liveXirrLow;
       const obsHigh = metricKey === 'return' ? c.liveReturnHigh : c.liveXirrHigh;
-      const low = manualLow != null ? manualLow : (obsLow != null ? obsLow : 0);
-      const high = manualHigh != null ? manualHigh : (obsHigh != null ? obsHigh : (metricKey === 'return' ? 30 : 15));
       const current = metricPct || 0;
+      let low = manualLow != null ? manualLow : (obsLow != null ? obsLow : 0);
+      let high = manualHigh != null ? manualHigh : (obsHigh != null ? obsHigh : (metricKey === 'return' ? 30 : 15));
+      // The drawn bar must always contain `current`. A MANUAL high/low is a fixed
+      // target ("never changed automatically"), so when current shoots past it the
+      // bound can't grow on its own — the marker would pin at the edge with its
+      // badge dangling past the labelled bound (the reported bug: high shows 20.11
+      // but current is 23.71). Expand the DISPLAYED range to swallow current so it
+      // renders as the new peak/low instead. Stored manual target is untouched.
+      if (current > high) high = current;
+      if (current < low) low = current;
       // At the high threshold = all-time high (🏆, green). At the low threshold =
       // all-time low (🔻, red). Peak wins if somehow both (degenerate zero range).
       const isAtPeak = Math.abs(current - high) < 0.01;
