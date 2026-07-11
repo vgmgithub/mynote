@@ -1648,11 +1648,11 @@ function _mfCard(f, c) {
       ]),
     ]),
     el('div', { class: 'sub' }, [
+      el('span', {}, ['Invested ', b(fmtCur(c.invested, 'INR'))]),
       el('span', {}, [(c.sold ? 'Sold for ' : 'Value '), b(fmtCur(c.value, 'INR'))]),
-      el('span', {}, [xirrLabel + ' ', el('b', { class: pctClass(c.xirrPct || 0) }, [xirrTxt])]),
     ]),
     el('div', { class: 'sub' }, [
-      el('span', {}, ['Invested ', b(fmtCur(c.invested, 'INR'))]),
+      el('span', {}, [xirrLabel + ' ', el('b', { class: pctClass(c.xirrPct || 0) }, [xirrTxt])]),
     ]),
   ]);
   return card;
@@ -1664,12 +1664,11 @@ function _mfCard(f, c) {
 function buildContribEditor(contributions, getSip) {
   const rowsWrap = el('div', { class: 'hist-rows' });
   const refs = [];
-  const addRow = (date, amount, units, nav, notes) => {
+  const addRow = (date, amount, units, nav) => {
     const d = el('input', { class: 'txn-date', type: 'date', value: date || todayISO() });
-    const amt = el('input', { class: 'txn-amt', type: 'number', inputmode: 'decimal', step: 'any', value: amount != null ? amount : '', placeholder: '₹ amount' });
-    const u = el('input', { class: 'txn-units', type: 'number', inputmode: 'decimal', step: 'any', value: units != null ? units : '', placeholder: 'Units' });
+    const amt = el('input', { class: 'txn-amt', type: 'number', inputmode: 'decimal', step: 'any', value: amount != null ? amount : '', placeholder: 'Amount invested ₹' });
+    const u = el('input', { class: 'txn-units', type: 'number', inputmode: 'decimal', step: 'any', value: units != null ? units : '', placeholder: 'Units purchased' });
     const nv = el('input', { class: 'txn-nav', type: 'number', inputmode: 'decimal', step: 'any', value: nav != null ? nav : '', placeholder: 'NAV' });
-    const n = el('input', { class: 'txn-notes', type: 'text', value: notes || '', placeholder: 'Notes (optional)' });
     const del = el('button', { class: 'icon-btn', type: 'button', text: '×' });
     // Convenience: fill NAV from amount/units (or units from amount/NAV) when the
     // third is blank, so a Paytm row where one field was misread still completes.
@@ -1681,15 +1680,19 @@ function buildContribEditor(contributions, getSip) {
       if (a != null && uu != null && uu > 0 && vv == null) nv.value = Math.round((a / uu) * 10000) / 10000;
       else if (a != null && vv != null && vv > 0 && uu == null) u.value = Math.round((a / vv) * 10000) / 10000;
     }
-    const ref = { d, amt, u, nv, n, removed: false };
-    const row = el('div', { class: 'hist-row mf-txn-row' }, [d, amt, u, nv, n, del]);
+    const ref = { d, amt, u, nv, removed: false };
+    // Two tidy lines: (date · amount) then (units · NAV); delete sits on line 1.
+    const row = el('div', { class: 'mf-txn-row' }, [
+      el('div', { class: 'txn-line' }, [d, amt, del]),
+      el('div', { class: 'txn-line' }, [u, nv]),
+    ]);
     del.addEventListener('click', () => { row.remove(); ref.removed = true; });
     refs.push(ref);
     rowsWrap.appendChild(row);
   };
-  (contributions || []).slice().sort((a, b2) => (a.date || '').localeCompare(b2.date || '')).forEach((c) => addRow(c.date, c.amount, c.units, c.nav, c.notes));
+  (contributions || []).slice().sort((a, b2) => (a.date || '').localeCompare(b2.date || '')).forEach((c) => addRow(c.date, c.amount, c.units, c.nav));
 
-  const addBtn = el('button', { class: 'btn ghost small', type: 'button', text: '+ Add investment', onclick: () => addRow(null, null, null, null, null) });
+  const addBtn = el('button', { class: 'btn ghost small', type: 'button', text: '+ Add investment', onclick: () => addRow(null, null, null, null) });
   const genBtn = el('button', {
     class: 'btn ghost small', type: 'button', text: 'Generate SIP schedule',
     onclick: async () => {
@@ -1703,7 +1706,7 @@ function buildContribEditor(contributions, getSip) {
       refs.forEach((r) => (r.removed = true));
       rowsWrap.innerHTML = '';
       refs.length = 0;
-      sched.forEach((c) => addRow(c.date, c.amount, null, null, null));
+      sched.forEach((c) => addRow(c.date, c.amount, null, null));
       toast(sched.length + ' months added - add units/NAV or leave blank, edit On/Off months');
     },
   });
@@ -1720,7 +1723,6 @@ function buildContribEditor(contributions, getSip) {
       out.push({
         date: dv, amount: Math.round(av * 100) / 100,
         units: uu != null ? uu : null, nav: vv != null ? vv : null,
-        notes: r.n.value.trim() || '',
       });
     }
     out.sort((a, b2) => (a.date || '').localeCompare(b2.date || ''));
@@ -1739,7 +1741,7 @@ function buildContribEditor(contributions, getSip) {
         if (r.units != null) ex.u.value = r.units;
         if (r.nav != null) ex.nv.value = r.nav;
         updated++;
-      } else { addRow(r.date, amt, r.units, r.nav, r.notes); added++; }
+      } else { addRow(r.date, amt, r.units, r.nav); added++; }
     }
     return { added, updated };
   };
@@ -1861,7 +1863,7 @@ async function openFundForm(existing) {
   const holdTabContent = el('div', { class: 'tab-content hidden' }, [
     el('div', { class: 'field' }, [
       el('label', { text: 'Investment log' }),
-      el('p', { class: 'hint', text: 'Date · Amount ₹ · Units · NAV · Notes. Leave Units or NAV blank and it fills from the other two.' }),
+      el('p', { class: 'hint', text: 'Each buy: date · amount invested, then units purchased · NAV. Leave Units or NAV blank and it fills from the other two.' }),
       contribEditor.node,
     ]),
     el('div', { class: 'field mf-hold-footer' }, [

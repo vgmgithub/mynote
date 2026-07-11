@@ -922,13 +922,11 @@ body.locked { overflow: hidden; }
 .mf-value-cap { font-size: 0.68rem; color: var(--muted); }
 .mf-value-row input { flex: 0 0 38%; }
 
-/* Transaction log row: date · amount · units · NAV · notes (wraps on phones) */
-.mf-txn-row { flex-wrap: wrap; padding: 8px; border: 1px solid var(--line); border-radius: 10px; }
-.mf-txn-row input.txn-date { flex: 1 1 46%; min-width: 0; }
-.mf-txn-row input.txn-amt { flex: 1 1 46%; width: auto; }
-.mf-txn-row input.txn-units, .mf-txn-row input.txn-nav { flex: 1 1 30%; width: auto; }
-.mf-txn-row input.txn-notes { flex: 1 1 100%; width: auto; }
-.mf-txn-row .icon-btn { flex: 0 0 auto; margin-left: auto; }
+/* Transaction log row — two tidy lines: (date · amount) then (units · NAV) */
+.mf-txn-row { display: flex; flex-direction: column; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: 10px; }
+.txn-line { display: flex; gap: 8px; align-items: center; }
+.mf-txn-row input { flex: 1 1 0; width: auto; min-width: 0; }
+.mf-txn-row .icon-btn { flex: 0 0 auto; }
 
 /* Benchmark tab live readout */
 .mf-bench-readout { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
