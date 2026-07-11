@@ -46,6 +46,10 @@ Anything that breaks this loop loses the user's trust quickly. Test the OCR flow
 - They iterate fast. Be ready to revert an approach if they say so ("revert to previous version").
 - They sometimes type fragmented phrases like "still its there" or "nothing changed..done hard refresh" — treat these as signals, not finished sentences. Read the screenshot if attached.
 
+## Git workflow
+
+Whenever a change is made (code, docs, anything committable): `git add`, commit with a clear message describing the change, then `git push` — every time, without waiting to be asked. This is a private single-user repo (`vgmgithub/mynote`), so there's no review gate holding work back from `origin/main`.
+
 ## Memory persistence
 
 The user has a persistent memory file at `C:\Users\016142\.claude\projects\C--Apache24-htdocs-mynote\memory\MEMORY.md`. Read it via system context at session start. Today's date is auto-injected. Other facts there:
