@@ -34,7 +34,7 @@ const state = {
 // Mutual-fund view state (only used inside the MF surface).
 let _mfSort = 'ret';        // 'ret' | 'xirr' | 'inv' | 'name' (default: Return %)
 let _mfFilter = 'investing'; // 'investing' | 'sold' (holding vs redeemed - not SIP status)
-let _mfTab = 'holdings';     // 'holdings' | 'overview' (bottom nav, mirrors Stocks)
+let _mfTab = 'holdings';     // 'holdings' | 'overview' | 'benchmark' (bottom nav)
 const MF_TYPES = ['Multi Cap', 'Flexi Cap', 'Large Cap', 'Mid Cap', 'Small Cap', 'Tax Saver', 'Technology', 'Pharma', 'Energy', 'International', 'Index', 'Debt', 'Hybrid'];
 const MF_STATUS = ['Investing', 'Investing On/Off', 'Investing Variable', 'Stopped', 'Sold'];
 
@@ -1415,7 +1415,7 @@ function buildMfBottomNav() {
   const nav = $('#mfBottomNav');
   if (nav.childElementCount) { updateMfNavActive(); return; }
   nav.innerHTML = '';
-  [['holdings', '📈', 'Holdings'], ['overview', '📊', 'Overview']].forEach(([v, ico, label]) => {
+  [['holdings', '📈', 'Holdings'], ['overview', '📊', 'Overview'], ['benchmark', '🎯', 'Benchmark']].forEach(([v, ico, label]) => {
     nav.appendChild(el('button', { 'data-view': v, onclick: () => { if (_mfTab === v) return; _mfTab = v; renderMF(); } },
       [el('span', { class: 'bn-ico', text: ico }), label]));
   });
@@ -1542,13 +1542,18 @@ async function renderMF() {
   const gainPct = totInv > 0 ? ((totVal - totInv) / totInv) * 100 : 0;
   const wXirr = wW > 0 ? (wSum / wW) * 100 : null;
 
-  // Tab: Holdings (fund list) | Overview (summary + allocation) - the fixed
+  // Tab: Holdings (fund list) | Overview (summary + allocation) | Benchmark - the fixed
   // #mfBottomNav (built by setAppMode) drives the tab, this just syncs its active state.
   updateMfNavActive();
+
+  // Show FABs only on Holdings tab
+  $('#mfAddBtn').classList.toggle('hidden', _mfTab !== 'holdings');
+  $('#mfFetchBtn').classList.toggle('hidden', _mfTab !== 'holdings');
 
   // Holdings tab content: fund list with filter/sort
   const holdContent = el('div', { class: 'tab-content' + (_mfTab === 'holdings' ? '' : ' hidden') });
   const ovrvContent = el('div', { class: 'tab-content' + (_mfTab === 'overview' ? '' : ' hidden') });
+  const benchContent = el('div', { class: 'tab-content' + (_mfTab === 'benchmark' ? '' : ' hidden') });
 
   // Summary (shown in Overview tab only)
   const cells = [
@@ -1616,10 +1621,42 @@ async function renderMF() {
     ovrvContent.appendChild(alloc);
   }
 
+  // Benchmark tab content: visual range of benchmark thresholds vs current return
+  if (heldRows.length > 0) {
+    const benchList = el('div', { class: 'mf-bench-list' });
+    heldRows.forEach(({ f, c }) => {
+      const hasLowBench = f.benchReturnLow != null;
+      const hasHighBench = f.benchReturnHigh != null;
+      if (!hasLowBench && !hasHighBench) return; // skip if no benchmarks set
+      const low = (f.benchReturnLow || 0) * 100;
+      const high = (f.benchReturnHigh || 100) * 100;
+      const current = c.absReturnPct || 0;
+      // Clamp current to range for visual positioning
+      const clamped = Math.max(low, Math.min(high, current));
+      const pct = (clamped - low) / (high - low) * 100;
+      benchList.appendChild(el('div', { class: 'mf-bench-row' }, [
+        el('div', { class: 'mf-bench-name' }, f.name),
+        el('div', { class: 'mf-bench-bar' }, [
+          el('span', { class: 'mf-bench-low', text: fmtPct(low / 100) }),
+          el('div', { class: 'mf-bench-track' }, [
+            el('div', { class: 'mf-bench-fill', style: `width:${pct}%` }, [
+              el('span', { class: 'mf-bench-marker ' + pctClass(current), title: 'Current: ' + fmtPct(current / 100), text: '◆' }),
+            ]),
+          ]),
+          el('span', { class: 'mf-bench-high', text: fmtPct(high / 100) }),
+        ]),
+        el('div', { class: 'mf-bench-current ' + pctClass(current), text: fmtPct(current / 100) }),
+      ]));
+    });
+    if (benchList.childElementCount > 0) benchContent.appendChild(benchList);
+    else benchContent.appendChild(el('p', { class: 'hint', text: 'No benchmarks set. Edit funds to set return thresholds on the Benchmark tab.' }));
+  }
+
   // Assemble the view — summary common (both tabs), then the active tab's content.
   host.appendChild(summarySec);
   host.appendChild(holdContent);
   host.appendChild(ovrvContent);
+  host.appendChild(benchContent);
 }
 
 function _mfValueCard(value, invested, sold) {

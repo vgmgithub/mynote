@@ -991,3 +991,18 @@ html[data-theme="light"] .mf-value-card.negative {
   background: linear-gradient(135deg, #dc2626, #ef4444);
   box-shadow: 0 4px 12px rgba(220, 38, 38, 0.25);
 }
+
+/* Benchmark tab visualization */
+.mf-bench-list { display: flex; flex-direction: column; gap: 12px; padding: 0 0 20px; }
+.mf-bench-row { padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.mf-bench-name { font-weight: 600; font-size: 0.9rem; margin-bottom: 8px; }
+.mf-bench-bar { display: flex; align-items: center; gap: 8px; font-size: 0.72rem; }
+.mf-bench-low, .mf-bench-high { color: var(--muted); flex: 0 0 auto; min-width: 35px; }
+.mf-bench-low { text-align: right; }
+.mf-bench-high { text-align: left; }
+.mf-bench-track { flex: 1; height: 24px; background: var(--card-2); border-radius: 12px; position: relative; overflow: hidden; }
+.mf-bench-fill { position: absolute; left: 0; top: 0; height: 100%; background: linear-gradient(90deg, rgba(52,211,153,0.2), rgba(52,211,153,0.3)); border-radius: 12px; display: flex; align-items: center; justify-content: flex-end; padding-right: 4px; }
+.mf-bench-marker { font-size: 1rem; cursor: default; filter: drop-shadow(0 0 2px rgba(0,0,0,0.2)); }
+.mf-bench-marker.pos { color: var(--good); }
+.mf-bench-marker.neg { color: var(--bad); }
+.mf-bench-current { font-weight: 600; min-width: 50px; text-align: right; }
