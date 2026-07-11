@@ -1560,6 +1560,7 @@ async function renderMF() {
   if (!viewSold) cells.push(_mfCell('Proj. 2030 · stay', fmtCur(projStay, 'INR')));
   cells.push(_mfCell(viewSold ? 'Sold funds' : 'Funds', String(list.length)));
 
+  // Summary is common to both tabs — rendered above the tab content below.
   const summarySec = el('section', { class: 'summary' }, [
     el('div', { class: 'label', text: viewSold ? 'Realized value' : 'Current value' }),
     el('div', { class: 'big', text: fmtCur(totVal, 'INR') }),
@@ -1599,9 +1600,7 @@ async function renderMF() {
     ? 'Sold funds show your realized XIRR - from your dated investments to the sold value. Not investment advice.'
     : 'XIRR is computed from your dated investments. Funds marked "(sheet)" still use your sheet\'s figure - add a real investment to switch to app-computed XIRR. Not investment advice.' }));
 
-  // Overview tab content: summary + allocation
-  ovrvContent.appendChild(summarySec);
-
+  // Overview tab content: allocation (summary is common, rendered above both tabs).
   const byType = {};
   list.forEach(({ f, c }) => { const k = f.type || 'Other'; byType[k] = (byType[k] || 0) + c.invested; });
   const types = Object.keys(byType).sort((a, b) => byType[b] - byType[a]);
@@ -1618,7 +1617,8 @@ async function renderMF() {
     ovrvContent.appendChild(alloc);
   }
 
-  // Assemble the view
+  // Assemble the view — summary common (both tabs), then the active tab's content.
+  host.appendChild(summarySec);
   host.appendChild(holdContent);
   host.appendChild(ovrvContent);
 }
