@@ -1015,17 +1015,17 @@ html[data-theme="light"] .mf-value-card.negative {
 
 /* Gradient colors for different benchmark metrics */
 :root {
-  --bench-ret-low: #ef4444;    /* Red for poor return */
-  --bench-ret-high: #22c55e;   /* Green for good return */
-  --bench-xirr-low: #f97316;   /* Orange for poor XIRR */
-  --bench-xirr-high: #fbbf24;  /* Yellow for good XIRR */
+  --bench-ret-low: #be123c;    /* Wine red for poor return */
+  --bench-ret-high: #047857;   /* Forest green for good return */
+  --bench-xirr-low: #ea580c;   /* Orange for poor XIRR */
+  --bench-xirr-high: #d97706;  /* Amber for good XIRR */
 }
 
 html[data-theme="light"] {
-  --bench-ret-low: #dc2626;
-  --bench-ret-high: #15803d;
-  --bench-xirr-low: #ea580c;
-  --bench-xirr-high: #b45309;
+  --bench-ret-low: #7f1d1d;
+  --bench-ret-high: #065f46;
+  --bench-xirr-low: #b45309;
+  --bench-xirr-high: #92400e;
 }
 
 .mf-bench-track.ret .mf-bench-fill {
