@@ -1918,40 +1918,22 @@ function buildContribEditor(contributions, getSip, onChange) {
   const lastDateOf = (type) => refs.reduce((max, r) => (!r.removed && r.type === type && r.d.value && r.d.value > (max || '')) ? r.d.value : max, null);
 
   const addBuyBtn = el('button', {
-    class: 'btn ghost small', type: 'button', text: '+ Add investment',
+    class: 'icon-btn', type: 'button', text: '+', title: 'Add investment',
     onclick: () => {
       // Default the new row's date to the latest transaction already logged
       // (not today) - most adds are "the next SIP month", so this saves a tap.
       addRow(lastDateOf('buy'), null, null, null, 'buy');
     },
   });
-  const genBtn = el('button', {
-    class: 'btn ghost small', type: 'button', text: 'Generate SIP schedule',
-    onclick: async () => {
-      const sipVal = getSip();
-      if (!sipVal) { toast('Enter the monthly SIP amount first'); return; }
-      const startYm = window.prompt('Fill monthly SIP from which month? (YYYY-MM)', thisYm());
-      if (!startYm || !/^\d{4}-\d{2}$/.test(startYm)) return;
-      const mod = await import('./mf.js');
-      const sched = mod.generateSipSchedule(startYm, sipVal, thisYm());
-      if (!sched.length) { toast('Nothing to add for that range'); return; }
-      // Wipe existing BUY rows only - a Sell log is a separate history and must
-      // survive a SIP-schedule regenerate untouched.
-      for (let i = refs.length - 1; i >= 0; i--) { if (refs[i].type === 'buy') refs.splice(i, 1); }
-      buyRowsWrap.innerHTML = '';
-      sched.forEach((c) => addRow(c.date, c.amount, null, null, 'buy'));
-      toast(sched.length + ' months added - add units/NAV or leave blank, edit On/Off months');
-    },
-  });
   const addSellBtn = el('button', {
-    class: 'btn ghost small', type: 'button', text: '+ Add sale',
+    class: 'icon-btn', type: 'button', text: '×', title: 'Add sale',
     onclick: () => addRow(lastDateOf('sell'), null, null, null, 'sell'),
   });
 
   const buyTabBtn = el('button', { type: 'button', text: 'Buy', class: 'active' });
   const sellTabBtn = el('button', { type: 'button', text: 'Sell' });
-  const buyPane = el('div', { class: 'mf-txn-pane' }, [buySummary, buyEmpty, buyRowsWrap, el('div', { class: 'btn-row' }, [addBuyBtn, genBtn])]);
-  const sellPane = el('div', { class: 'mf-txn-pane hidden' }, [sellSummary, sellEmpty, sellRowsWrap, el('div', { class: 'btn-row' }, [addSellBtn])]);
+  const buyPane = el('div', { class: 'mf-txn-pane' }, [buySummary, buyEmpty, buyRowsWrap, el('div', { class: 'mf-txn-btn-row' }, [addBuyBtn])]);
+  const sellPane = el('div', { class: 'mf-txn-pane hidden' }, [sellSummary, sellEmpty, sellRowsWrap, el('div', { class: 'mf-txn-btn-row' }, [addSellBtn])]);
   buyTabBtn.addEventListener('click', () => {
     buyTabBtn.classList.add('active'); sellTabBtn.classList.remove('active');
     buyPane.classList.remove('hidden'); sellPane.classList.add('hidden');

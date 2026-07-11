@@ -958,6 +958,8 @@ body.locked { overflow: hidden; }
 .mf-txn-pane { margin-top: 10px; }
 .mf-txn-summary { display: flex; justify-content: space-between; gap: 10px; font-size: 0.78rem; color: var(--muted); padding: 0 2px 8px; }
 .mf-txn-empty { padding: 24px 10px; text-align: center; color: var(--muted); font-size: 0.85rem; border: 1px dashed var(--line); border-radius: 10px; }
+.mf-txn-btn-row { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; padding-right: 2px; }
+.mf-txn-btn-row .icon-btn { font-size: 1.5rem; padding: 8px 10px; }
 
 /* Fund Holdings tab: units-held / avg-NAV readout, sits above the Buy/Sell
    sub-tabs and stays live as the log is edited. */
