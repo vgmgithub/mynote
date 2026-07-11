@@ -1681,6 +1681,21 @@ async function renderMF() {
   const benchRetContent = el('div', { class: 'tab-content' + (_mfBenchTab === 'returns' ? '' : ' hidden') });
   const benchXirrContent = el('div', { class: 'tab-content' + (_mfBenchTab === 'xirr' ? '' : ' hidden') });
 
+  // Interpolate the current-value badge colour along the same gradient the bar uses,
+  // so a value near the low end reads light (light-green for Returns / yellow for XIRR)
+  // and near the high end reads dark (dark-green / orange). Endpoints are read from the
+  // --bench-*-light/dark CSS vars so both themes stay correct; text flips to dark on
+  // light backgrounds for contrast.
+  const readVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const hexToRgb = (h) => { h = h.replace('#', ''); if (h.length === 3) h = h.split('').map((ch) => ch + ch).join(''); return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)]; };
+  const badgeStyle = (scheme, t) => {
+    const lo = hexToRgb(readVar('--bench-' + scheme + '-light') || '#86efac');
+    const hi = hexToRgb(readVar('--bench-' + scheme + '-dark') || '#16a34a');
+    const mix = lo.map((v, i) => Math.round(v + (hi[i] - v) * t));
+    const lum = 0.299 * mix[0] + 0.587 * mix[1] + 0.114 * mix[2];
+    return `background:rgb(${mix[0]},${mix[1]},${mix[2]});color:${lum > 150 ? '#0b1220' : '#fff'}`;
+  };
+
   // Helper to create benchmark visualization with custom gradient.
   // `metricPct` must already be a percent NUMBER (e.g. 79.27 for 79.27%) — same unit
   // fmtPct expects. f.benchReturnLow/High and f.benchXirrLow/High are stored as
@@ -1711,22 +1726,25 @@ async function renderMF() {
       const highLabel = isAtPeak
         ? el('span', { class: 'mf-bench-peak', text: fmtPct(current) + ' 🏆', title: 'All-time high!' })
         : el('span', { class: 'mf-bench-high', text: fmtPct(high) });
+      const trackChildren = [
+        el('div', { class: 'mf-bench-fill', style: `width:${clampedPct}%` }),
+        el('span', { class: 'mf-bench-marker', style: `left:${clampedPct}%`, title: 'Current: ' + fmtPct(current) }),
+      ];
+      // Current-value badge sits below the marker dot, colour-graded by position.
+      // Skipped for peak/low rows since the value already shows in the 🏆/🔻 label.
+      if (!isAtPeak && !isAtLow) {
+        trackChildren.push(el('span', { class: 'mf-bench-value-badge', style: `left:${clampedPct}%;${badgeStyle(colorScheme, clampedPct / 100)}`, text: fmtPct(current) }));
+      }
       const barElements = [
         lowLabel,
-        el('div', { class: 'mf-bench-track ' + colorScheme }, [
-          el('div', { class: 'mf-bench-fill', style: `width:${clampedPct}%` }),
-          el('span', { class: 'mf-bench-marker', style: `left:${clampedPct}%`, title: 'Current: ' + fmtPct(current) }),
-        ]),
+        el('div', { class: 'mf-bench-track ' + colorScheme }, trackChildren),
         highLabel,
       ];
       const rowChildren = [
         el('div', { class: 'mf-bench-name' }, f.name),
         el('div', { class: 'mf-bench-bar' }, barElements),
       ];
-      // The extra current-value cell is redundant when the value is already shown
-      // merged into the peak/low label, so only add it in the normal (mid-range) case.
-      if (!isAtPeak && !isAtLow) rowChildren.push(el('div', { class: 'mf-bench-current', style: `color:var(--bench-${colorScheme}-${current < (low + high) / 2 ? 'low' : 'high'})`, text: fmtPct(current) }));
-      const rowCls = 'mf-bench-row' + (isAtPeak ? ' mf-bench-peak-row' : isAtLow ? ' mf-bench-bottom-row' : '');
+      const rowCls = 'mf-bench-row' + (isAtPeak ? ' mf-bench-peak-row' : isAtLow ? ' mf-bench-bottom-row' : ' mf-bench-row--badge');
       container.appendChild(el('div', { class: rowCls }, rowChildren));
     });
     return container;
