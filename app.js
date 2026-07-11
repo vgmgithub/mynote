@@ -1850,7 +1850,31 @@ function _mfCard(f, c) {
 function buildContribEditor(contributions, getSip) {
   const buyRowsWrap = el('div', { class: 'hist-rows mf-txn-rows' });
   const sellRowsWrap = el('div', { class: 'hist-rows mf-txn-rows' });
+  const buySummary = el('div', { class: 'mf-txn-summary' });
+  const sellSummary = el('div', { class: 'mf-txn-summary' });
+  const buyEmpty = el('div', { class: 'mf-txn-empty', text: 'No investments logged yet.' });
+  const sellEmpty = el('div', { class: 'mf-txn-empty', text: 'No sales logged yet.' });
   const refs = [];
+
+  // Row count + running ₹ total above each list, and a dashed empty-state
+  // placeholder instead of a blank box when a fund has no buys/sells yet.
+  const refreshSummary = (type) => {
+    const rows = refs.filter((r) => !r.removed && r.type === type);
+    const wrap = type === 'sell' ? sellRowsWrap : buyRowsWrap;
+    const summaryEl = type === 'sell' ? sellSummary : buySummary;
+    const emptyEl = type === 'sell' ? sellEmpty : buyEmpty;
+    const has = rows.length > 0;
+    wrap.classList.toggle('hidden', !has);
+    summaryEl.classList.toggle('hidden', !has);
+    emptyEl.classList.toggle('hidden', has);
+    if (!has) return;
+    const total = rows.reduce((s, r) => s + (num(r.amt.value) || 0), 0);
+    const noun = type === 'sell' ? (rows.length === 1 ? 'sale' : 'sales') : (rows.length === 1 ? 'investment' : 'investments');
+    summaryEl.innerHTML = '';
+    summaryEl.appendChild(el('span', { text: rows.length + ' ' + noun }));
+    summaryEl.appendChild(el('span', { text: (type === 'sell' ? 'Proceeds ' : 'Invested ') + fmtCur(total, 'INR') }));
+  };
+
   const addRow = (date, amount, units, nav, type) => {
     const isSell = type === 'sell';
     const d = el('input', { class: 'txn-date', type: 'date', value: date || todayISO() });
@@ -1858,28 +1882,30 @@ function buildContribEditor(contributions, getSip) {
     const u = el('input', { class: 'txn-units', type: 'number', inputmode: 'decimal', step: 'any', value: units != null ? units : '', placeholder: isSell ? 'Units sold' : 'Units purchased' });
     const nv = el('input', { class: 'txn-nav', type: 'number', inputmode: 'decimal', step: 'any', value: nav != null ? nav : '', placeholder: 'NAV' });
     const del = el('button', { class: 'icon-btn', type: 'button', text: '×' });
+    const ref = { d, amt, u, nv, type: isSell ? 'sell' : 'buy', removed: false };
     // Convenience: derive whichever of amount/units/NAV is left blank from the
     // other two, so the user only ever has to type two of the three numbers.
-    amt.addEventListener('blur', () => autofill());
-    u.addEventListener('blur', () => autofill());
-    nv.addEventListener('blur', () => autofill());
+    amt.addEventListener('blur', () => { autofill(); refreshSummary(ref.type); });
+    u.addEventListener('blur', () => { autofill(); refreshSummary(ref.type); });
+    nv.addEventListener('blur', () => { autofill(); refreshSummary(ref.type); });
     function autofill() {
       const a = num(amt.value), uu = num(u.value), vv = num(nv.value);
       if (a != null && uu != null && uu > 0 && vv == null) nv.value = Math.round((a / uu) * 10000) / 10000;
       else if (a != null && vv != null && vv > 0 && uu == null) u.value = Math.round((a / vv) * 10000) / 10000;
       else if (uu != null && vv != null && a == null) amt.value = Math.round(uu * vv * 100) / 100;
     }
-    const ref = { d, amt, u, nv, type: isSell ? 'sell' : 'buy', removed: false };
     // Two tidy lines: (date · amount) then (units · NAV); delete sits on line 1.
     const row = el('div', { class: 'mf-txn-row' + (isSell ? ' mf-txn-row--sell' : '') }, [
       el('div', { class: 'txn-line' }, [d, amt, del]),
       el('div', { class: 'txn-line' }, [u, nv]),
     ]);
-    del.addEventListener('click', () => { row.remove(); ref.removed = true; });
+    del.addEventListener('click', () => { row.remove(); ref.removed = true; refreshSummary(ref.type); });
     refs.push(ref);
     (isSell ? sellRowsWrap : buyRowsWrap).appendChild(row);
+    refreshSummary(ref.type);
   };
   (contributions || []).slice().sort((a, b2) => (a.date || '').localeCompare(b2.date || '')).forEach((c) => addRow(c.date, c.amount, c.units, c.nav, c.type));
+  refreshSummary('buy'); refreshSummary('sell'); // covers the empty-fund case (no addRow calls above)
 
   const lastDateOf = (type) => refs.reduce((max, r) => (!r.removed && r.type === type && r.d.value && r.d.value > (max || '')) ? r.d.value : max, null);
 
@@ -1916,8 +1942,8 @@ function buildContribEditor(contributions, getSip) {
 
   const buyTabBtn = el('button', { type: 'button', text: 'Buy', class: 'active' });
   const sellTabBtn = el('button', { type: 'button', text: 'Sell' });
-  const buyPane = el('div', {}, [buyRowsWrap, el('div', { class: 'btn-row' }, [addBuyBtn, genBtn])]);
-  const sellPane = el('div', { class: 'hidden' }, [sellRowsWrap, el('div', { class: 'btn-row' }, [addSellBtn])]);
+  const buyPane = el('div', { class: 'mf-txn-pane' }, [buySummary, buyEmpty, buyRowsWrap, el('div', { class: 'btn-row' }, [addBuyBtn, genBtn])]);
+  const sellPane = el('div', { class: 'mf-txn-pane hidden' }, [sellSummary, sellEmpty, sellRowsWrap, el('div', { class: 'btn-row' }, [addSellBtn])]);
   buyTabBtn.addEventListener('click', () => {
     buyTabBtn.classList.add('active'); sellTabBtn.classList.remove('active');
     buyPane.classList.remove('hidden'); sellPane.classList.add('hidden');

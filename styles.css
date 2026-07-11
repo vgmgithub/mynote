@@ -931,12 +931,33 @@ body.locked { overflow: hidden; }
 .mf-value-cap { font-size: 0.68rem; color: var(--muted); }
 .mf-value-row input { flex: 0 0 38%; }
 
-/* Transaction log row — two tidy lines: (date · amount) then (units · NAV) */
-.mf-txn-row { display: flex; flex-direction: column; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: 10px; }
+/* Transaction log row — two tidy lines: (date · amount) then (units · NAV).
+   Inputs here sit directly in a .txn-line, not a .field wrapper, so they miss
+   the app's normal `.field input` theming entirely and fall back to bare
+   browser-default styling (white background, black text, inset border) - a
+   glaring mismatch against the rest of the dark UI. Themed explicitly below. */
+.mf-txn-row {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 10px; background: var(--card);
+  border: 1px solid var(--line); border-radius: 10px;
+}
 .mf-txn-row--sell { border-left: 3px solid var(--bad); }
 .txn-line { display: flex; gap: 8px; align-items: center; }
-.mf-txn-row input { flex: 1 1 0; width: auto; min-width: 0; }
-.mf-txn-row .icon-btn { flex: 0 0 auto; }
+.mf-txn-row input {
+  flex: 1 1 0; width: auto; min-width: 0;
+  background: var(--card-2); color: var(--text);
+  border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 10px; font-size: 0.85rem;
+}
+.mf-txn-row input:focus { outline: none; border-color: var(--accent); }
+.mf-txn-row input::placeholder { color: var(--muted); }
+.mf-txn-row .icon-btn { flex: 0 0 auto; color: var(--muted); border-radius: 8px; }
+.mf-txn-row .icon-btn:hover, .mf-txn-row .icon-btn:active { color: var(--bad); background: var(--card-2); }
+
+/* Buy/Sell summary caption + empty state above each transaction list */
+.mf-txn-pane { margin-top: 10px; }
+.mf-txn-summary { display: flex; justify-content: space-between; gap: 10px; font-size: 0.78rem; color: var(--muted); padding: 0 2px 8px; }
+.mf-txn-empty { padding: 24px 10px; text-align: center; color: var(--muted); font-size: 0.85rem; border: 1px dashed var(--line); border-radius: 10px; }
 
 /* Benchmark tab live readout */
 .mf-bench-readout { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
