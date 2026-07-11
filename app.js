@@ -1847,7 +1847,7 @@ function _mfCard(f, c) {
 // (auto-derived from amount/units when left blank). Powers XIRR and the
 // units × latest-NAV value. Buy and Sell are separate sub-tabs (Buy default) -
 // one shared `refs` array backs both so collect() sees a single combined log.
-function buildContribEditor(contributions, getSip) {
+function buildContribEditor(contributions, getSip, onChange) {
   const buyRowsWrap = el('div', { class: 'hist-rows mf-txn-rows' });
   const sellRowsWrap = el('div', { class: 'hist-rows mf-txn-rows' });
   const buySummary = el('div', { class: 'mf-txn-summary' });
@@ -1867,12 +1867,20 @@ function buildContribEditor(contributions, getSip) {
     wrap.classList.toggle('hidden', !has);
     summaryEl.classList.toggle('hidden', !has);
     emptyEl.classList.toggle('hidden', has);
-    if (!has) return;
-    const total = rows.reduce((s, r) => s + (num(r.amt.value) || 0), 0);
-    const noun = type === 'sell' ? (rows.length === 1 ? 'sale' : 'sales') : (rows.length === 1 ? 'investment' : 'investments');
-    summaryEl.innerHTML = '';
-    summaryEl.appendChild(el('span', { text: rows.length + ' ' + noun }));
-    summaryEl.appendChild(el('span', { text: (type === 'sell' ? 'Proceeds ' : 'Invested ') + fmtCur(total, 'INR') }));
+    if (has) {
+      const total = rows.reduce((s, r) => s + (num(r.amt.value) || 0), 0);
+      const noun = type === 'sell' ? (rows.length === 1 ? 'sale' : 'sales') : (rows.length === 1 ? 'investment' : 'investments');
+      summaryEl.innerHTML = '';
+      summaryEl.appendChild(el('span', { text: rows.length + ' ' + noun }));
+      summaryEl.appendChild(el('span', { text: (type === 'sell' ? 'Proceeds ' : 'Invested ') + fmtCur(total, 'INR') }));
+    }
+    // Deferred: refreshSummary also fires while buildContribEditor is still
+    // constructing (seeding existing rows, before it's even been assigned to
+    // its `const` in the caller) - onChange (the caller's live-recompute)
+    // typically closes over that binding, so calling it synchronously here
+    // would hit a TDZ error. A macrotask tick guarantees the caller's own
+    // synchronous setup has finished first.
+    if (typeof onChange === 'function') setTimeout(onChange, 0);
   };
 
   const addRow = (date, amount, units, nav, type) => {
@@ -2033,7 +2041,24 @@ async function openFundForm(existing) {
   const soldRow = el('div', { class: 'field-row' + (f.status === 'Sold' ? '' : ' hidden') }, [field('Sold value', soldValue), field('Sold on', soldDate)]);
   status.addEventListener('change', () => { soldRow.classList.toggle('hidden', status.value !== 'Sold'); });
 
-  const contribEditor = buildContribEditor(f.contributions, () => num(sip.value) || 0);
+  // Live units-held / avg-NAV readout, shown above the Buy/Sell sub-tabs on the
+  // Fund Holdings tab - recomputed from the log itself (not the full computeFund
+  // record) so it stays in sync as buys/sells are added, edited or removed.
+  const unitsInfo = el('div', { class: 'mf-units-info' });
+  const contribEditor = buildContribEditor(f.contributions, () => num(sip.value) || 0, () => refreshUnitsInfo());
+  const refreshUnitsInfo = () => {
+    const tmp = { contributions: contribEditor.collect() };
+    const units = mod.totalUnitsOf(tmp);
+    const avgNav = mod.avgNavOf(tmp);
+    unitsInfo.innerHTML = '';
+    if (units > 0) {
+      unitsInfo.appendChild(el('span', {}, ['Units held ', b(units.toFixed(3))]));
+      unitsInfo.appendChild(el('span', {}, ['Avg NAV ', b(avgNav != null ? fmtCur(avgNav, 'INR') : '—')]));
+    } else {
+      unitsInfo.appendChild(el('span', { class: 'hint', text: 'No units held yet — log a buy below.' }));
+    }
+  };
+  refreshUnitsInfo();
 
   // Build a fund record from the current form inputs (used for save + live preview).
   const buildRec = () => {
@@ -2113,6 +2138,7 @@ async function openFundForm(existing) {
   editTabContent.appendChild(el('p', { class: 'hint', text: 'Current value = total units × latest NAV. Log each buy (with units) on the Fund Holdings tab, then just refresh the latest NAV here to update value, return, XIRR and benchmark status.' }));
 
   const holdTabContent = el('div', { class: 'tab-content hidden' }, [
+    unitsInfo,
     contribEditor.node,
   ]);
 

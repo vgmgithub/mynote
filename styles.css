@@ -959,6 +959,16 @@ body.locked { overflow: hidden; }
 .mf-txn-summary { display: flex; justify-content: space-between; gap: 10px; font-size: 0.78rem; color: var(--muted); padding: 0 2px 8px; }
 .mf-txn-empty { padding: 24px 10px; text-align: center; color: var(--muted); font-size: 0.85rem; border: 1px dashed var(--line); border-radius: 10px; }
 
+/* Fund Holdings tab: units-held / avg-NAV readout, sits above the Buy/Sell
+   sub-tabs and stays live as the log is edited. */
+.mf-units-info {
+  display: flex; justify-content: space-between; gap: 10px;
+  padding: 10px 12px; margin-bottom: 10px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+  font-size: 0.85rem;
+}
+.mf-units-info b { color: var(--accent); }
+
 /* Benchmark tab live readout */
 .mf-bench-readout { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
 .mf-bench-now { display: flex; justify-content: space-between; gap: 10px; font-size: 0.82rem; }
