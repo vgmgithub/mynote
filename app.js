@@ -1826,7 +1826,7 @@ function _mfCard(f, c) {
 // amount drive total-units and invested; NAV is per-unit (auto-derived from
 // amount/units when left blank). Powers XIRR and the units × latest-NAV value.
 function buildContribEditor(contributions, getSip) {
-  const rowsWrap = el('div', { class: 'hist-rows' });
+  const rowsWrap = el('div', { class: 'hist-rows mf-txn-rows' });
   const refs = [];
   const addRow = (date, amount, units, nav) => {
     const d = el('input', { class: 'txn-date', type: 'date', value: date || todayISO() });
@@ -2064,6 +2064,9 @@ async function openFundForm(existing) {
     { btn: holdTabBtn, content: holdTabContent },
     { btn: benchTabBtn, content: benchTabContent },
   ];
+  // Delete is only meaningful while looking at the fund's identity/status, so it
+  // only shows on the Edit fund tab - Fund Holdings/Benchmark just show Save/Cancel.
+  const deleteBtn = isEdit ? el('button', { class: 'btn danger', text: 'Delete', onclick: del }) : null;
   const showTab = (which) => {
     tabs.forEach((t) => {
       const on = t === which;
@@ -2071,12 +2074,13 @@ async function openFundForm(existing) {
       t.content.classList.toggle('hidden', !on);
     });
     if (which.btn === benchTabBtn) refreshBenchReadout();
+    if (deleteBtn) deleteBtn.classList.toggle('hidden', which.btn !== editTabBtn);
   };
   editTabBtn.addEventListener('click', () => showTab(tabs[0]));
   holdTabBtn.addEventListener('click', () => showTab(tabs[1]));
   benchTabBtn.addEventListener('click', () => showTab(tabs[2]));
 
-  const children = [
+  const scrollChildren = [
     el('h2', { text: isEdit ? 'Edit fund' : 'Add fund' }),
     el('div', { class: 'seg' }, [editTabBtn, holdTabBtn, benchTabBtn]),
     editTabContent,
@@ -2085,11 +2089,16 @@ async function openFundForm(existing) {
   ];
 
   const btns = [el('button', { class: 'btn primary', text: 'Save', onclick: save })];
-  if (isEdit) btns.push(el('button', { class: 'btn danger', text: 'Delete', onclick: del }));
+  if (deleteBtn) btns.push(deleteBtn);
   btns.push(el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }));
-  children.push(el('div', { class: 'btn-row', style: 'flex-wrap:wrap' }, btns));
+  const footer = el('div', { class: 'sheet-footer' }, [el('div', { class: 'btn-row', style: 'flex-wrap:wrap' }, btns)]);
 
-  openModal(el('div', { class: 'sheet' }, children));
+  // Save/Cancel stay fixed at the bottom (long investment logs shouldn't bury them);
+  // everything above scrolls in its own region instead of the whole sheet.
+  openModal(el('div', { class: 'sheet has-fixed-footer' }, [
+    el('div', { class: 'sheet-scroll' }, scrollChildren),
+    footer,
+  ]));
 }
 
 // Per-fund transaction OCR: read a Paytm Money transaction-history screenshot and

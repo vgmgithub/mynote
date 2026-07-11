@@ -961,6 +961,14 @@ body.locked { overflow: hidden; }
 }
 .mf-hold-footer .icon-btn { padding: 8px 10px; }
 
+/* Fund form: fixed Save/Cancel footer + independently scrollable body, so a long
+   investment log doesn't bury the buttons or the +Add/OCR controls below it. */
+.sheet.has-fixed-footer { display: flex; flex-direction: column; padding: 0; max-height: 92vh; overflow: hidden; }
+.sheet.has-fixed-footer .sheet-scroll { overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 16px 16px 8px; flex: 1; min-height: 0; }
+.sheet.has-fixed-footer .sheet-footer { flex: 0 0 auto; padding: 12px 16px calc(14px + var(--safe-bottom)); border-top: 1px solid var(--line); background: var(--bg-2); }
+.sheet.has-fixed-footer .sheet-footer .btn-row { margin-top: 0; }
+.mf-txn-rows { max-height: 38vh; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-right: 2px; }
+
 /* Fund value card with gradient backgrounds */
 .mf-value-card {
   padding: 8px 12px;
