@@ -32,7 +32,7 @@ const state = {
 };
 
 // Mutual-fund view state (only used inside the MF surface).
-let _mfSort = 'xirr';        // 'xirr' | 'ret' | 'inv' | 'name'
+let _mfSort = 'ret';        // 'ret' | 'xirr' | 'inv' | 'name' (default: Return %)
 let _mfFilter = 'investing'; // 'investing' | 'sold' (holding vs redeemed - not SIP status)
 let _mfTab = 'holdings';     // 'holdings' | 'overview' (bottom nav, mirrors Stocks)
 const MF_TYPES = ['Multi Cap', 'Flexi Cap', 'Large Cap', 'Mid Cap', 'Small Cap', 'Tax Saver', 'Technology', 'Pharma', 'Energy', 'International', 'Index', 'Debt', 'Hybrid'];
@@ -1572,8 +1572,7 @@ async function renderMF() {
     el('button', { class: (_mfFilter === v ? 'active' : ''), 'data-filter': v, type: 'button', text: l, onclick: () => { _mfFilter = v; renderMF(); } })));
   const sortbar = el('div', { class: 'sortbar mf-sortbar' }, [['xirr', 'XIRR'], ['ret', 'Return'], ['inv', 'Invested'], ['name', 'Name']].map(([v, l]) =>
     el('button', { class: 'sort-btn' + (_mfSort === v ? ' active' : ''), type: 'button', text: l, onclick: () => { _mfSort = v; renderMF(); } })));
-  const updateValueIcon = el('button', { class: 'icon-btn', type: 'button', text: '📷', title: 'Update current values from screenshot', onclick: () => openMfValueSheet() });
-  const toolbarTop = el('div', { class: 'toolbar mf-toolbar-top' }, [filterSeg, sortbar, updateValueIcon]);
+  const toolbarTop = el('div', { class: 'toolbar mf-toolbar-top' }, [filterSeg, sortbar]);
 
   holdContent.appendChild(toolbarTop);
 
