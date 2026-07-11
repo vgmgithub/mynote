@@ -1700,9 +1700,9 @@ async function renderMF() {
         el('span', { class: 'mf-bench-low', text: fmtPct(low / 100) }),
         el('div', { class: 'mf-bench-track ' + colorScheme }, [
           el('div', { class: 'mf-bench-fill', style: `width:${clampedPct}%` }),
-          el('span', { class: 'mf-bench-marker', style: `left:${clampedPct}%;background:linear-gradient(to right, var(--bench-${colorScheme}-low), var(--bench-${colorScheme}-high))`, title: 'Current: ' + fmtPct(current / 100), text: '◆' }),
+          el('span', { class: 'mf-bench-marker', style: `left:${clampedPct}%`, title: 'Current: ' + fmtPct(current / 100) }),
         ]),
-        isAtPeak ? el('span', { class: 'mf-bench-peak', text: '🏆 ' + fmtPct(current / 100), title: 'All-time high!' }) : el('span', { class: 'mf-bench-high', text: fmtPct(high / 100) }),
+        isAtPeak ? el('span', { class: 'mf-bench-peak', text: fmtPct(current / 100) + ' 🏆', title: 'All-time high!' }) : el('span', { class: 'mf-bench-high', text: fmtPct(high / 100) }),
       ];
       container.appendChild(el('div', { class: 'mf-bench-row' + (isAtPeak ? ' mf-bench-peak-row' : ''), style: isAtPeak ? `background:linear-gradient(90deg, rgba(${colorScheme === 'ret' ? '34,197,94' : '251,191,36'},0.1), transparent)` : '' }, [
         el('div', { class: 'mf-bench-name' }, f.name),
