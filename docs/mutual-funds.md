@@ -30,7 +30,7 @@ Key `id` (auto-increment), index `owner` (currently only `'me'` — room for a w
   sip,                           // monthly SIP amount (0 = lumpsum)
   targetYear: 2030,
   latestNav, navAsOf,            // latest NAV + its date → current value = ΣunitsΣ × latestNav
-  // Benchmark thresholds — USER-DEFINED, never auto-modified (decimals). Blank = ignore.
+  // Benchmark thresholds — user-set (decimals). Blank = ignore. Widen-only on NAV update (widenBenchBands): a set band the value overshoots expands to it; never narrows.
   benchReturnLow, benchReturnHigh,
   benchXirrLow, benchXirrHigh,   // legacy single `benchXirr` is read as benchXirrLow
   goodReturn, judgeAfter, remarks,
@@ -64,7 +64,7 @@ Verified (Node, real module): 200 units × ₹150 = ₹30 000 value, return 36.3
 
 **Return-only** — XIRR does not factor into `benchStatus` at all. On every recompute `computeFund` derives it from `absReturnPct`, in priority order:
 
-1. **Manual override** — if the user set `benchReturnLow`/`benchReturnHigh` (own aspirational target, never auto-modified), those win: **Below** under the low bound, **Above** over the high bound, **Within** between. A lone bound is the bar to beat (exceeding a lone low bound reads Above, not stuck Within).
+1. **Manual override** — if the user set `benchReturnLow`/`benchReturnHigh` (own aspirational target), those win: **Below** at/under the low bound, **Above** at/over the high bound, **Within** between. A lone bound is the bar to beat (exceeding a lone low bound reads Above, not stuck Within). These bands **widen (never narrow) on NAV update**: `widenBenchBands(rec, c)` runs in every recompute-and-save path (fund-form save, bulk NAV sheet, AMFI fetch) and, when the fresh return/XIRR crosses a *set* band, expands that band to the new value. So a manual band the value overshoots becomes the new band permanently; a blank band stays blank. (`benchXirrLow/High` widen the same way even though XIRR no longer drives `benchStatus` — they still bound the Benchmark tab's XIRR graph.)
 2. **Auto-tracked fallback** (used when no manual return threshold is set — the common case) — compares current return to the fund's own **observed** historical range, `returnLow`/`returnHigh`. These are updated to the running min/max every time a fund's value changes (fund-form save, bulk NAV-update sheet, AMFI online fetch all refresh them in the same write as the new value) — so **Above**/**Below** appear the moment a new all-time high/low return lands, with no separate save step. A ±0.01 epsilon absorbs float noise between the stored and freshly-recomputed value (matters most for a fund with only one data point, where `returnLow === returnHigh`).
 3. No status (`null`) only when there's no invested amount or no observed range yet (fresh/unseeded fund).
 

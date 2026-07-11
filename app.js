@@ -1939,6 +1939,26 @@ function buildContribEditor(contributions, getSip) {
   return { node, collect, merge };
 }
 
+// Widen the user's benchmark bands outward when a freshly computed value crosses
+// them, so a new all-time high/low that lands on a NAV update becomes the band
+// permanently (the user's request: "set the higher/lower band if current touches
+// it, on NAV update"). Expand-ONLY — a reading that stays inside the band leaves
+// it untouched, and a blank band (null = ignore) is never created here. Units:
+// benchReturn* are decimals vs c.absReturnPct is a percent number (÷100 to match);
+// benchXirr* are decimals vs c.xirr is already a decimal rate.
+function widenBenchBands(rec, c) {
+  const retDec = c.absReturnPct != null ? c.absReturnPct / 100 : null;
+  if (retDec != null) {
+    if (rec.benchReturnHigh != null && rec.benchReturnHigh !== '' && retDec > Number(rec.benchReturnHigh)) rec.benchReturnHigh = retDec;
+    if (rec.benchReturnLow != null && rec.benchReturnLow !== '' && retDec < Number(rec.benchReturnLow)) rec.benchReturnLow = retDec;
+  }
+  const xr = c.xirr;
+  if (xr != null) {
+    if (rec.benchXirrHigh != null && rec.benchXirrHigh !== '' && xr > Number(rec.benchXirrHigh)) rec.benchXirrHigh = xr;
+    if (rec.benchXirrLow != null && rec.benchXirrLow !== '' && xr < Number(rec.benchXirrLow)) rec.benchXirrLow = xr;
+  }
+}
+
 async function openFundForm(existing) {
   const isEdit = !!(existing && existing.id != null);
   const f = Object.assign({ owner: 'me', status: 'Investing', targetYear: 2030, sip: 0 }, existing || {});
@@ -2027,6 +2047,7 @@ async function openFundForm(existing) {
     const hi = (prev, v) => v == null ? (prev != null ? prev : null) : (prev == null ? v : Math.max(prev, v));
     rec.xirrLow = lo(f.xirrLow, c2.xirrPct); rec.xirrHigh = hi(f.xirrHigh, c2.xirrPct);
     rec.returnLow = lo(f.returnLow, c2.absReturnPct); rec.returnHigh = hi(f.returnHigh, c2.absReturnPct);
+    widenBenchBands(rec, c2);
     if (isEdit) rec.id = f.id;
     await DB.put('funds', rec);
     closeModal();
@@ -2077,7 +2098,7 @@ async function openFundForm(existing) {
   [benchRetLo, benchRetHi, benchXirrLo, benchXirrHi, latestNav].forEach((inp) => inp.addEventListener('input', refreshBenchReadout));
 
   const benchTabContent = el('div', { class: 'tab-content hidden' }, [
-    el('p', { class: 'hint', text: 'Your own targets — never changed automatically. Status is Below if current return OR XIRR is under its low bound, Above if over its high bound, else Within. Leave any blank to ignore it.' }),
+    el('p', { class: 'hint', text: 'Your own targets. They only ever widen: when a NAV update pushes the current return/XIRR past a band, that band expands to the new value (a set band is never narrowed on its own). Status is Below if current return is under its low bound, Above if over its high bound, else Within. Leave any blank to ignore it.' }),
     el('div', { class: 'field-row' }, [field('Low return %', benchRetLo), field('High return %', benchRetHi)]),
     el('div', { class: 'field-row' }, [field('Low XIRR %', benchXirrLo), field('High XIRR %', benchXirrHi)]),
     benchReadout,
@@ -2221,6 +2242,7 @@ async function openMfValueSheet() {
       const hi = (p, x) => x == null ? (p != null ? p : null) : (p == null ? x : Math.max(p, x));
       rec.xirrLow = lo(f.xirrLow, c.xirrPct); rec.xirrHigh = hi(f.xirrHigh, c.xirrPct);
       rec.returnLow = lo(f.returnLow, c.absReturnPct); rec.returnHigh = hi(f.returnHigh, c.absReturnPct);
+      widenBenchBands(rec, c);
       await DB.put('funds', rec);
       n++;
     }
@@ -2325,6 +2347,7 @@ async function fetchMfNavs() {
       const hi = (p, x) => x == null ? (p != null ? p : null) : (p == null ? x : Math.max(p, x));
       rec.xirrLow = lo(f.xirrLow, c.xirrPct); rec.xirrHigh = hi(f.xirrHigh, c.xirrPct);
       rec.returnLow = lo(f.returnLow, c.absReturnPct); rec.returnHigh = hi(f.returnHigh, c.absReturnPct);
+      widenBenchBands(rec, c);
       await DB.put('funds', rec);
       updated++;
     }
