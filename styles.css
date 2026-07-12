@@ -888,7 +888,11 @@ body.locked { overflow: hidden; }
 .home-summary { display: flex; gap: 12px; margin-top: 16px; }
 .summary-stat { flex: 1; background: linear-gradient(135deg, var(--card), var(--card-2)); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 12px; display: flex; flex-direction: column; gap: 4px; }
 .stat-label { color: var(--muted); font-size: 0.75rem; }
-.stat-value { font-size: 1.15rem; font-weight: 700; color: var(--text); }
+.stat-value { font-size: 1.15rem; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 6px; }
+.summary-badge { font-size: 0.82rem; padding: 4px 8px; border-radius: 6px; font-weight: 600; }
+.summary-badge.good { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+.summary-badge.bad { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+.summary-badge.neutral { background: var(--card-2); color: var(--muted); }
 .home-cards { display: flex; flex-direction: column; gap: 12px; margin-top: 18px; }
 .home-card {
   display: flex; align-items: center; gap: 14px; width: 100%; text-align: left;

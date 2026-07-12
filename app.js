@@ -1474,7 +1474,7 @@ async function renderHome() {
     ]),
     el('div', { class: 'summary-stat' }, [
       el('div', { class: 'stat-label', text: 'Total Earned' }),
-      el('div', { class: 'stat-value ' + pctClass(totalEarnedPct), text: fmtCur(totalEarned, 'INR') + ' (' + fmtPct(totalEarnedPct) + ')' }),
+      el('div', { class: 'stat-value' }, [fmtCur(totalEarned, 'INR') + ' ', el('span', { class: 'summary-badge ' + pctClass(totalEarnedPct), text: fmtPct(totalEarnedPct) })]),
     ]),
   ]);
   host.appendChild(summaryCard);
