@@ -1112,3 +1112,16 @@ html[data-theme="light"] {
 .mf-goal-fill { height: 100%; background: linear-gradient(90deg, var(--good), #22c55e); border-radius: 10px; transition: width 0.3s ease; }
 .mf-goal-target { font-weight: 600; flex: 0 0 auto; min-width: 80px; text-align: left; color: var(--muted); }
 .mf-goal-meta { text-align: center; color: var(--muted); font-size: 0.75rem; font-weight: 600; }
+
+/* Stats tab: Nifty 50 header row + per-fund day/month/year change rows */
+.mf-stats-nifty {
+  display: flex; align-items: center; justify-content: space-between;
+  background: linear-gradient(135deg, var(--card), var(--card-2));
+  border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 12px 14px; margin-bottom: 12px; font-size: 0.85rem; font-weight: 600;
+}
+.mf-stats-nifty .mf-stats-pct { font-size: 1rem; }
+.mf-stats-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; cursor: pointer; }
+.mf-stats-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.mf-stats-vals { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.mf-stats-pct { font-weight: 700; font-size: 0.95rem; }

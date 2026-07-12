@@ -34,8 +34,9 @@ const state = {
 // Mutual-fund view state (only used inside the MF surface).
 let _mfSort = 'ret';        // 'ret' | 'xirr' | 'inv' | 'name' (default: Return %)
 let _mfFilter = 'investing'; // 'investing' | 'sold' (holding vs redeemed - not SIP status)
-let _mfTab = 'holdings';     // 'holdings' | 'overview' | 'benchmark' (bottom nav)
+let _mfTab = 'holdings';     // 'holdings' | 'overview' | 'benchmark' | 'stats' (bottom nav)
 let _mfBenchTab = 'returns';  // 'returns' | 'xirr' (sub-tabs within benchmark)
+let _mfStatsTab = 'day';      // 'day' | 'month' | 'year' (sub-tabs within stats)
 const MF_TYPES = ['Multi Cap', 'Flexi Cap', 'Large Cap', 'Mid Cap', 'Small Cap', 'Tax Saver', 'Technology', 'Pharma', 'Energy', 'International', 'Index', 'Debt', 'Hybrid'];
 const MF_STATUS = ['Investing', 'Investing On/Off', 'Investing Variable', 'Stopped', 'Sold'];
 
@@ -1425,7 +1426,7 @@ function buildMfBottomNav() {
   const nav = $('#mfBottomNav');
   if (nav.childElementCount) { updateMfNavActive(); return; }
   nav.innerHTML = '';
-  [['holdings', '📈', 'Holdings'], ['overview', '📊', 'Overview'], ['benchmark', '🎯', 'Benchmark']].forEach(([v, ico, label]) => {
+  [['holdings', '📈', 'Holdings'], ['overview', '📊', 'Overview'], ['benchmark', '🎯', 'Benchmark'], ['stats', '⚖️', 'Stats']].forEach(([v, ico, label]) => {
     nav.appendChild(el('button', { 'data-view': v, onclick: () => { if (_mfTab === v) return; _mfTab = v; renderMF(); } },
       [el('span', { class: 'bn-ico', text: ico }), label]));
   });
@@ -1604,14 +1605,16 @@ async function renderMF() {
   // #mfBottomNav (built by setAppMode) drives the tab, this just syncs its active state.
   updateMfNavActive();
 
-  // Show FABs only on Holdings tab
+  // Show FABs only on Holdings tab (+ ☁️ NAV fetch also on Stats, since Stats
+  // data is populated by that same fetch).
   $('#mfAddBtn').classList.toggle('hidden', _mfTab !== 'holdings');
-  $('#mfFetchBtn').classList.toggle('hidden', _mfTab !== 'holdings');
+  $('#mfFetchBtn').classList.toggle('hidden', _mfTab !== 'holdings' && _mfTab !== 'stats');
 
   // Holdings tab content: fund list with filter/sort
   const holdContent = el('div', { class: 'tab-content' + (_mfTab === 'holdings' ? '' : ' hidden') });
   const ovrvContent = el('div', { class: 'tab-content' + (_mfTab === 'overview' ? '' : ' hidden') });
   const benchContent = el('div', { class: 'tab-content' + (_mfTab === 'benchmark' ? '' : ' hidden') });
+  const statsContent = el('div', { class: 'tab-content' + (_mfTab === 'stats' ? '' : ' hidden') });
 
   // Summary (shown in Overview tab only)
   const cells = [
@@ -1621,10 +1624,10 @@ async function renderMF() {
     _mfCell('Above benchmark', benchCount ? `${aboveBench} of ${benchCount}` : '-'),
   ];
 
-  // Summary is common to Holdings/Overview tabs only (hidden for Benchmark tab).
+  // Summary is common to Holdings/Overview tabs only (hidden for Benchmark/Stats tabs).
   // Current value + Current Return share the top row (value on the left,
   // gain % on the right).
-  const summarySec = el('section', { class: 'summary' + (_mfTab === 'benchmark' ? ' hidden' : '') }, [
+  const summarySec = el('section', { class: 'summary' + (_mfTab === 'benchmark' || _mfTab === 'stats' ? ' hidden' : '') }, [
     el('div', { class: 'row-between summary-top' }, [
       el('div', {}, [
         el('div', { class: 'label', text: viewSold ? 'Realized value' : 'Current value' }),
@@ -1861,11 +1864,75 @@ async function renderMF() {
   benchContent.appendChild(benchRetContent);
   benchContent.appendChild(benchXirrContent);
 
+  // Stats tab: Day / Month / Year NAV change per fund vs Nifty 50 (index-fund
+  // proxy — mfapi.in has no direct Nifty index endpoint). Populated by the ☁️
+  // NAV fetch (fetchMfNavs), which stores only the computed deltas per fund
+  // (f.stats = {d1,m1,y1,asOf}) and one Nifty reading in meta.mfNiftyStats —
+  // not raw daily history, so the on-device footprint stays negligible.
+  const STATS_PERIODS = { day: 'd1', month: 'm1', year: 'y1' };
+  const statsKey = STATS_PERIODS[_mfStatsTab];
+  const niftyStatsMeta = await DB.get('meta', 'mfNiftyStats').catch(() => null);
+  const niftyStats = niftyStatsMeta && niftyStatsMeta.value;
+  const anyFundStats = heldRows.some(({ f }) => f.stats && f.stats[statsKey] != null);
+  const badgeClassFor = (cls) => (cls === 'pos' ? 'good' : cls === 'neg' ? 'bad' : 'muted');
+
+  const statsSubTabs = el('div', { class: 'mf-bench-tabs' }, [['day', 'Day'], ['month', 'Month'], ['year', 'Year']].map(([v, l]) =>
+    el('button', { class: 'sort-btn' + (_mfStatsTab === v ? ' active' : ''), type: 'button', text: l, onclick: () => { _mfStatsTab = v; renderMF(); } })));
+  statsContent.appendChild(statsSubTabs);
+
+  if (!heldRows.length) {
+    statsContent.appendChild(el('div', { class: 'empty' }, [
+      el('div', { class: 'e-icon', text: '⚖️' }),
+      el('p', { text: 'No funds you are holding.' }),
+    ]));
+  } else if (!anyFundStats) {
+    statsContent.appendChild(el('div', { class: 'empty' }, [
+      el('div', { class: 'e-icon', text: '⚖️' }),
+      el('p', { text: 'No stats yet.' }),
+      el('p', { class: 'hint', text: 'Tap ☁️ to fetch NAV history and compare against Nifty 50 (needs internet).' }),
+    ]));
+  } else {
+    const niftyPct = niftyStats ? niftyStats[statsKey] : null;
+    statsContent.appendChild(el('div', { class: 'mf-stats-nifty' }, [
+      el('span', { text: 'Nifty 50 (index fund proxy)' }),
+      el('span', { class: 'mf-stats-pct ' + (niftyPct != null ? pctClass(niftyPct) : 'flat'), text: niftyPct != null ? fmtPct(niftyPct) : '-' }),
+    ]));
+
+    const sortedFunds = heldRows.slice().sort((a, b2) => {
+      const av = a.f.stats && a.f.stats[statsKey] != null ? a.f.stats[statsKey] : -Infinity;
+      const bv = b2.f.stats && b2.f.stats[statsKey] != null ? b2.f.stats[statsKey] : -Infinity;
+      return bv - av;
+    });
+    const statsList = el('section', { class: 'stock-list' });
+    sortedFunds.forEach(({ f }) => {
+      const pct = f.stats && f.stats[statsKey] != null ? f.stats[statsKey] : null;
+      const delta = pct != null && niftyPct != null ? pct - niftyPct : null;
+      const rowChildren = [
+        el('span', { class: 'mf-stats-pct ' + (pct != null ? pctClass(pct) : 'flat'), text: pct != null ? fmtPct(pct) : '—' }),
+      ];
+      if (delta != null) {
+        const dCls = pctClass(delta);
+        rowChildren.push(el('span', { class: 'badge ' + badgeClassFor(dCls), text: (delta >= 0 ? '+' : '') + delta.toFixed(2) + '% vs Nifty' }));
+      }
+      statsList.appendChild(el('div', { class: 'card mf-stats-row', onclick: () => openFundForm(f) }, [
+        el('div', { class: 'mf-stats-name', text: f.name }),
+        el('div', { class: 'mf-stats-vals' }, rowChildren),
+      ]));
+    });
+    statsContent.appendChild(statsList);
+
+    const asOfFundRow = heldRows.find(({ f }) => f.stats && f.stats.asOf);
+    const asOfTxt = (niftyStats && niftyStats.asOf) || (asOfFundRow && asOfFundRow.f.stats.asOf);
+    statsContent.appendChild(el('p', { class: 'hint mf-foot', text: (asOfTxt ? 'As of ' + asOfTxt + '. ' : '') +
+      'Nifty 50 is approximated via a Nifty 50 index fund\'s NAV — mfapi.in has no direct index endpoint reachable from the browser. Not investment advice.' }));
+  }
+
   // Assemble the view — summary common (both tabs), then the active tab's content.
   host.appendChild(summarySec);
   host.appendChild(holdContent);
   host.appendChild(ovrvContent);
   host.appendChild(benchContent);
+  host.appendChild(statsContent);
 }
 
 function _mfValueCard(value, invested, sold) {
@@ -2424,6 +2491,39 @@ async function _resolveSchemeCode(fund) {
   return best && bestScore > 0 ? { code: best.schemeCode, name: best.schemeName } : null;
 }
 
+// ---------- Stats tab: Day/Month/Year NAV change vs Nifty 50 ----------
+// mfapi.in only wraps AMFI mutual-fund NAVs - there is no Nifty 50 INDEX endpoint
+// reachable from the browser (NSE's own API needs session cookies + blocks CORS;
+// Yahoo's ^NSEI is CORS-blocked too). A Nifty 50 INDEX FUND's NAV tracks the index
+// within a small tracking error and lives on this same mfapi.in endpoint, so it's
+// used as the benchmark proxy. UTI Nifty 50 Index Fund - Direct Growth.
+const NIFTY50_PROXY = '120716';
+
+// mfapi's /mf/{code} full-history payload → [{t: <ms>, nav: <number>}], newest-first.
+function _parseNavHistory(json) {
+  const data = json && Array.isArray(json.data) ? json.data : [];
+  const out = [];
+  for (const d of data) {
+    const t = Date.parse(_ddmmyyyyToIso(d.date) || '');
+    const nav = parseFloat(d.nav);
+    if (!isNaN(t) && nav > 0) out.push({ t, nav });
+  }
+  return out; // already newest-first, matching mfapi's own ordering
+}
+
+// % change between the newest NAV and the nearest reading at-or-before `daysBack`
+// days earlier. Returns null when history doesn't reach back far enough.
+function navChangePct(hist, daysBack) {
+  if (!hist || hist.length < 2) return null;
+  const latest = hist[0];
+  const targetT = latest.t - daysBack * 86400000;
+  let past = null;
+  for (const h of hist) { if (h.t <= targetT) { past = h; break; } }
+  if (!past && daysBack === 1) past = hist[1]; // day change: just the previous entry
+  if (!past || !(past.nav > 0)) return null;
+  return ((latest.nav - past.nav) / past.nav) * 100;
+}
+
 async function fetchMfNavs() {
   const today = todayISO();
   const funds = ((await DB.byIndex('funds', 'owner', 'me')) || []).filter((f) => !(f.status === 'Sold' || f.soldDate));
@@ -2441,19 +2541,21 @@ async function fetchMfNavs() {
         if (!m) { unmatched.push(f.name); continue; }
         code = m.code; schemeName = m.name;
       }
-      let navVal = null, navDate = null;
+      // Full history (not just /latest) - one call now feeds both the current
+      // NAV and the Stats tab's day/month/year deltas; only the deltas are
+      // persisted (rec.stats), not the history itself.
+      let hist = [];
       try {
-        const r = await fetch(`${MFAPI}/mf/${code}/latest`);
-        if (r.ok) {
-          const j = await r.json();
-          const d = j && j.data && j.data[0];
-          if (d && d.nav) { navVal = parseFloat(d.nav); navDate = _ddmmyyyyToIso(d.date); }
-        }
+        const r = await fetch(`${MFAPI}/mf/${code}`);
+        if (r.ok) hist = _parseNavHistory(await r.json());
       } catch (_) {}
+      const navVal = hist.length ? hist[0].nav : null;
+      const navDate = hist.length ? new Date(hist[0].t).toISOString().slice(0, 10) : null;
       if (navVal == null || !(navVal > 0)) { unmatched.push(f.name); continue; }
       const rec = Object.assign({}, f, {
         schemeCode: code, schemeName: schemeName || f.schemeName || '',
         latestNav: navVal, navAsOf: navDate || today, seeded: false,
+        stats: { d1: navChangePct(hist, 1), m1: navChangePct(hist, 30), y1: navChangePct(hist, 365), asOf: navDate || today },
         updatedAt: new Date().toISOString(),
       });
       const c = mod.computeFund(rec, Date.now());
@@ -2465,6 +2567,18 @@ async function fetchMfNavs() {
       await DB.put('funds', rec);
       updated++;
     }
+    // Nifty 50 proxy (index fund NAV) - one extra call, cached in meta so the
+    // Stats tab has a benchmark reading without re-fetching per fund.
+    try {
+      const r = await fetch(`${MFAPI}/mf/${NIFTY50_PROXY}`);
+      if (r.ok) {
+        const hist = _parseNavHistory(await r.json());
+        if (hist.length) {
+          const asOf = new Date(hist[0].t).toISOString().slice(0, 10);
+          await DB.put('meta', { key: 'mfNiftyStats', value: { d1: navChangePct(hist, 1), m1: navChangePct(hist, 30), y1: navChangePct(hist, 365), asOf } });
+        }
+      }
+    } catch (_) {}
   } catch (e) {
     hideLoader();
     alert('NAV fetch failed: ' + e.message + '\n\nAre you online? NAV comes from AMFI via mfapi.in.');

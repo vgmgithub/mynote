@@ -95,9 +95,19 @@ Verified (Node, real module): 200 units × ₹150 = ₹30 000 value, return 36.3
 The **☁️ secondary FAB** (next to + on the MF surface, `#mfFetchBtn` → `fetchMfNavs`) pulls the latest NAV for every held fund. Marketaux (the news API) can't do Indian MF NAVs; **AMFI** publishes them daily and **mfapi.in** wraps that as CORS-friendly JSON, so it works straight from the browser with no backend/key.
 
 - **Scheme resolution:** first run resolves each fund's AMFI scheme code from its name via `GET /mf/search?q=…`, scored to prefer **Direct + Growth** and reject IDCW/Regular (`_scoreScheme`), then **caches `schemeCode`/`schemeName` on the fund** so later runs skip the search.
-- **Update:** `GET /mf/{code}/latest` → sets `latestNav` + `navAsOf` (AMFI's `dd-mm-yyyy` → ISO); value/return/XIRR/benchmark recompute; observed `xirrLow/High` + `returnLow/High` refresh; `widenBenchBands` runs too.
+- **Update:** `GET /mf/{code}` (full daily history, not just `/latest` — see Stats tab below) → the newest entry sets `latestNav` + `navAsOf` (AMFI's `dd-mm-yyyy` → ISO); value/return/XIRR/benchmark recompute; observed `xirrLow/High` + `returnLow/High` refresh; `widenBenchBands` runs too.
 - **No once-per-day gate** — the user removed it (mfapi.in has no stated rate limit), so every click re-fetches all held funds. AMFI itself only publishes once daily, so a same-day re-click typically just confirms the same NAV — harmless, no real limitation to guard against.
 - **Cross-origin** so it bypasses the same-origin service-worker fetch handler; fails gracefully offline. Funds not on AMFI (e.g. ULIPs like HDFC Click2Wealth) are reported as unmatched → set NAV manually.
+
+## Stats tab (Day/Month/Year vs Nifty 50)
+
+A 4th bottom-nav tab (`Holdings | Overview | Benchmark | Stats`) showing each held fund's NAV change over the **last day / month / year**, compared against **Nifty 50**.
+
+- **Nifty 50 is a proxy, not the real index.** The raw NSE index level can't be fetched browser-only — NSE's own API needs session cookies and blocks CORS, and Yahoo's `^NSEI` is CORS-blocked too. mfapi.in only wraps AMFI *mutual fund* NAVs, with no index endpoint. So the app uses a **Nifty 50 index fund's NAV** (`NIFTY50_PROXY = '120716'`, UTI Nifty 50 Index Fund - Direct Growth) as the benchmark — its % change tracks the real index within a small tracking-error/expense-ratio drift, and it comes from the exact same `mfapi.in` endpoint already used for fund NAVs.
+- **Populated by the ☁️ NAV fetch** (`fetchMfNavs`), not a separate button — that function now calls `GET /mf/{code}` (full history) instead of `/mf/{code}/latest` for every held fund, plus one extra call for the Nifty proxy. One tap refreshes NAV *and* Stats; the tradeoff is a heavier payload per tap (full history vs a single latest reading).
+- **Storage: deltas only, not history.** `navChangePct(hist, daysBack)` computes day/month/year % from the fetched history in memory, then only `fund.stats = { d1, m1, y1, asOf }` (~4 numbers) is persisted on the fund record — a schemaless field, no DB version bump. The Nifty proxy's own `{d1,m1,y1,asOf}` goes in `meta.mfNiftyStats`. Raw daily history is never stored (would be ~50 KB/fund over 10 yr); the deltas add roughly 1 KB total across all funds — negligible against typical ~500–600 KB backups.
+- **Day/Month/Year are rolling, not calendar periods** — day = vs the previous trading day, month = vs ~30 days back, year = vs ~365 days back (nearest available trading date at-or-before the target, since markets are closed weekends/holidays).
+- **UI:** Day/Month/Year sub-tabs (`_mfStatsTab`, mirrors `_mfBenchTab`'s pattern) above a Nifty header row and a sorted fund list (best period-performer first); each fund row shows its own % plus a small delta-vs-Nifty badge. Funds unmatched on mfapi (no `stats`) show `—` rather than being hidden. Empty state before the first ☁️ fetch: "Tap ☁️ to fetch NAV history…".
 
 ## OCR (Paytm Money)
 
