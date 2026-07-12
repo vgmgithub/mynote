@@ -1408,7 +1408,7 @@ function setAppMode(mode) {
   $('#mfAddBtn').classList.toggle('hidden', !isMF);
   $('#mfFetchBtn').classList.toggle('hidden', !isMF);
   $('#backBtn').classList.toggle('hidden', isHome);
-  $('#appTitle').innerHTML = isHome ? 'MyNote' : (isMF ? 'Mutual&nbsp;Funds' : 'MyNote&nbsp;Stocks');
+  $('#appTitle').innerHTML = isHome ? '' : (isMF ? 'Mutual&nbsp;Funds' : 'MyNote&nbsp;Stocks');
   if (isStocks) {
     render();
   } else {
@@ -1439,7 +1439,7 @@ async function renderHome() {
   const host = $('#homeView');
   host.innerHTML = '';
   host.appendChild(el('div', { class: 'home-hero' }, [
-    el('h2', { class: 'home-title', text: 'MyNote' }),
+    el('h2', { class: 'home-title', text: 'MyNotes' }),
     el('p', { class: 'home-tag', text: 'Private tracker - everything stays on this device.' }),
   ]));
 
