@@ -175,7 +175,7 @@ function buildChrome() {
 
   const seg = $('#filterSeg');
   seg.innerHTML = '';
-  [['holding', 'Holding'], ['sold', 'Sold'], ['all', 'All']].forEach(([v, label]) => {
+  [['holding', 'Holding'], ['sold', 'Sold']].forEach(([v, label]) => {
     seg.appendChild(el('button', {
       'data-filter': v, text: label,
       onclick: () => { if (state.filter === v) return; state.filter = v; updateFiltersActive(); renderList(); },
