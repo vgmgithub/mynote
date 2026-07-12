@@ -1447,7 +1447,7 @@ async function renderHome() {
   let totalInvested = 0, totalValue = 0;
   try {
     // Stocks
-    const stocks = await DB.getAll('stocks') || [];
+    const stocks = await DB.all('stocks') || [];
     for (const s of stocks) {
       if (s.status === 'holding') {
         totalInvested += Number(s.units || 0) * Number(s.buyPrice || 0);
@@ -1490,7 +1490,7 @@ async function renderHome() {
   // Live stats for Stock and MF cards
   try {
     // Stocks
-    const stocks = await DB.getAll('stocks') || [];
+    const stocks = await DB.all('stocks') || [];
     const stockSub = stockCard.querySelector('.home-card-sub');
     if (stocks.length && stockSub) {
       const invested = stocks.reduce((s, stock) => {
