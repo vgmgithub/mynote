@@ -1446,9 +1446,11 @@ async function renderHome() {
   // Calculate total invested and earned across both Stocks and Mutual Funds
   let totalInvested = 0, totalValue = 0;
   try {
-    // Stocks
-    const stocks = await DB.all('stocks') || [];
-    for (const s of stocks) {
+    // Stocks — Me-India and Me-US only (excluding Wife-India)
+    const meInStocks = (await DB.byPortfolio('stocks', 'me-in')) || [];
+    const meUsStocks = (await DB.byPortfolio('stocks', 'me-us')) || [];
+    const allMyStocks = [...meInStocks, ...meUsStocks];
+    for (const s of allMyStocks) {
       if (s.status === 'holding') {
         totalInvested += Number(s.units || 0) * Number(s.buyPrice || 0);
         totalValue += Number(s.units || 0) * Number(s.currentPrice || 0);
