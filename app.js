@@ -1616,13 +1616,14 @@ async function renderMF() {
   // Summary (shown in Overview tab only)
   const cells = [
     _mfCell('Invested', fmtCur(totInv, 'INR')),
+    _mfCell('Returns Earned', fmtCur(totVal - totInv, 'INR'), pctClass(gainPct)),
     _mfCell(viewSold ? 'Realized XIRR' : 'Portfolio XIRR', wXirr != null ? fmtPct(wXirr) : '-', wXirr != null ? pctClass(wXirr) : ''),
     _mfCell('Above benchmark', benchCount ? `${aboveBench} of ${benchCount}` : '-'),
   ];
 
   // Summary is common to Holdings/Overview tabs only (hidden for Benchmark tab).
-  // Current value + Earned Return share the top row (value on the left,
-  // gain % on the right) - Earned Return replaces the old "Overall gain" cell.
+  // Current value + Current Return share the top row (value on the left,
+  // gain % on the right).
   const summarySec = el('section', { class: 'summary' + (_mfTab === 'benchmark' ? ' hidden' : '') }, [
     el('div', { class: 'row-between summary-top' }, [
       el('div', {}, [
@@ -1630,7 +1631,7 @@ async function renderMF() {
         el('div', { class: 'big', text: fmtCur(totVal, 'INR') }),
       ]),
       el('div', { class: 'summary-earned' }, [
-        el('div', { class: 'label', text: viewSold ? 'Realized gain' : 'Earned Return' }),
+        el('div', { class: 'label', text: viewSold ? 'Realized gain' : 'Current Return' }),
         el('div', { class: 'v ' + pctClass(gainPct), text: fmtPct(gainPct) }),
       ]),
     ]),
