@@ -1489,16 +1489,12 @@ async function renderHome() {
 
   // Live stats for Stock and MF cards
   try {
-    // Stocks
-    const stocks = await DB.all('stocks') || [];
+    // Stocks — Me · India only
+    const meInStocks = (await DB.byPortfolio('stocks', 'me-in')) || [];
     const stockSub = stockCard.querySelector('.home-card-sub');
-    if (stocks.length && stockSub) {
-      const invested = stocks.reduce((s, stock) => {
-        if (stock.status === 'holding') return s + (Number(stock.units || 0) * Number(stock.buyPrice || 0));
-        if (stock.status === 'sold') return s + (Number(stock.units || 0) * Number(stock.buyPrice || 0));
-        return s;
-      }, 0);
-      stockSub.textContent = `${stocks.length} stocks · ${fmtCur(invested, 'INR')} invested`;
+    if (meInStocks.length && stockSub) {
+      const invested = meInStocks.reduce((s, stock) => s + (Number(stock.units || 0) * Number(stock.buyPrice || 0)), 0);
+      stockSub.textContent = `${meInStocks.length} stocks · ${fmtCur(invested, 'INR')} invested`;
     }
     // Mutual Funds
     const funds = await DB.byIndex('funds', 'owner', 'me');
