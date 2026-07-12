@@ -129,6 +129,9 @@ main { padding: 14px; }
 .summary .cell .v { font-size: 1.02rem; font-weight: 600; margin-top: 2px; }
 .summary .row-between { display: flex; align-items: center; justify-content: space-between; }
 .summary .label { color: var(--muted); font-size: 0.78rem; }
+.summary .summary-top { align-items: flex-start; }
+.summary .summary-earned { text-align: right; }
+.summary .summary-earned .v { font-size: 1.3rem; font-weight: 700; margin-top: 2px; }
 
 /* Toolbar */
 .toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; align-items: center; }
