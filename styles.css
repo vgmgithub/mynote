@@ -890,9 +890,9 @@ body.locked { overflow: hidden; }
 .stat-label { color: var(--muted); font-size: 0.75rem; }
 .stat-value { font-size: 1.15rem; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 6px; }
 .summary-badge { font-size: 0.82rem; padding: 4px 8px; border-radius: 6px; font-weight: 600; color: #fff; }
-.summary-badge.good { background: linear-gradient(135deg, #10b981, #34d399); }
-.summary-badge.bad { background: linear-gradient(135deg, #ef4444, #f87171); }
-.summary-badge.neutral { background: linear-gradient(135deg, #6b7280, #9ca3af); }
+.summary-badge.pos { background: linear-gradient(135deg, #10b981, #34d399); }
+.summary-badge.neg { background: linear-gradient(135deg, #ef4444, #f87171); }
+.summary-badge.flat { background: linear-gradient(135deg, #6b7280, #9ca3af); }
 .home-cards { display: flex; flex-direction: column; gap: 12px; margin-top: 18px; }
 .home-card {
   display: flex; align-items: center; gap: 14px; width: 100%; text-align: left;
