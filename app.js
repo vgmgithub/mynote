@@ -1446,17 +1446,12 @@ async function renderHome() {
   // Calculate total invested and earned across both Stocks and Mutual Funds
   let totalInvested = 0, totalValue = 0;
   try {
-    // Stocks — Me-India and Me-US only (excluding Wife-India)
+    // Stocks — Me-India only (holdings, not sold)
     const meInStocks = (await DB.byPortfolio('stocks', 'me-in')) || [];
-    const meUsStocks = (await DB.byPortfolio('stocks', 'me-us')) || [];
-    const allMyStocks = [...meInStocks, ...meUsStocks];
-    for (const s of allMyStocks) {
+    for (const s of meInStocks) {
       if (s.status === 'holding') {
         totalInvested += Number(s.units || 0) * Number(s.buyPrice || 0);
         totalValue += Number(s.units || 0) * Number(s.currentPrice || 0);
-      } else if (s.status === 'sold') {
-        totalInvested += Number(s.units || 0) * Number(s.buyPrice || 0);
-        totalValue += Number(s.soldUnits || 0) * Number(s.soldPrice || 0);
       }
     }
     // Mutual Funds
@@ -1491,19 +1486,21 @@ async function renderHome() {
 
   // Live stats for Stock and MF cards
   try {
-    // Stocks — Me · India only
+    // Stocks — Holdings only (exclude Sold)
     const meInStocks = (await DB.byPortfolio('stocks', 'me-in')) || [];
+    const holdings = meInStocks.filter(s => s.status === 'holding');
     const stockSub = stockCard.querySelector('.home-card-sub');
-    if (meInStocks.length && stockSub) {
-      const invested = meInStocks.reduce((s, stock) => s + (Number(stock.units || 0) * Number(stock.buyPrice || 0)), 0);
-      stockSub.textContent = `${meInStocks.length} stocks · ${fmtCur(invested, 'INR')} invested`;
+    if (holdings.length && stockSub) {
+      const invested = holdings.reduce((s, stock) => s + (Number(stock.units || 0) * Number(stock.buyPrice || 0)), 0);
+      stockSub.textContent = `${holdings.length} stocks · ${fmtCur(invested, 'INR')} invested`;
     }
-    // Mutual Funds
-    const funds = await DB.byIndex('funds', 'owner', 'me');
+    // Mutual Funds — Investing only (exclude Sold)
+    const funds = (await DB.byIndex('funds', 'owner', 'me')) || [];
+    const investing = funds.filter(f => f.status !== 'Sold');
     const sub = mfCard.querySelector('.home-card-sub');
-    if (funds && funds.length && sub) {
-      const invested = funds.reduce((s, f) => s + (f.contributions || []).reduce((a, c) => a + (Number(c.amount) || 0), 0), 0);
-      sub.textContent = `${funds.length} funds · ${fmtCur(invested, 'INR')} invested`;
+    if (investing.length && sub) {
+      const invested = investing.reduce((s, f) => s + (f.contributions || []).reduce((a, c) => a + (Number(c.amount) || 0), 0), 0);
+      sub.textContent = `${investing.length} funds · ${fmtCur(invested, 'INR')} invested`;
     }
   } catch (_) {}
 }
