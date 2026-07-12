@@ -147,7 +147,7 @@ main { padding: 14px; }
 .seg { display: flex; background: var(--card); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
 .seg button {
   background: transparent; color: var(--muted); border: none;
-  padding: 8px 12px; font-size: 0.82rem; cursor: pointer; white-space: nowrap;
+  padding: 6px 10px; font-size: 0.75rem; cursor: pointer; white-space: nowrap;
 }
 .seg button.active { background: var(--card-2); color: var(--text); font-weight: 600; }
 .search {
