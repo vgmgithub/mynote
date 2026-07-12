@@ -1486,8 +1486,21 @@ async function renderHome() {
   const mfCard = _homeCard('📊', 'Mutual Funds', 'SIPs · XIRR · 2030 goal', () => openMF());
   host.appendChild(el('div', { class: 'home-cards' }, [stockCard, mfCard]));
   host.appendChild(el('p', { class: 'hint home-foot', text: 'Backup covers both - open the ⋮ menu → Backup & Restore.' }));
-  // Light live stat for the MF card (invested = sum of contributions; no mf.js needed).
+
+  // Live stats for Stock and MF cards
   try {
+    // Stocks
+    const stocks = await DB.getAll('stocks') || [];
+    const stockSub = stockCard.querySelector('.home-card-sub');
+    if (stocks.length && stockSub) {
+      const invested = stocks.reduce((s, stock) => {
+        if (stock.status === 'holding') return s + (Number(stock.units || 0) * Number(stock.buyPrice || 0));
+        if (stock.status === 'sold') return s + (Number(stock.units || 0) * Number(stock.buyPrice || 0));
+        return s;
+      }, 0);
+      stockSub.textContent = `${stocks.length} stocks · ${fmtCur(invested, 'INR')} invested`;
+    }
+    // Mutual Funds
     const funds = await DB.byIndex('funds', 'owner', 'me');
     const sub = mfCard.querySelector('.home-card-sub');
     if (funds && funds.length && sub) {
