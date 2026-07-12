@@ -885,6 +885,10 @@ body.locked { overflow: hidden; }
 .home-hero { padding: 22px 2px 6px; }
 .home-title { margin: 0; font-size: 1.7rem; font-weight: 800; letter-spacing: 0.3px; }
 .home-tag { margin: 4px 0 0; color: var(--muted); font-size: 0.82rem; }
+.home-summary { display: flex; gap: 12px; margin-top: 16px; }
+.summary-stat { flex: 1; background: linear-gradient(135deg, var(--card), var(--card-2)); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 12px; display: flex; flex-direction: column; gap: 4px; }
+.stat-label { color: var(--muted); font-size: 0.75rem; }
+.stat-value { font-size: 1.15rem; font-weight: 700; color: var(--text); }
 .home-cards { display: flex; flex-direction: column; gap: 12px; margin-top: 18px; }
 .home-card {
   display: flex; align-items: center; gap: 14px; width: 100%; text-align: left;

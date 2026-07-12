@@ -1442,6 +1442,46 @@ async function renderHome() {
     el('h2', { class: 'home-title', text: 'MyNote' }),
     el('p', { class: 'home-tag', text: 'Private tracker - everything stays on this device.' }),
   ]));
+
+  // Calculate total invested and earned across both Stocks and Mutual Funds
+  let totalInvested = 0, totalValue = 0;
+  try {
+    // Stocks
+    const stocks = await DB.getAll('stocks') || [];
+    for (const s of stocks) {
+      if (s.status === 'holding') {
+        totalInvested += Number(s.units || 0) * Number(s.buyPrice || 0);
+        totalValue += Number(s.units || 0) * Number(s.currentPrice || 0);
+      } else if (s.status === 'sold') {
+        totalInvested += Number(s.units || 0) * Number(s.buyPrice || 0);
+        totalValue += Number(s.soldUnits || 0) * Number(s.soldPrice || 0);
+      }
+    }
+    // Mutual Funds
+    const funds = await DB.byIndex('funds', 'owner', 'me') || [];
+    for (const f of funds) {
+      const c = await import('./mf.js').then(mod => mod.computeFund(f, Date.now())).catch(() => null);
+      if (c) {
+        totalInvested += c.invested || 0;
+        totalValue += c.value || 0;
+      }
+    }
+  } catch (_) {}
+
+  const totalEarned = totalValue - totalInvested;
+  const totalEarnedPct = totalInvested > 0 ? (totalEarned / totalInvested) * 100 : 0;
+  const summaryCard = el('div', { class: 'home-summary' }, [
+    el('div', { class: 'summary-stat' }, [
+      el('div', { class: 'stat-label', text: 'Total Invested' }),
+      el('div', { class: 'stat-value', text: fmtCur(totalInvested, 'INR') }),
+    ]),
+    el('div', { class: 'summary-stat' }, [
+      el('div', { class: 'stat-label', text: 'Total Earned' }),
+      el('div', { class: 'stat-value ' + pctClass(totalEarnedPct), text: fmtCur(totalEarned, 'INR') + ' (' + fmtPct(totalEarnedPct) + ')' }),
+    ]),
+  ]);
+  host.appendChild(summaryCard);
+
   const stockCard = _homeCard('📈', 'Stocks', 'Holdings · trends · news', () => setAppMode('stocks'));
   const mfCard = _homeCard('📊', 'Mutual Funds', 'SIPs · XIRR · 2030 goal', () => openMF());
   host.appendChild(el('div', { class: 'home-cards' }, [stockCard, mfCard]));
