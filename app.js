@@ -1527,7 +1527,7 @@ async function renderFD() {
   // ---- Holdings tab: filter + sort + card list ----
   const filterSeg = el('div', { class: 'seg' }, [['active', `Active (${activeRows.length})`], ['matured', `Matured (${maturedRows.length})`], ['all', `All (${rows.length})`]].map(([v, l]) =>
     el('button', { class: (_fdFilter === v ? 'active' : ''), type: 'button', text: l, onclick: () => { _fdFilter = v; renderFD(); } })));
-  const sortbar = el('div', { class: 'sortbar mf-sortbar' }, [['maturity', 'Maturity'], ['principal', 'Amount'], ['rate', 'Rate'], ['bank', 'Bank']].map(([v, l]) =>
+  const sortbar = el('div', { class: 'sortbar mf-sortbar' }, [['maturity', 'Maturity'], ['principal', 'Amount'], ['rate', 'Rate']].map(([v, l]) =>
     el('button', { class: 'sort-btn' + (_fdSort === v ? ' active' : ''), type: 'button', text: l, onclick: () => { _fdSort = v; renderFD(); } })));
   holdContent.appendChild(el('div', { class: 'toolbar mf-toolbar-top' }, [filterSeg, sortbar]));
 
