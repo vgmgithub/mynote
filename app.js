@@ -1455,9 +1455,10 @@ async function renderHome() {
         totalValue += Number(s.units || 0) * Number(s.currentPrice || 0);
       }
     }
-    // Mutual Funds
+    // Mutual Funds — Investing only (exclude Sold, matches the MF card subtext below)
     const funds = await DB.byIndex('funds', 'owner', 'me') || [];
     for (const f of funds) {
+      if (f.status === 'Sold') continue;
       const c = await import('./mf.js').then(mod => mod.computeFund(f, Date.now())).catch(() => null);
       if (c) {
         totalInvested += c.invested || 0;
