@@ -1458,7 +1458,7 @@ async function renderHome() {
     // Mutual Funds — Investing only (exclude Sold, matches the MF card subtext below)
     const funds = await DB.byIndex('funds', 'owner', 'me') || [];
     for (const f of funds) {
-      if (f.status === 'Sold') continue;
+      if (f.status === 'Sold' || f.soldDate) continue;
       const c = await import('./mf.js').then(mod => mod.computeFund(f, Date.now())).catch(() => null);
       if (c) {
         totalInvested += c.invested || 0;
@@ -1496,9 +1496,10 @@ async function renderHome() {
       const invested = holdings.reduce((s, stock) => s + (Number(stock.units || 0) * Number(stock.buyPrice || 0)), 0);
       stockSub.textContent = `${holdings.length} stocks · ${fmtCur(invested, 'INR')} invested`;
     }
-    // Mutual Funds — Investing only (exclude Sold)
+    // Mutual Funds — Investing only (exclude Sold; same "sold" definition mf.js
+    // uses elsewhere - status='Sold' OR a soldDate is set).
     const funds = (await DB.byIndex('funds', 'owner', 'me')) || [];
-    const investing = funds.filter(f => f.status !== 'Sold');
+    const investing = funds.filter(f => f.status !== 'Sold' && !f.soldDate);
     const sub = mfCard.querySelector('.home-card-sub');
     if (investing.length && sub) {
       const invested = investing.reduce((s, f) => s + (f.contributions || []).reduce((a, c) => a + (Number(c.amount) || 0), 0), 0);
