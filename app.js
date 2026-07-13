@@ -1447,10 +1447,11 @@ async function renderHome() {
   // Calculate total invested and earned across both Stocks and Mutual Funds
   let totalInvested = 0, totalValue = 0;
   try {
-    // Stocks — Me-India only (holdings, not sold)
+    // Stocks — Me-India only (holdings, not sold). SGB gold bonds excluded here -
+    // they'll be tracked under a future Metal Investment surface, not Stocks.
     const meInStocks = (await DB.byPortfolio('stocks', 'me-in')) || [];
     for (const s of meInStocks) {
-      if (s.status === 'holding') {
+      if (s.status === 'holding' && !/sgb/i.test(s.name || '')) {
         totalInvested += Number(s.units || 0) * Number(s.buyPrice || 0);
         totalValue += Number(s.units || 0) * Number(s.currentPrice || 0);
       }
@@ -1467,6 +1468,8 @@ async function renderHome() {
     }
   } catch (_) {}
 
+  // Earned is derived from the exact same (filtered) invested/value totals above -
+  // same stocks + funds included, nothing computed on a separate dataset.
   const totalEarned = totalValue - totalInvested;
   const totalEarnedPct = totalInvested > 0 ? (totalEarned / totalInvested) * 100 : 0;
   const summaryCard = el('div', { class: 'home-summary' }, [
@@ -1488,9 +1491,9 @@ async function renderHome() {
 
   // Live stats for Stock and MF cards
   try {
-    // Stocks — Holdings only (exclude Sold)
+    // Stocks — Holdings only (exclude Sold + SGB gold bonds, matches totals above)
     const meInStocks = (await DB.byPortfolio('stocks', 'me-in')) || [];
-    const holdings = meInStocks.filter(s => s.status === 'holding');
+    const holdings = meInStocks.filter(s => s.status === 'holding' && !/sgb/i.test(s.name || ''));
     const stockSub = stockCard.querySelector('.home-card-sub');
     if (holdings.length && stockSub) {
       const invested = holdings.reduce((s, stock) => s + (Number(stock.units || 0) * Number(stock.buyPrice || 0)), 0);
