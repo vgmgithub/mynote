@@ -17,6 +17,7 @@ C:\Apache24\htdocs\mynote\
 ├── backup.js               ← folder-based backup & restore (File System Access)
 ├── feed.js                 ← news fetch (Marketaux) + offline recommendation engine
 ├── mf.js                   ← mutual-fund logic (XIRR, projections) + seed data (lazy-loaded)
+├── fd.js                   ← fixed-deposit logic (maturity/interest/ladder calc) (lazy-loaded)
 ├── icons/
 │   ├── icon-192.png
 │   └── icon-512.png
@@ -63,7 +64,7 @@ state = {
 
 ## IndexedDB schema
 
-Database: `mynote-stocks`, version `4`.
+Database: `mynote-stocks`, version `5`.
 
 ### `stocks` store
 - Key: `id` (auto-increment).
@@ -145,6 +146,11 @@ Meta keys added in v3:
 Meta keys added in v4:
 - `mfSeeded` → `true` once the 11 sheet funds have been seeded.
 - `mfMidCapAdded` → `true` once the Quant Mid Cap sold stub has been added.
+
+### `fds` store (v5+)
+- Key: `id` (auto-increment).
+- Index: `owner` (currently only `'me'`).
+- One row per fixed deposit: `bank`, `principal`, `rate` (annual %), `startDate`/`maturityDate`, `compounding` (`quarterly`|`monthly`|`half-yearly`|`yearly`|`simple`), `payout` (`cumulative`|`payout`), `status` (`active`|`matured`|`broken`), `notes`. Maturity value / interest / accrued value / days-to-maturity are all **derived** by `computeFd` (never stored → no drift). Full shape and logic in [fixed-deposits.md](fixed-deposits.md).
 
 ## Service worker — caching strategy
 

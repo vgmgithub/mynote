@@ -926,6 +926,17 @@ body.locked { overflow: hidden; }
 .mf-sortbar { margin-left: auto; }
 .mf-foot { margin-top: 14px; padding-bottom: 20px; }
 .mf-view .stock-list { padding-bottom: 20px; }
+/* FD ladder — maturity-ordered rungs (date chip · bank · maturity value) */
+.fd-ladder { display: flex; flex-direction: column; gap: 10px; padding-bottom: 20px; }
+.fd-ladder-row { display: flex; align-items: center; gap: 12px; cursor: pointer; }
+.fd-ladder-date { flex: 0 0 auto; width: 44px; text-align: center; }
+.fd-ladder-mon { font-weight: 700; font-size: 0.9rem; }
+.fd-ladder-yr { font-size: 0.68rem; color: var(--muted); }
+.fd-ladder-body { flex: 1; min-width: 0; }
+.fd-ladder-body .name { font-size: 0.9rem; font-weight: 600; }
+.fd-ladder-body .cat { font-size: 0.72rem; color: var(--muted); }
+.fd-ladder-val { flex: 0 0 auto; }
+.fd-ladder-row.fd-done { opacity: 0.58; }
 .mf-catline { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .mf-beat { font-size: 0.62rem; padding: 1px 6px; }
 /* Invested · Value on one line with Value emphasized */

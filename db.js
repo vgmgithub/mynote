@@ -1,7 +1,7 @@
 // IndexedDB data layer. All data lives on this device only.
 export const DB = (function () {
   const NAME = 'mynote-stocks';
-  const VERSION = 4;
+  const VERSION = 5;
   let dbp = null;
 
   function open() {
@@ -39,6 +39,13 @@ export const DB = (function () {
         // value history — see mf.js for the record shape. Added in v4.
         if (!db.objectStoreNames.contains('funds')) {
           const s = db.createObjectStore('funds', { keyPath: 'id', autoIncrement: true });
+          s.createIndex('owner', 'owner', { unique: false });
+        }
+        // Fixed deposits (FD ladder). One row per deposit, indexed by `owner`.
+        // Holds bank/principal/rate/start+maturity dates — see fd.js for the
+        // record shape and the maturity/interest calculations. Added in v5.
+        if (!db.objectStoreNames.contains('fds')) {
+          const s = db.createObjectStore('fds', { keyPath: 'id', autoIncrement: true });
           s.createIndex('owner', 'owner', { unique: false });
         }
       };
@@ -93,13 +100,14 @@ export const DB = (function () {
       // `feed` is best-effort: very old backups (v2 export) won't have it, and
       // the store may not exist if the user is mid-upgrade. Don't fail the
       // whole export over a missing store.
-      const [stocks, snapshots, monthly, meta, feed, funds] = await Promise.all([
+      const [stocks, snapshots, monthly, meta, feed, funds, fds] = await Promise.all([
         this.all('stocks'),
         this.all('snapshots'),
         this.all('monthly'),
         this.all('meta'),
         this.all('feed').catch(() => []),
         this.all('funds').catch(() => []),
+        this.all('fds').catch(() => []),
       ]);
       return {
         app: 'mynote-stocks',
@@ -111,6 +119,7 @@ export const DB = (function () {
         meta,
         feed,
         funds,
+        fds,
       };
     },
     // Replace all data with the contents of a previously exported object.
@@ -125,15 +134,17 @@ export const DB = (function () {
         this.clear('meta'),
         this.clear('feed').catch(() => {}),
         this.clear('funds').catch(() => {}),
+        this.clear('fds').catch(() => {}),
       ]);
       const tasks = [];
       (data.stocks || []).forEach((s) => tasks.push(this.put('stocks', s)));
       (data.snapshots || []).forEach((s) => tasks.push(this.put('snapshots', s)));
       (data.monthly || []).forEach((m) => tasks.push(this.put('monthly', m)));
       (data.meta || []).forEach((m) => tasks.push(this.put('meta', m)));
-      // feed + funds may be missing on older backups — silently skip.
+      // feed + funds + fds may be missing on older backups — silently skip.
       (data.feed || []).forEach((f) => tasks.push(this.put('feed', f).catch(() => {})));
       (data.funds || []).forEach((f) => tasks.push(this.put('funds', f).catch(() => {})));
+      (data.fds || []).forEach((f) => tasks.push(this.put('fds', f).catch(() => {})));
       await Promise.all(tasks);
     },
   };
