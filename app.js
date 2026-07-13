@@ -1614,6 +1614,10 @@ async function renderMF() {
   // data is populated by that same fetch).
   $('#mfAddBtn').classList.toggle('hidden', _mfTab !== 'holdings');
   $('#mfFetchBtn').classList.toggle('hidden', _mfTab !== 'holdings' && _mfTab !== 'stats');
+  // ☁️ is normally docked left of the + FAB (fab-secondary's fixed offset assumes
+  // + is there). On Stats, + is hidden, so ☁️ would float with an empty gap where
+  // + used to be - .solo docks it to the corner + would have occupied instead.
+  $('#mfFetchBtn').classList.toggle('solo', _mfTab === 'stats');
 
   // Holdings tab content: fund list with filter/sort
   const holdContent = el('div', { class: 'tab-content' + (_mfTab === 'holdings' ? '' : ' hidden') });

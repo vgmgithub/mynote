@@ -262,6 +262,9 @@ main { padding: 14px; }
   font-size: 1.4rem;
   display: flex; align-items: center; justify-content: center;
 }
+/* When the primary + FAB is hidden (e.g. MF Stats tab), the secondary FAB docks
+   to the corner slot + would have used, instead of floating with an empty gap. */
+.fab.fab-secondary.solo { right: 18px; }
 
 /* OCR review */
 .ocr-sheet { max-width: 720px; }
