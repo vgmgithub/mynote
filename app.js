@@ -1860,12 +1860,16 @@ async function renderHome() {
       stockSub.textContent = `${holdings.length} stocks · ${fmtCur(invested, 'INR')} invested`;
     }
     // Mutual Funds — Investing only (exclude Sold; same "sold" definition mf.js
-    // uses elsewhere - status='Sold' OR a soldDate is set).
+    // uses elsewhere - status='Sold' OR a soldDate is set). Invested uses mf.js's
+    // investedOf() (average-cost-basis rollup) - not a raw sum of contribution
+    // amounts, which would wrongly add a partial-sell row's proceeds as if it
+    // were money invested.
     const funds = (await DB.byIndex('funds', 'owner', 'me')) || [];
     const investing = funds.filter(f => f.status !== 'Sold' && !f.soldDate);
     const sub = mfCard.querySelector('.home-card-sub');
     if (investing.length && sub) {
-      const invested = investing.reduce((s, f) => s + (f.contributions || []).reduce((a, c) => a + (Number(c.amount) || 0), 0), 0);
+      const mfMod = await import('./mf.js');
+      const invested = investing.reduce((s, f) => s + (mfMod.investedOf(f) || 0), 0);
       sub.textContent = `${investing.length} funds · ${fmtCur(invested, 'INR')} invested`;
     }
     // Fixed Deposits — subtext shows the active count + Total invested value,

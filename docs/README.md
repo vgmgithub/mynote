@@ -30,6 +30,6 @@ The app is **served by Apache**, not a Node dev server. There's no preview serve
 
 ## SW version cadence
 
-Every code change bumps `CACHE = 'mynote-stocks-vNN'` in `service-worker.js`. Current version after re-syncing the Home FD card's invested figure to active-FD principal (matches the FD Overview's Total invested value headline; see [fixed-deposits.md](fixed-deposits.md)): **v157**. The next change should be v158.
+Every code change bumps `CACHE = 'mynote-stocks-vNN'` in `service-worker.js`. Current version after fixing the Home MF card's invested figure to use mf.js's investedOf() instead of a raw contribution sum (a partial-sell row was wrongly inflating it; see [mutual-funds.md](mutual-funds.md)): **v158**. The next change should be v159.
 
 **Updates are user-triggered (v44+).** New versions are detected in the background but only applied when the user taps **Menu → "Check for updates"**. No more cache flushes, no more surprise reloads. See [gotchas.md → Service worker updates](gotchas.md#service-worker-updates--user-triggered-v44).
