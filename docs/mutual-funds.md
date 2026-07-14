@@ -11,6 +11,7 @@ On open (after the lock gate) the app shows a **Home** screen with two cards: **
 - Boot: `init()` still runs the normal `await refresh()` (stock data + background tasks unchanged), then calls `setAppMode('home')` — the launcher overlays the already-rendered (hidden) stock app. Zero change to stock behaviour.
 - `‹` back button (`#backBtn`) returns to Home from Stocks/MF. Home always opens first (not persisted).
 - **Home MF card subtext** (`{N} funds · ₹{invested}`) — `investing` funds only (`status !== 'Sold' && !soldDate`), invested = Σ `investedOf(f)` from `mf.js` (the canonical average-cost-basis rollup — a partial-sell contribution reduces invested proportionally, not a raw sum of every contribution's `amount`, which would wrongly add sell proceeds as if they were new investment). Matches the top Total Invested summary's method (`computeFund().invested`).
+- **Display rounding** — every currency figure on the Home screen (Total Invested, Total Earned, and all three card subtexts — Stocks/MF/FD invested) is shown rounded to the nearest rupee via `fmtIntCur()` (app.js) — no paise. Same helper the FD module uses for its interest figures.
 
 ## Files
 

@@ -1465,12 +1465,12 @@ function updateFdNavActive() {
 const _FD_MONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const _fdMonthLabel = (iso) => { const m = /^\d{4}-(\d{2})/.exec(iso || ''); return m ? _FD_MONS[+m[1] - 1] : ''; };
 
-// FD interest figures are rounded to the nearest rupee (no paise) - paisa-level
-// precision doesn't matter for these, and it makes bank-statement comparisons
-// easier to eyeball. Only used for pure interest amounts; principal/invested/
-// maturity figures elsewhere keep the normal fmtCur (2 decimals).
-const _fdIntFmt = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
-const fmtFdInt = (n) => _fdIntFmt.format(Math.round(Number(n) || 0));
+// Whole-rupee currency formatting (no paise) - used for FD interest figures
+// (paisa precision doesn't matter, and it makes bank-statement comparisons
+// easier to eyeball) and for the Home screen's summary/card figures. Everywhere
+// else keeps the normal fmtCur (2 decimals).
+const _intCurFmt = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
+const fmtIntCur = (n) => _intCurFmt.format(Math.round(Number(n) || 0));
 
 async function renderFD() {
   const host = $('#fdView');
@@ -1539,12 +1539,12 @@ async function renderFD() {
       ]),
       el('div', { class: 'summary-earned' }, [
         el('div', { class: 'label', text: 'Interest to earn' }),
-        el('div', { class: 'v pos', text: fmtFdInt(totInterest) }),
+        el('div', { class: 'v pos', text: fmtIntCur(totInterest) }),
       ]),
     ]),
     el('div', { class: 'grid' }, [
       _mfCell('Reinvested (P+I)', fmtCur(reinvested, 'INR')),
-      _mfCell('Interest matured', fmtFdInt(interestMatured), 'pos'),
+      _mfCell('Interest matured', fmtIntCur(interestMatured), 'pos'),
       _mfCell('Return %', returnPct ? returnPct.toFixed(2) + '%' : '—'),
       _mfCell('Active FDs', String(activeRows.length)),
     ]),
@@ -1592,7 +1592,7 @@ async function renderFD() {
   }
   ovrvContent.appendChild(el('div', { class: 'chart-card' }, [
     el('h3', { text: 'Interest income potential' }),
-    el('div', { class: 'mf-goal-meta', text: `≈ ${fmtFdInt(monthlyIncome)} / month · ${fmtFdInt(monthlyIncome * 12)} / year` }),
+    el('div', { class: 'mf-goal-meta', text: `≈ ${fmtIntCur(monthlyIncome)} / month · ${fmtIntCur(monthlyIncome * 12)} / year` }),
     el('p', { class: 'hint', text: 'Average interest thrown off by your active FDs over their tenure (payout FDs use their actual periodic interest).' }),
   ]));
   const upcoming = activeRows.filter(({ c }) => c.daysToMaturity != null).sort((a, b2) => a.c.daysToMaturity - b2.c.daysToMaturity)[0];
@@ -1627,7 +1627,7 @@ async function renderFD() {
         ]),
         // Green badge shows the INTEREST landing at this maturity (the point of the
         // ladder) - the principal is already on the sub-line above.
-        el('div', { class: 'fd-ladder-val' }, [el('span', { class: 'mf-value-card positive', text: '+' + fmtFdInt(c.totalInterest) })]),
+        el('div', { class: 'fd-ladder-val' }, [el('span', { class: 'mf-value-card positive', text: '+' + fmtIntCur(c.totalInterest) })]),
       ]);
     };
     const gapRung = (k) => el('div', { class: 'card fd-ladder-row fd-ladder-gap' }, [
@@ -1682,7 +1682,7 @@ function _fdCard(f, c) {
         catLine,
       ]),
       el('div', { class: 'card-right' }, [
-        el('div', { class: 'pct pos', text: '+' + fmtFdInt(c.totalInterest) }),
+        el('div', { class: 'pct pos', text: '+' + fmtIntCur(c.totalInterest) }),
         el('div', { class: 'meta-line', text: 'interest' }),
       ]),
     ]),
@@ -1743,7 +1743,7 @@ async function openFdForm(existing) {
     readout.appendChild(el('div', { class: 'mf-bench-now' }, [
       el('span', {}, ['Tenure ', b(term ? term.toFixed(2) + ' yr' : '—')]),
       el('span', {}, [(c.broken ? 'Exit value ' : 'Maturity '), b(hasEnd ? fmtCur(c.maturityValue, 'INR') : '—')]),
-      el('span', {}, ['Interest ', b(hasEnd ? fmtFdInt(c.totalInterest) : '—')]),
+      el('span', {}, ['Interest ', b(hasEnd ? fmtIntCur(c.totalInterest) : '—')]),
     ]));
   };
   // Typing a tenure fills the maturity date from the start date; then recompute.
@@ -1854,11 +1854,11 @@ async function renderHome() {
   const summaryCard = el('div', { class: 'home-summary' }, [
     el('div', { class: 'summary-stat' }, [
       el('div', { class: 'stat-label', text: 'Total Invested' }),
-      el('div', { class: 'stat-value', text: fmtCur(totalInvested, 'INR') }),
+      el('div', { class: 'stat-value', text: fmtIntCur(totalInvested) }),
     ]),
     el('div', { class: 'summary-stat' }, [
       el('div', { class: 'stat-label', text: 'Total Earned' }),
-      el('div', { class: 'stat-value' }, [fmtCur(totalEarned, 'INR') + ' ', el('span', { class: 'summary-badge ' + pctClass(totalEarnedPct), text: fmtPct(totalEarnedPct) })]),
+      el('div', { class: 'stat-value' }, [fmtIntCur(totalEarned) + ' ', el('span', { class: 'summary-badge ' + pctClass(totalEarnedPct), text: fmtPct(totalEarnedPct) })]),
     ]),
   ]);
   host.appendChild(summaryCard);
@@ -1877,7 +1877,7 @@ async function renderHome() {
     const stockSub = stockCard.querySelector('.home-card-sub');
     if (holdings.length && stockSub) {
       const invested = holdings.reduce((s, stock) => s + (Number(stock.units || 0) * Number(stock.buyPrice || 0)), 0);
-      stockSub.textContent = `${holdings.length} stocks · ${fmtCur(invested, 'INR')} invested`;
+      stockSub.textContent = `${holdings.length} stocks · ${fmtIntCur(invested)} invested`;
     }
     // Mutual Funds — Investing only (exclude Sold; same "sold" definition mf.js
     // uses elsewhere - status='Sold' OR a soldDate is set). Invested uses mf.js's
@@ -1890,7 +1890,7 @@ async function renderHome() {
     if (investing.length && sub) {
       const mfMod = await import('./mf.js');
       const invested = investing.reduce((s, f) => s + (mfMod.investedOf(f) || 0), 0);
-      sub.textContent = `${investing.length} funds · ${fmtCur(invested, 'INR')} invested`;
+      sub.textContent = `${investing.length} funds · ${fmtIntCur(invested)} invested`;
     }
     // Fixed Deposits — subtext shows the active count + Total invested value,
     // matching the FD Overview's headline (= active-FD principal only).
@@ -1903,7 +1903,7 @@ async function renderHome() {
       const activeCount = activeFds.length;
       const invested = activeFds.reduce((s, c) => s + (Number(c.principal) || 0), 0);
       const fdSub = fdCard.querySelector('.home-card-sub');
-      if (fdSub) fdSub.textContent = `${activeCount} active · ${fmtCur(invested, 'INR')} invested`;
+      if (fdSub) fdSub.textContent = `${activeCount} active · ${fmtIntCur(invested)} invested`;
     }
   } catch (_) {}
 }
