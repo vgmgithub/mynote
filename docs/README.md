@@ -30,6 +30,6 @@ The app is **served by Apache**, not a Node dev server. There's no preview serve
 
 ## SW version cadence
 
-Every code change bumps `CACHE = 'mynote-stocks-vNN'` in `service-worker.js`. Current version after the FD rolling-ladder summary + ladder gap cards (see [fixed-deposits.md](fixed-deposits.md)): **v146**. The next change should be v147.
+Every code change bumps `CACHE = 'mynote-stocks-vNN'` in `service-worker.js`. Current version after the FD Current-invested tweak (active principal − reinvested; see [fixed-deposits.md](fixed-deposits.md)): **v147**. The next change should be v148.
 
 **Updates are user-triggered (v44+).** New versions are detected in the background but only applied when the user taps **Menu → "Check for updates"**. No more cache flushes, no more surprise reloads. See [gotchas.md → Service worker updates](gotchas.md#service-worker-updates--user-triggered-v44).
