@@ -30,6 +30,6 @@ The app is **served by Apache**, not a Node dev server. There's no preview serve
 
 ## SW version cadence
 
-Every code change bumps `CACHE = 'mynote-stocks-vNN'` in `service-worker.js`. Current version after the FD ladder badge tweak (green badge shows interest, not maturity value; see [fixed-deposits.md](fixed-deposits.md)): **v149**. The next change should be v150.
+Every code change bumps `CACHE = 'mynote-stocks-vNN'` in `service-worker.js`. Current version after the FD summary redefinition (Current invested = active principal as-is; Total invested = current + matured principal; see [fixed-deposits.md](fixed-deposits.md)): **v150**. The next change should be v151.
 
 **Updates are user-triggered (v44+).** New versions are detected in the background but only applied when the user taps **Menu → "Check for updates"**. No more cache flushes, no more surprise reloads. See [gotchas.md → Service worker updates](gotchas.md#service-worker-updates--user-triggered-v44).

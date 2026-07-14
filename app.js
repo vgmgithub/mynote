@@ -1500,18 +1500,20 @@ async function renderFD() {
   });
   const wRate = totInv > 0 ? wRateSum / totInv : 0;
 
-  // Rolling-ladder view: Total invested = all principal committed across the
-  // ladder (active + matured). Reinvested (P+I) = matured proceeds rolled into new
-  // FDs. Current invested = *active* principal − reinvested = the fresh capital
-  // still locked in active FDs (the rolled-over portion stripped out). Broken FDs
-  // are early exits, not part of the rolling ladder, so they're excluded here.
-  let totalInvested = 0, reinvested = 0;
+  // Rolling-ladder view: Current invested = active-FD principal (totInv, as-is).
+  // Reinvested (P+I) = matured proceeds rolled into new FDs (principal + interest).
+  // Total invested = current invested + matured principal (active principal +
+  // matured principal — the interest isn't "invested", so it's excluded from this
+  // total). Broken FDs are early exits, not part of the rolling ladder, so they're
+  // excluded here.
+  let maturedPrincipal = 0, reinvested = 0;
   rows.forEach(({ c }) => {
-    if (c.effectiveStatus === 'broken') return;
-    totalInvested += c.principal;
-    if (c.effectiveStatus === 'matured') reinvested += c.maturityValue;
+    if (c.effectiveStatus !== 'matured') return;
+    maturedPrincipal += c.principal;
+    reinvested += c.maturityValue;
   });
-  const currentInvested = totInv - reinvested;   // totInv = active-FD principal
+  const currentInvested = totInv;                       // active-FD principal
+  const totalInvested = currentInvested + maturedPrincipal;
 
   const holdContent = el('div', { class: 'tab-content' + (_fdTab === 'holdings' ? '' : ' hidden') });
   const ovrvContent = el('div', { class: 'tab-content' + (_fdTab === 'overview' ? '' : ' hidden') });
