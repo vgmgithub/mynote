@@ -14,7 +14,7 @@ This is the inventory. Each entry: **what** + **where** + **why it's that way**.
 - **Sort always puts holdings before sold** (status-primary, then field-secondary). Single sort applies across the unified list.
 - **Search box**: filters by name OR category.
 - **Per-stock card**: shows current value, overall return %, invested, units, latest monthly change. Sold cards show realized P&L instead.
-- **Stale price indicator**: active holdings with a current price show how many days ago the price was updated. At 30+ days the line turns warning-colored.
+- **Stale price indicator**: active holdings with a current price show how many days ago the price was updated — a very tiny label riding inline at the right end of the "Current price" line (`.price-age`, not its own line). At 30+ days it turns warning-colored.
 - **Tap a card** → opens detail with monthly history list + per-month % editor.
 - **➕ FAB** → add new stock.
 - **📷 FAB** → OCR upload. **Only visible on Holdings tab**, and only on portfolios with an OCR parser (me-in, wife-in, me-us — all three now).

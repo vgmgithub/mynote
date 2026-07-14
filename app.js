@@ -477,13 +477,17 @@ function stockCard(s) {
     right.appendChild(el('div', { class: 'pct ' + (dpct != null ? pctClass(dpct) : 'flat'), text: dpct != null ? fmtPct(dpct) : '-' }));
     if (c.priced) {
       left.appendChild(el('div', { class: 'meta-line' }, [b(String(Number(s.units) || 0)), ' @ ' + fmtCur(s.buyPrice, cur)]));
-      left.appendChild(el('div', { class: 'meta-line' }, ['Current price ', b(fmtCur(s.currentPrice, cur))]));
+      // "Price updated" now rides inline on the right of the current-price line in
+      // a very tiny font (was its own line below).
+      const priceLine = el('div', { class: 'meta-line price-line' }, ['Current price ', b(fmtCur(s.currentPrice, cur))]);
       const age = priceAgeDays(s);
       if (age != null) {
-        const cls = age >= STALE_PRICE_DAYS ? ' stale warn' : ' stale';
-        const text = age === 0 ? 'Price updated today' : 'Price updated ' + age + 'd ago';
-        left.appendChild(el('div', { class: 'meta-line' + cls, text }));
+        priceLine.appendChild(el('span', {
+          class: 'price-age' + (age >= STALE_PRICE_DAYS ? ' warn' : ''),
+          text: age === 0 ? 'updated today' : 'updated ' + age + 'd ago',
+        }));
       }
+      left.appendChild(priceLine);
       const kv = (label, valNode) => el('div', { class: 'kv' }, [el('span', { class: 'kv-label', text: label }), valNode]);
       right.appendChild(kv('Overall return', el('span', { class: 'kv-val ' + (c.pl >= 0 ? 'pos' : 'neg'), text: (c.pl >= 0 ? '+' : '') + fmtCur(c.pl, cur) })));
       right.appendChild(kv('Current value', el('span', { class: 'kv-val', text: fmtCur(c.value, cur) })));
