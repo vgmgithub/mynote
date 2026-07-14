@@ -1868,16 +1868,16 @@ async function renderHome() {
       const invested = investing.reduce((s, f) => s + (f.contributions || []).reduce((a, c) => a + (Number(c.amount) || 0), 0), 0);
       sub.textContent = `${investing.length} funds · ${fmtCur(invested, 'INR')} invested`;
     }
-    // Fixed Deposits — subtext shows the active count + TOTAL invested (principal
-    // only, no interest) across all non-broken FDs (active + matured), matching
-    // the FD Overview's "Total invested value".
+    // Fixed Deposits — subtext shows the active count + Total invested value,
+    // matching the FD Overview's headline (= active-FD principal only).
     const fdList = (await DB.byIndex('fds', 'owner', 'me')) || [];
     if (fdList.length) {
       const fdMod = await import('./fd.js');
       const nowT = Date.now();
       const fdComputed = fdList.map((x) => fdMod.computeFd(x, nowT));
-      const activeCount = fdComputed.filter((c) => c.effectiveStatus === 'active').length;
-      const invested = fdComputed.reduce((s, c) => c.effectiveStatus === 'broken' ? s : s + (Number(c.principal) || 0), 0);
+      const activeFds = fdComputed.filter((c) => c.effectiveStatus === 'active');
+      const activeCount = activeFds.length;
+      const invested = activeFds.reduce((s, c) => s + (Number(c.principal) || 0), 0);
       const fdSub = fdCard.querySelector('.home-card-sub');
       if (fdSub) fdSub.textContent = `${activeCount} active · ${fmtCur(invested, 'INR')} invested`;
     }

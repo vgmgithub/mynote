@@ -4,7 +4,7 @@ A third surface inside the same PWA for tracking the user's **FD ladder** — on
 
 ## Home launcher
 
-The Home screen now shows **three** cards: Stocks / Mutual Funds / **Fixed Deposits**. The FD card's subtext shows `{N} active · ₹{invested}` where `{N}` is the active count (active = not matured/broken by status **or** by date) and `₹{invested}` is **total invested principal** (principal only, no interest) across all non-broken FDs — active + matured — matching the FD Overview's *Total invested value*. `setAppMode('fd')` shows/hides the FD surface + its own bottom nav + `#fdAddBtn`, exactly like the MF surface.
+The Home screen now shows **three** cards: Stocks / Mutual Funds / **Fixed Deposits**. The FD card's subtext shows `{N} active · ₹{invested}` where `{N}` is the active count (active = not matured/broken by status **or** by date) and `₹{invested}` = **active-FD principal only**, matching the FD Overview's *Total invested value* headline. `setAppMode('fd')` shows/hides the FD surface + its own bottom nav + `#fdAddBtn`, exactly like the MF surface.
 
 - Home **Total Invested / Total Earned** summary is **stocks + MF only** — FDs are a separate asset class and deliberately **not** folded into that equity-oriented figure (same reasoning as SGB gold bonds being carved out for a future Metal surface).
 
