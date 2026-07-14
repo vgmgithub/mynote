@@ -192,6 +192,13 @@ main { padding: 14px; }
 /* Holdings summary card: prices-updated status, tucked bottom-right */
 .summary-upd { text-align: right; font-size: 0.6rem; color: var(--muted); margin-top: 6px; }
 .summary-upd.warn { color: var(--warn); font-weight: 600; }
+/* Price status section below portfolios card */
+.price-status-container { margin: 12px 0 16px; }
+.price-status-row { display: flex; justify-content: space-between; font-size: 0.65rem; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.price-status-row:last-child { border-bottom: none; }
+.ps-label { color: var(--muted); }
+.ps-text { color: var(--muted); }
+.ps-text.warn { color: var(--warn); font-weight: 600; }
 .card-right { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex: 0 0 auto; }
 .kv { display: flex; align-items: center; gap: 5px; font-size: 0.7rem; }
 .kv-label { color: #38bdf8; font-weight: 700; font-size: 0.58rem; }
