@@ -30,6 +30,6 @@ The app is **served by Apache**, not a Node dev server. There's no preview serve
 
 ## SW version cadence
 
-Every code change bumps `CACHE = 'mynote-stocks-vNN'` in `service-worker.js`. Current version after switching the FD day-count convention (inclusive days, flat 365-day year — tuned to match a real bank FD to the paisa; see [fixed-deposits.md](fixed-deposits.md)): **v154**. The next change should be v155.
+Every code change bumps `CACHE = 'mynote-stocks-vNN'` in `service-worker.js`. Current version after reverting the FD day-count convention back to exclusive days over a 365.25-day year (see [fixed-deposits.md](fixed-deposits.md)): **v155**. The next change should be v156.
 
 **Updates are user-triggered (v44+).** New versions are detected in the background but only applied when the user taps **Menu → "Check for updates"**. No more cache flushes, no more surprise reloads. See [gotchas.md → Service worker updates](gotchas.md#service-worker-updates--user-triggered-v44).
