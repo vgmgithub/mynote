@@ -1613,7 +1613,9 @@ async function renderFD() {
           el('div', { class: 'name', text: f.bank || 'FD' }),
           el('div', { class: 'cat', text: sub }),
         ]),
-        el('div', { class: 'fd-ladder-val' }, [_mfValueCard(c.maturityValue, c.principal, false)]),
+        // Green badge shows the INTEREST landing at this maturity (the point of the
+        // ladder) - the principal is already on the sub-line above.
+        el('div', { class: 'fd-ladder-val' }, [el('span', { class: 'mf-value-card positive', text: '+' + fmtCur(c.totalInterest, 'INR') })]),
       ]);
     };
     const gapRung = (k) => el('div', { class: 'card fd-ladder-row fd-ladder-gap' }, [
