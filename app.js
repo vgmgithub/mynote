@@ -1493,9 +1493,9 @@ async function renderFD() {
   let list = _fdFilter === 'active' ? activeRows.slice() : _fdFilter === 'matured' ? maturedRows.slice() : rows.slice();
 
   // Totals over active FDs (the live ladder).
-  let totInv = 0, totMatVal = 0, totCurVal = 0, totInterest = 0, wRateSum = 0, monthlyIncome = 0;
+  let totInv = 0, totCurVal = 0, totInterest = 0, wRateSum = 0, monthlyIncome = 0;
   activeRows.forEach(({ c }) => {
-    totInv += c.principal; totMatVal += c.maturityValue; totCurVal += c.currentValue;
+    totInv += c.principal; totCurVal += c.currentValue;
     totInterest += c.totalInterest; wRateSum += c.rate * c.principal; monthlyIncome += c.monthlyIncome;
   });
   const wRate = totInv > 0 ? wRateSum / totInv : 0;
@@ -1514,6 +1514,7 @@ async function renderFD() {
   });
   const currentInvested = totInv;                       // active-FD principal
   const totalInvested = currentInvested + maturedPrincipal;
+  const interestMatured = reinvested - maturedPrincipal; // interest already realized (matured FDs only)
 
   const holdContent = el('div', { class: 'tab-content' + (_fdTab === 'holdings' ? '' : ' hidden') });
   const ovrvContent = el('div', { class: 'tab-content' + (_fdTab === 'overview' ? '' : ' hidden') });
@@ -1534,7 +1535,7 @@ async function renderFD() {
     ]),
     el('div', { class: 'grid' }, [
       _mfCell('Reinvested (P+I)', fmtCur(reinvested, 'INR')),
-      _mfCell('Maturity value (active)', fmtCur(totMatVal, 'INR')),
+      _mfCell('Interest matured', fmtCur(interestMatured, 'INR'), 'pos'),
       _mfCell('Avg rate', wRate ? wRate.toFixed(2) + '%' : '—'),
       _mfCell('Active FDs', String(activeRows.length)),
     ]),
