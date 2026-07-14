@@ -1686,12 +1686,12 @@ function _fdCard(f, c, chain) {
     : el('span', { class: 'badge muted mf-beat', text: 'matured' });
   const catLine = el('div', { class: 'cat mf-catline' }, [`${c.rate}% · ${c.comp}` + (c.payout ? ' · payout' : '')]);
   catLine.appendChild(statusBadge);
-  // Reinvestment-chain badges: funded from matured FD(s) (↻ from / ↻ merged N)
-  // and/or rolled into a newer one (↻ rolled over). Shows the money-flow.
+  // A compact blue "reinvested" badge flags an FD funded by rolling in matured
+  // FD(s) - replaces the old "↻ from {bank}" text (which wrapped to another line)
+  // and the fresh+rolled sub-line. Full breakdown lives in the Chain tab.
   const parents = (chain && chain.parents) || [];
-  if (parents.length === 1) catLine.appendChild(el('span', { class: 'badge muted mf-beat', text: '↻ from ' + (parents[0].bank || 'FD') }));
-  else if (parents.length > 1) catLine.appendChild(el('span', { class: 'badge muted mf-beat', text: '↻ merged ' + parents.length }));
-  if (chain && chain.child) catLine.appendChild(el('span', { class: 'badge muted mf-beat', text: '↻ rolled over' }));
+  if (parents.length) catLine.appendChild(el('span', { class: 'badge mf-beat fd-reinvested', text: 'reinvested' }));
+  if (chain && chain.child) catLine.appendChild(el('span', { class: 'badge muted mf-beat', text: 'rolled over' }));
   const matTxt = c.maturity
     ? (c.effectiveStatus === 'active'
         ? (c.daysToMaturity >= 0 ? `Matures ${c.maturity} · ${c.daysToMaturity}d` : `Due ${c.maturity}`)
@@ -1710,11 +1710,10 @@ function _fdCard(f, c, chain) {
     ]),
     el('div', { class: 'sub mf-sub2' }, [
       el('span', {}, [
-        el('div', {}, ['Invested ', b(fmtCur(c.principal, 'INR'))]),
-        c.rolledIn > 0 ? el('div', { class: 'mf-meta-mini', text: `${fmtCur(c.freshPrincipal, 'INR')} fresh + ${fmtCur(c.rolledIn, 'INR')} rolled` }) : el('span'),
+        el('div', {}, ['Invested ', b(fmtIntCur(c.principal))]),
         el('div', { class: 'mf-meta-mini', text: matTxt }),
       ]),
-      el('span', { class: 'value-emphasis' }, ['Maturity ', _mfValueCard(c.maturityValue, c.principal, false)]),
+      el('span', { class: 'value-emphasis' }, ['Maturity ', _mfValueCard(c.maturityValue, c.principal, false, fmtIntCur)]),
     ]),
   ]);
 }
@@ -2479,11 +2478,11 @@ async function renderMF() {
   host.appendChild(statsContent);
 }
 
-function _mfValueCard(value, invested, sold) {
+function _mfValueCard(value, invested, sold, fmtFn) {
   const gain = value - invested;
   const isPositive = gain >= 0;
   const cardClass = 'mf-value-card ' + (isPositive ? 'positive' : 'negative');
-  return el('span', { class: cardClass }, fmtCur(value, 'INR'));
+  return el('span', { class: cardClass }, (fmtFn || ((v) => fmtCur(v, 'INR')))(value));
 }
 
 function _mfCard(f, c) {

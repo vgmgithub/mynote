@@ -223,6 +223,7 @@ main { padding: 14px; }
 .badge.bad { color: var(--bad); border-color: rgba(248,113,113,0.4); background: rgba(248,113,113,0.1); }
 .badge.warn { color: var(--warn); border-color: rgba(251,191,36,0.4); background: rgba(251,191,36,0.1); }
 .badge.muted { color: var(--muted); }
+.badge.fd-reinvested { color: var(--accent); border-color: rgba(14,165,233,0.45); background: rgba(14,165,233,0.12); }
 
 .conv { font-size: 0.95rem; }
 .pos { color: var(--good); }

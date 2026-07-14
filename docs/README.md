@@ -30,6 +30,6 @@ The app is **served by Apache**, not a Node dev server. There's no preview serve
 
 ## SW version cadence
 
-Every code change bumps `CACHE = 'mynote-stocks-vNN'` in `service-worker.js`. Current version after FD merge support: `parentFdIds` array (merge 2+ matured FDs into one), "Funded by" checkbox multi-select sorted by maturity, Chain tab lists linked FDs only (see [fixed-deposits.md](fixed-deposits.md)): **v166**. The next change should be v167.
+Every code change bumps `CACHE = 'mynote-stocks-vNN'` in `service-worker.js`. Current version after the FD card cleanup: compact blue `reinvested` badge (replaces the ↻-from-bank text + fresh/rolled sub-line), whole-rupee invested & maturity in the list (see [fixed-deposits.md](fixed-deposits.md)): **v167**. The next change should be v168.
 
 **Updates are user-triggered (v44+).** New versions are detected in the background but only applied when the user taps **Menu → "Check for updates"**. No more cache flushes, no more surprise reloads. See [gotchas.md → Service worker updates](gotchas.md#service-worker-updates--user-triggered-v44).
