@@ -1617,20 +1617,22 @@ async function renderFD() {
     ]));
   }
 
-  // ---- Ladder tab: every FD with a maturity date, in maturity order ----
-  const ladderRows = rows.filter(({ c }) => c.maturity).sort((a, b2) => Date.parse(a.c.maturity) - Date.parse(b2.c.maturity));
+  // ---- Ladder tab: ACTIVE FDs only, in upcoming-maturity order ----
+  // Matured FDs have already paid out and are done, so they'd just be clutter on
+  // a forward-looking "what's coming due" view - the Holdings/Matured filter and
+  // Chain tab are where matured history lives.
+  const ladderRows = rows.filter(({ c }) => c.maturity && c.effectiveStatus === 'active').sort((a, b2) => Date.parse(a.c.maturity) - Date.parse(b2.c.maturity));
   if (!ladderRows.length) {
-    ladderContent.appendChild(el('div', { class: 'empty' }, [el('div', { class: 'e-icon', text: '🪜' }), el('p', { text: 'Add maturity dates to see your ladder.' })]));
+    ladderContent.appendChild(el('div', { class: 'empty' }, [el('div', { class: 'e-icon', text: '🪜' }), el('p', { text: 'No upcoming maturities. Add an active FD with a maturity date to see your ladder.' })]));
   } else {
-    ladderContent.appendChild(el('p', { class: 'hint', text: 'Your FDs in maturity order — the rungs of the ladder. A gap month means no FD matures then (no interest landing that month), so you can plug it. Tap a rung to edit.' }));
+    ladderContent.appendChild(el('p', { class: 'hint', text: 'Your upcoming maturities, in order — the rungs of the ladder. A gap month means no FD matures then (no interest landing that month), so you can plug it. Tap a rung to edit.' }));
     const wrap = el('div', { class: 'fd-ladder' });
     const mkey = (iso) => (iso || '').slice(0, 7);   // YYYY-MM
     const byMonth = {};
     ladderRows.forEach((r) => { const k = mkey(r.c.maturity); (byMonth[k] = byMonth[k] || []).push(r); });
     const rung = ({ f, c }) => {
-      const done = c.effectiveStatus !== 'active';
-      const sub = `${fmtCur(c.principal, 'INR')} @ ${c.rate}%` + (done ? ' · matured' : c.daysToMaturity >= 0 ? ` · ${c.daysToMaturity}d left` : ' · due');
-      return el('div', { class: 'card fd-ladder-row' + (done ? ' fd-done' : ''), onclick: () => openFdForm(f) }, [
+      const sub = `${fmtCur(c.principal, 'INR')} @ ${c.rate}%` + (c.daysToMaturity >= 0 ? ` · ${c.daysToMaturity}d left` : ' · due');
+      return el('div', { class: 'card fd-ladder-row', onclick: () => openFdForm(f) }, [
         el('div', { class: 'fd-ladder-date' }, [
           el('div', { class: 'fd-ladder-mon', text: _fdMonthLabel(c.maturity) }),
           el('div', { class: 'fd-ladder-yr', text: (c.maturity || '').slice(0, 4) }),
