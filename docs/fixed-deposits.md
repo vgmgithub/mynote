@@ -11,9 +11,9 @@ The Home screen shows **three** cards: Stocks / Mutual Funds / **Fixed Deposits*
 
 ## Files
 
-- **`fd.js`** — pure logic, lazy-loaded (`import('./fd.js')`). Exports `computeFd(fd, nowMs, seed)`, `resolveChain(fd, byId, nowMs, cache)`, `addMonths(iso, months)`, and the `FD_BANKS` / `FD_COMPOUNDING` constants. No DOM, no IO.
+- **`fd.js`** — pure logic, lazy-loaded (`import('./fd.js')`). Exports `computeFd(fd, nowMs, seed)`, `resolveChain(fd, byId, nowMs, cache)`, `parentIdsOf(fd)`, `addMonths(iso, months)`, and the `FD_BANKS` / `FD_COMPOUNDING` constants. No DOM, no IO.
 - **`app.js`** — `buildFdBottomNav`, `renderFD`, `_fdCard`, `_fdMonthLabel`, `openFdForm`; `setAppMode` handles the `'fd'` mode; `renderHome` adds the FD card + subtext.
-- **`db.js`** — `fds` store (v5) + folded into `exportAll`/`importAll` (best-effort `.catch`, like `feed`/`funds`), so backup carries FD data — including `parentFdId` — with no change to `backup.js`.
+- **`db.js`** — `fds` store (v5) + folded into `exportAll`/`importAll` (best-effort `.catch`, like `feed`/`funds`), so backup carries FD data — including `parentFdIds` — with no change to `backup.js`.
 
 ## Data model — `fds` store (IndexedDB v5)
 
@@ -28,7 +28,7 @@ Key `id` (auto-increment), index `owner` (`'me'`).
   startDate, maturityDate,   // 'YYYY-MM-DD'
   compounding,          // 'quarterly' (default) | 'monthly' | 'half-yearly' | 'yearly' | 'simple'
   payout,               // 'cumulative' (reinvest) | 'payout' (interest paid out)
-  parentFdId,           // id of the matured FD this one was reinvested from; null = fresh-only. Its maturity value seeds this FD's effective deposit.
+  parentFdIds: [id,...], // matured FD(s) merged into this one; [] = fresh-only. Sum of their maturity values seeds the effective deposit. (Legacy single `parentFdId` still read via parentIdsOf.)
   notes, createdAt, updatedAt,
 }
 ```
@@ -50,17 +50,18 @@ Everything financial is **derived** (never stored → no drift):
 - **FDs (holdings)** — filter `Active | Matured | All` (live counts) + sort `Maturity (soonest) | Amount | Rate` + the FD card list. Each card: bank, `rate% · compounding` + status badge + **chain badges** (`↻ from {parent bank}`, `↻ rolled over`), interest headline, invested (effective, with a `₹fresh + ₹rolled` sub-line when money was rolled in), maturity date + days-to-maturity, and the maturity-value card. **Superseded matured FDs are hidden** from the list — a matured FD whose child has *also* matured is absorbed into that newer link, so the matured list shows only the latest matured link per chain and can't grow unbounded. (Superseded FDs stay in the data and are visible via the Chain tab.)
 - **Overview** — summary card for the rolling ladder (all figures over **active** FDs unless noted): headline *Total invested value* (= Σ active **effective** principal, fresh + rolled) with a *Fresh invested* sub-line (= Σ active **fresh** principal — your out-of-pocket still in active FDs), *Interest to earn* (Σ active interest), then a grid of *Reinvested* (= Σ active `rolledIn` — recycled money currently working) / *Interest matured* (green — Σ realized interest from **non-superseded** matured FDs) / *Return %* (= Interest to earn ÷ effective invested × 100; **not annualized** — a longer-tenure ladder reads higher at the same bank rate) / *Active FDs*. Below: **Invested by bank** (`.bar-row`) + **Interest income potential** (avg ₹/month + ₹/year across active FDs) + **Next maturity**.
 - **Ladder** — **active FDs only** (matured FDs are done and would just be clutter on a forward-looking view; their history lives in Holdings' Matured filter + the Chain tab), walking **every month from the earliest upcoming maturity to the latest**; each FD is a rung (month/year date chip, bank, `₹principal @ rate% · Nd left`, and a green badge showing the **interest** landing at that maturity — `+₹{interest}`), and any month with **no FD maturing** gets a dashed **"No maturity"** gap card (`.fd-ladder-gap`) so gaps are visible. Tap a rung → edit (gap cards aren't tappable). A 600-month guard caps the walk.
-- **`openFdForm`** — a **tabbed** sheet (`.sheet.has-fixed-footer`, `.seg` tabs — mirrors the MF fund form). **Details** tab: bank (datalist), **Fresh principal (top-up only)**, rate, start/maturity dates, a **tenure-months → fills maturity date** helper, compounding, type (cumulative/payout), a **"Funded by (matured FD)"** dropdown (the reinvestment link — lists matured FDs that don't already fund another FD; sets `parentFdId`; adds that parent's payout to the deposit), notes, and a **live readout** (tenure / maturity / interest, plus a *Deposit ₹X (₹fresh + ₹rolled)* line when a parent is mapped). **Chain** tab (edit only): the full reinvestment chain — walks up via `parentFdId` and down via the child map, one row per link (bank · `₹effective @ rate% · status · mat date` + interest), current FD highlighted (`.fd-chain-current`), other links tappable. Footer: Save / Delete (edit only) / Cancel.
+- **`openFdForm`** — a **tabbed** sheet (`.sheet.has-fixed-footer`, `.seg` tabs — mirrors the MF fund form). **Details** tab: bank (datalist), **Fresh principal (top-up only)**, rate, start/maturity dates, a **tenure-months → fills maturity date** helper, compounding, type (cumulative/payout), a **"Funded by"** section — a **checkbox list** (`.fd-parent-list`) of eligible matured FDs (matured + not already consumed by another FD), **sorted by maturity date (oldest first)**; **tick one or several** to merge them into this FD (each ticked parent's payout adds to the deposit), untick to remove — sets `parentFdIds`; notes; and a **live readout** (tenure / maturity / interest, plus a *Deposit ₹X (₹fresh + ₹rolled)* line when parents are ticked). **Chain** tab (edit only): the **linked** FDs — this FD itself is **not** listed; walks up via `parentFdIds` (the matured FDs merged in, transitively) + down to where it rolled into, deduped + sorted by maturity, each row tappable to open it. Reflects the **live** checkbox selection. Footer: Save / Delete (edit only) / Cancel.
 
-## Reinvestment chains (`parentFdId`)
+## Reinvestment chains (`parentFdIds`)
 
-The user runs a rolling ladder: each month an FD matures and its proceeds are reinvested into a new FD, topped up with a spare ₹100–200. The model keeps this duplication-free **structurally**:
+The user runs a rolling ladder: each month an FD matures and its proceeds are reinvested into a new FD, topped up with a spare ₹100–200; sometimes **two matured FDs are merged into one** new FD. The model keeps this duplication-free **structurally**:
 
 - **`principal` stores only the fresh money** you add to each FD. So `Σ principal` across every FD = your true out-of-pocket, with no double-count, forever — no matter how many times the ladder loops.
-- **Effective deposit = fresh + mapped parent's maturity value**, resolved recursively by `resolveChain` (memoized, cycle-guarded). Interest computes on the effective amount; the card lists it (e.g. ₹2,000 fresh + ₹2,195 rolled = ₹4,195).
-- **Set** the link via the Details tab's "Funded by" dropdown; **view** it via the Chain tab + card `↻` badges.
-- **Matured list + Home supersede rule:** a matured FD is hidden/skipped once its child has *also* matured (its money is telescoped into that newer matured link). So the matured list and Home each show only the latest matured link per chain + terminal cashed-out FDs. Example (user's): Jan-2025 → Jan-2026 → Jan-2027(active). After Jan-2027 is booked, the matured list shows only Jan-2026 (Jan-2025 hidden, absorbed); Home counts only Jan-2026.
-- `computeFd` itself ignores `parentFdId` (takes the resolved `seed`); the chain walking is app-layer (`resolveChain` + `childByParent` maps in `renderFD`/`openFdForm`/`renderHome`).
+- **`parentFdIds` is an array** — a new FD can merge several matured FDs. **Effective deposit = fresh + Σ (each mapped parent's maturity value)**, resolved recursively by `resolveChain` (memoized, cycle-guarded). Interest computes on the effective amount; the card lists it (e.g. ₹500 fresh + ₹5,390 rolled from two matured FDs = ₹5,890).
+- **Fresh-only is fine** — leave all boxes unticked (e.g. the initial ramp-up months before anything has matured, or any month with no maturity). `parentIdsOf` also transparently reads the **legacy single `parentFdId`** from older records.
+- **Set** the links via the Details tab's "Funded by" checkbox list; **view** them via the Chain tab (linked FDs only, not self) + card `↻ from` / `↻ merged N` badges.
+- **Matured list + Home supersede rule:** a matured FD is hidden/skipped once the FD it was merged into has *also* matured (its money is telescoped into that newer matured link). So the matured list and Home each show only the latest matured link per chain + terminal cashed-out FDs. Example (user's): Jan-2025 → Jan-2026 → Jan-2027(active). After Jan-2027 is booked, the matured list shows only Jan-2026 (Jan-2025 hidden, absorbed); Home counts only Jan-2026. At steady state the active count and visible-matured count converge to the ladder width.
+- `computeFd` itself ignores the links (takes the resolved `seed`); the chain walking is app-layer (`resolveChain` + `parentIdsOf` + `childByParent` maps in `renderFD`/`openFdForm`/`renderHome`).
 
 ## Not built (yet)
 

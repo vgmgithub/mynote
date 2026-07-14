@@ -4,12 +4,12 @@
 //
 // FD record shape (fds store, IndexedDB v5):
 //   { id, owner:'me', bank,
-//     principal,                                         // FRESH money added to THIS FD only (top-up). Effective deposit = principal + mapped parent's maturity value (see resolveChain).
+//     principal,                                         // FRESH money added to THIS FD only (top-up). Effective deposit = principal + sum of mapped parents' maturity values (see resolveChain).
 //     rate,                                              // annual % p.a.
 //     startDate:'YYYY-MM-DD', maturityDate:'YYYY-MM-DD',
 //     compounding:'quarterly'|'monthly'|'half-yearly'|'yearly'|'simple',
 //     payout:'cumulative'|'payout',                     // reinvest vs interest paid out
-//     parentFdId,                                        // id of the matured FD this one was reinvested from (chain link); null = fresh-only. Its maturity value seeds this FD's effective deposit.
+//     parentFdIds:[id, ...],                              // ids of the matured FD(s) reinvested into this one (chain link; supports merging 2+ matured FDs into one). Empty/absent = fresh-only. Each parent's maturity value seeds this FD's effective deposit. (Legacy singular `parentFdId` from an older version is still read as a 1-element list.)
 //     notes, createdAt, updatedAt }
 // Status is derived purely from the date: active before maturity, matured on/after
 // it. There is no stored status and no "broken" - to drop an FD, delete it.
@@ -109,19 +109,29 @@ export function computeFd(fd, nowMs, seed) {
   };
 }
 
-// Resolve an FD's computeFd result folding in its mapped parent's maturity value
-// as the seed, recursively up the chain. `byId` = Map(id → fd record); `cache` =
-// Map(id → result) memo (also a cycle guard). Use this instead of computeFd
-// anywhere a chain (parentFdId) may be present.
+// Normalizes an FD's parent links to an array, whatever shape is stored: the
+// current `parentFdIds` array, or a legacy singular `parentFdId` from an older
+// version of this app.
+export function parentIdsOf(fd) {
+  if (Array.isArray(fd.parentFdIds)) return fd.parentFdIds.filter((x) => x != null);
+  if (fd.parentFdId != null) return [fd.parentFdId];
+  return [];
+}
+
+// Resolve an FD's computeFd result folding in its mapped parent(s)' maturity
+// value(s) as the seed (summed - this is how two matured FDs merge into one),
+// recursively up the chain. `byId` = Map(id → fd record); `cache` = Map(id →
+// result) memo (also a cycle guard). Use this instead of computeFd anywhere a
+// chain (parentFdIds) may be present.
 export function resolveChain(fd, byId, nowMs, cache) {
   cache = cache || new Map();
   if (cache.has(fd.id)) return cache.get(fd.id) || computeFd(fd, nowMs, 0);
   cache.set(fd.id, null);                       // cycle guard: null while resolving
   let seed = 0;
-  const pid = fd.parentFdId;
-  if (pid != null && byId.has(pid)) {
+  for (const pid of parentIdsOf(fd)) {
+    if (!byId.has(pid)) continue;
     const pc = resolveChain(byId.get(pid), byId, nowMs, cache);
-    if (pc) seed = pc.maturityValue;
+    if (pc) seed += pc.maturityValue;
   }
   const c = computeFd(fd, nowMs, seed);
   cache.set(fd.id, c);

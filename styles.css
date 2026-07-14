@@ -950,6 +950,10 @@ body.locked { overflow: hidden; }
 .fd-chain-row .cat { font-size: 0.72rem; color: var(--muted); }
 .fd-chain-int { flex: 0 0 auto; font-weight: 600; font-size: 0.9rem; }
 .fd-chain-current { border-color: var(--accent); cursor: default; }
+/* FD form → "Funded by" checkbox list (tick matured FDs to merge in) */
+.fd-parent-list { display: flex; flex-direction: column; gap: 6px; }
+.fd-parent-row { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.82rem; }
+.fd-parent-row input { flex: 0 0 auto; }
 .mf-catline { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .mf-beat { font-size: 0.62rem; padding: 1px 6px; }
 /* Invested · Value on one line with Value emphasized */
