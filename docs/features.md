@@ -14,7 +14,9 @@ This is the inventory. Each entry: **what** + **where** + **why it's that way**.
 - **Sort always puts holdings before sold** (status-primary, then field-secondary). Single sort applies across the unified list.
 - **Search box**: filters by name OR category.
 - **Per-stock card**: shows current value, overall return %, invested, units, latest monthly change. Sold cards show realized P&L instead.
-- **Prices-updated indicator**: shown **once per portfolio** (not per stock) on the Overview tab's **Portfolios** card — a tiny "Updated today / Nd ago" line under each portfolio's up/down %, computed as the most recent price update among that portfolio's active holdings (Me · India / Wife · India / Me · US tracked separately). 30+ days turns warning-colored (`.stat-upd`).
+- **Prices-updated indicator**: shown **once per portfolio** (not per stock), in two places, computed as the most recent price update among that portfolio's active holdings (Me · India / Wife · India / Me · US tracked separately; 30+ days warning-colored):
+  - **Holdings tab** — bottom-right corner of the top summary card (`#summary`, `.summary-upd`), for the currently-selected portfolio tab.
+  - **Overview tab** — a tiny line under each portfolio's up/down % on the **Portfolios** card (`.stat-upd`), all three at once.
 - **Tap a card** → opens detail with monthly history list + per-month % editor.
 - **➕ FAB** → add new stock.
 - **📷 FAB** → OCR upload. **Only visible on Holdings tab**, and only on portfolios with an OCR parser (me-in, wife-in, me-us — all three now).

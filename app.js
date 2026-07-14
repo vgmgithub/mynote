@@ -221,6 +221,17 @@ function renderSummary() {
     el('div', { class: 'k', text: k }), el('div', { class: 'v ' + (cls || ''), text: v }),
   ])));
   host.appendChild(grid);
+  // Prices-updated status for THIS portfolio (switches with the Me/Wife/US tab),
+  // tucked into the bottom-right corner - the most recent price update among the
+  // active holdings. Same info also aggregates per-portfolio on the Overview tab.
+  const ages = state.stocks.filter((x) => x.status !== 'sold').map(priceAgeDays).filter((a) => a != null);
+  const age = ages.length ? Math.min.apply(null, ages) : null;
+  if (age != null) {
+    host.appendChild(el('div', {
+      class: 'summary-upd' + (age >= STALE_PRICE_DAYS ? ' warn' : ''),
+      text: age === 0 ? 'Prices updated today' : 'Prices updated ' + age + 'd ago',
+    }));
+  }
 }
 
 // Portfolio Risk Analysis - fully offline. Reads current-portfolio holdings +
