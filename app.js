@@ -1507,6 +1507,28 @@ async function renderFD() {
   });
   const wRate = totInv > 0 ? wRateSum / totInv : 0;
 
+  // Portfolio XIRR (active FDs only) - the tenure-aware counterpart to Avg rate.
+  // Avg rate is a plain principal-weighted nominal rate (blind to tenure); this
+  // reuses mf.js's generic xirr() - each FD's principal is a cashflow out on its
+  // start date, its maturity value a cashflow in on its maturity date - which
+  // annualises across each FD's actual compounding period. Payout FDs' periodic
+  // payouts aren't modelled as separate cashflows (same lump-at-maturity
+  // simplification computeFd already uses for their totalInterest).
+  let fdXirrPct = null;
+  try {
+    const cashflows = [];
+    activeRows.forEach(({ c }) => {
+      if (!c.start || !c.maturity) return;
+      cashflows.push({ date: c.start, amount: -c.principal });
+      cashflows.push({ date: c.maturity, amount: c.maturityValue });
+    });
+    if (cashflows.length >= 2) {
+      const mfMod = await import('./mf.js');
+      const r = mfMod.xirr(cashflows);
+      if (r != null) fdXirrPct = r * 100;
+    }
+  } catch (_) {}
+
   // Rolling-ladder view: Total invested value = active-FD principal (totInv, as-is).
   // Reinvested (P+I) = matured proceeds rolled into new FDs (principal + interest).
   // Current invested = Total invested − Reinvested — the fresh capital still your
@@ -1543,6 +1565,7 @@ async function renderFD() {
       _mfCell('Reinvested (P+I)', fmtCur(reinvested, 'INR')),
       _mfCell('Interest matured', fmtFdInt(interestMatured), 'pos'),
       _mfCell('Avg rate', wRate ? wRate.toFixed(2) + '%' : '—'),
+      _mfCell('Portfolio XIRR', fdXirrPct != null ? fmtPct(fdXirrPct) : '—'),
       _mfCell('Active FDs', String(activeRows.length)),
     ]),
   ]);
