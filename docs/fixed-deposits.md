@@ -6,7 +6,7 @@ A third surface inside the same PWA for tracking the user's **FD ladder** — on
 
 The Home screen now shows **three** cards: Stocks / Mutual Funds / **Fixed Deposits**. The FD card's subtext shows `{N} active · ₹{invested}` where `{N}` is the active count (active = not matured/broken by status **or** by date) and `₹{invested}` = **active-FD principal only**, matching the FD Overview's *Total invested value* headline. `setAppMode('fd')` shows/hides the FD surface + its own bottom nav + `#fdAddBtn`, exactly like the MF surface.
 
-- Home **Total Invested / Total Earned** summary is **stocks + MF only** — FDs are a separate asset class and deliberately **not** folded into that equity-oriented figure (same reasoning as SGB gold bonds being carved out for a future Metal surface).
+- Home **Total Invested / Total Earned** summary is **stocks + MF + matured FDs**. *Active* FDs stay excluded — still-locked-in capital, a separate asset class tracked in the FD surface's own totals (same reasoning as SGB gold bonds being carved out for a future Metal surface) — but a **matured** FD is a completed, realized outcome: its `principal` folds into Total Invested and its `maturityValue` (principal + interest earned) folds into the value side, so the interest it actually earned flows into Total Earned exactly like a stock/fund gain does. Broken FDs are excluded either way (`effectiveStatus` is never `'matured'` for a broken FD).
 
 ## Files
 

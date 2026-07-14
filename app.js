@@ -1828,6 +1828,23 @@ async function renderHome() {
         totalValue += c.value || 0;
       }
     }
+    // Fixed Deposits — MATURED only (their original principal + the interest they
+    // actually earned by maturity). Active FDs stay excluded - they're a distinct,
+    // still-locked-in asset class tracked in the FD surface's own totals - but a
+    // matured FD is a completed, realized outcome, so its principal and earned
+    // interest fold into the same figure as Stocks/MF here.
+    const fds = (await DB.byIndex('fds', 'owner', 'me')) || [];
+    if (fds.length) {
+      const fdMod = await import('./fd.js');
+      const nowT = Date.now();
+      for (const fdRec of fds) {
+        const c = fdMod.computeFd(fdRec, nowT);
+        if (c.effectiveStatus === 'matured') {
+          totalInvested += c.principal;
+          totalValue += c.maturityValue;
+        }
+      }
+    }
   } catch (_) {}
 
   // Earned is derived from the exact same (filtered) invested/value totals above -
