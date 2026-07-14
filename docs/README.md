@@ -30,6 +30,6 @@ The app is **served by Apache**, not a Node dev server. There's no preview serve
 
 ## SW version cadence
 
-Every code change bumps `CACHE = 'mynote-stocks-vNN'` in `service-worker.js`. Current version after adding FD reinvestment chains (`parentFdId` link, form Chain tab, card ↻ badges, matured-list trim, and no-double-count Home totals; see [fixed-deposits.md](fixed-deposits.md)): **v163**. The next change should be v164.
+Every code change bumps `CACHE = 'mynote-stocks-vNN'` in `service-worker.js`. Current version after reworking FD reinvestment chains: `principal` now stores fresh money only (effective deposit = fresh + mapped parent's maturity value via `resolveChain`), broken status removed, matured list uses supersede-hide instead of a trim (see [fixed-deposits.md](fixed-deposits.md)): **v164**. The next change should be v165.
 
 **Updates are user-triggered (v44+).** New versions are detected in the background but only applied when the user taps **Menu → "Check for updates"**. No more cache flushes, no more surprise reloads. See [gotchas.md → Service worker updates](gotchas.md#service-worker-updates--user-triggered-v44).

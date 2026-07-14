@@ -3,14 +3,16 @@
 // (import('./fd.js')) so the Stocks/MF surfaces never pay for it.
 //
 // FD record shape (fds store, IndexedDB v5):
-//   { id, owner:'me', bank, principal, rate,           // rate = annual % p.a.
+//   { id, owner:'me', bank,
+//     principal,                                         // FRESH money added to THIS FD only (top-up). Effective deposit = principal + mapped parent's maturity value (see resolveChain).
+//     rate,                                              // annual % p.a.
 //     startDate:'YYYY-MM-DD', maturityDate:'YYYY-MM-DD',
 //     compounding:'quarterly'|'monthly'|'half-yearly'|'yearly'|'simple',
 //     payout:'cumulative'|'payout',                     // reinvest vs interest paid out
-//     status:'active'|'broken',                          // 'matured' is derived from the date, never stored
-//     brokenDate:'YYYY-MM-DD',                           // set only when status='broken' (early closure)
-//     parentFdId,                                        // id of the matured FD this one was funded from (reinvestment chain); null = fresh money. computeFd ignores it; app.js uses it for chain view + no-double-count Home totals.
+//     parentFdId,                                        // id of the matured FD this one was reinvested from (chain link); null = fresh-only. Its maturity value seeds this FD's effective deposit.
 //     notes, createdAt, updatedAt }
+// Status is derived purely from the date: active before maturity, matured on/after
+// it. There is no stored status and no "broken" - to drop an FD, delete it.
 
 const DAY = 86400000;
 
@@ -23,7 +25,6 @@ export const FD_BANKS = [
   'Utkarsh Small Finance Bank',
 ];
 export const FD_COMPOUNDING = ['quarterly', 'monthly', 'half-yearly', 'yearly', 'simple'];
-export const FD_STATUS = ['active', 'matured', 'broken'];
 
 const PERIODS = { yearly: 1, 'half-yearly': 2, quarterly: 4, monthly: 12 };
 
@@ -45,10 +46,15 @@ function valueAt(P, rate, years, comp) {
   return P * Math.pow(1 + rate / (100 * n), n * years);
 }
 
-export function computeFd(fd, nowMs) {
+// `seed` = the rolled-in base from a mapped matured parent (its maturity value).
+// Effective deposit P = fresh principal (fd.principal) + seed. Interest, maturity,
+// and current value all compute on P. `seed` defaults to 0 (a fresh-only FD).
+export function computeFd(fd, nowMs, seed) {
   const now = nowMs || Date.now();
   const todayISO = new Date(now).toISOString().slice(0, 10);
-  const P = Number(fd.principal) || 0;
+  const freshPrincipal = Number(fd.principal) || 0;
+  const rolledIn = Number(seed) || 0;
+  const P = freshPrincipal + rolledIn;         // effective deposit (bank pays interest on this)
   const rate = Number(fd.rate) || 0;
   const comp = fd.compounding || 'quarterly';
   const payout = fd.payout === 'payout';
@@ -60,35 +66,21 @@ export function computeFd(fd, nowMs) {
   // @ 7.75% quarterly, 18mo1day → ₹10,664.88 vs bank's ₹10,665, 12 paise off).
   // FDs of 18 months or under matched the original exclusive-day/365.25
   // convention better (₹2,000 @ 8.75%, 13mo). Decided once from the FD's
-  // *contracted* tenure (start→maturity), never from elapsed days, so a single
-  // FD can't switch convention partway through its life.
-  const EIGHTEEN_MONTHS_DAYS = 548;
+  // *contracted* tenure (start→maturity).
   const contractedDays = start && maturity ? (Date.parse(maturity) - Date.parse(start)) / DAY : 0;
-  const inclusive365 = contractedDays > EIGHTEEN_MONTHS_DAYS;
-
-  // A broken FD (closed early) ends on its broken date, not its maturity date -
-  // interest accrues only up to then, at the same rate (no penalty modelled).
-  const broken = (fd.status || 'active') === 'broken';
-  const brokenDate = broken ? (fd.brokenDate || todayISO) : null;
+  const inclusive365 = contractedDays > 548;
 
   const tenureYears = start && maturity ? Math.max(0, yearsBetween(start, maturity, inclusive365)) : 0;
   const tenureMonths = tenureYears * 12;
 
-  // Effective term end: the broken date for a broken FD, else the maturity date.
-  // Everything financial is derived off this, so a normal FD is unchanged.
-  const termEnd = broken ? brokenDate : maturity;
-  const termYears = start && termEnd ? Math.max(0, yearsBetween(start, termEnd, inclusive365)) : 0;
-  const termMonths = termYears * 12;
+  // Maturity value: a payout FD returns just the principal (interest paid out
+  // along the way); a cumulative FD reinvests, so it compounds.
+  const maturityValue = payout ? P : valueAt(P, rate, tenureYears, comp);
+  const totalInterest = payout ? (P * rate * tenureYears) / 100 : maturityValue - P;
 
-  // Maturity/exit value: a payout FD returns just the principal (interest was
-  // paid out along the way); a cumulative FD reinvests, so it compounds. A broken
-  // FD uses the shorter broken-date term.
-  const maturityValue = payout ? P : valueAt(P, rate, termYears, comp);
-  const totalInterest = payout ? (P * rate * termYears) / 100 : maturityValue - P;
-
-  // Accrued value as of today (clamped to the effective term once ended).
+  // Accrued value as of today (clamped to the tenure once matured).
   const elapsedRaw = start ? Math.max(0, yearsBetween(start, todayISO, inclusive365)) : 0;
-  const elapsedYears = termYears > 0 ? Math.min(elapsedRaw, termYears) : elapsedRaw;
+  const elapsedYears = tenureYears > 0 ? Math.min(elapsedRaw, tenureYears) : elapsedRaw;
   const currentValue = payout ? P : valueAt(P, rate, elapsedYears, comp);
   const accruedInterest = payout ? (P * rate * elapsedYears) / 100 : currentValue - P;
 
@@ -96,28 +88,44 @@ export function computeFd(fd, nowMs) {
   const daysToMaturity = maturityT != null ? Math.ceil((maturityT - now) / DAY) : null;
   const pastMaturity = maturityT != null && now >= maturityT;
 
-  // Broken wins; else an FD still marked active but past its date reads matured.
-  const userStatus = fd.status || 'active';
-  const effectiveStatus = broken
-    ? 'broken'
-    : userStatus === 'active' && pastMaturity ? 'matured' : userStatus;
+  // Status is purely date-derived now (no stored status, no broken).
+  const effectiveStatus = pastMaturity ? 'matured' : 'active';
 
   // Monthly interest income: payout FDs pay it out for real; for cumulative it's
-  // the total interest averaged over the (effective) term - what it throws off/month.
+  // the total interest averaged over the tenure - what it throws off/month.
   const monthlyIncome = payout
     ? (P * rate) / 1200
-    : termMonths > 0 ? totalInterest / termMonths : 0;
+    : tenureMonths > 0 ? totalInterest / tenureMonths : 0;
 
   return {
-    principal: P, rate, comp, payout, start, maturity,
+    principal: P, freshPrincipal, rolledIn,
+    rate, comp, payout, start, maturity,
     tenureYears, tenureMonths,
-    broken, brokenDate, termYears,
     maturityValue, totalInterest,
     currentValue, accruedInterest,
     daysToMaturity, pastMaturity,
-    userStatus, effectiveStatus,
+    effectiveStatus,
     monthlyIncome,
   };
+}
+
+// Resolve an FD's computeFd result folding in its mapped parent's maturity value
+// as the seed, recursively up the chain. `byId` = Map(id → fd record); `cache` =
+// Map(id → result) memo (also a cycle guard). Use this instead of computeFd
+// anywhere a chain (parentFdId) may be present.
+export function resolveChain(fd, byId, nowMs, cache) {
+  cache = cache || new Map();
+  if (cache.has(fd.id)) return cache.get(fd.id) || computeFd(fd, nowMs, 0);
+  cache.set(fd.id, null);                       // cycle guard: null while resolving
+  let seed = 0;
+  const pid = fd.parentFdId;
+  if (pid != null && byId.has(pid)) {
+    const pc = resolveChain(byId.get(pid), byId, nowMs, cache);
+    if (pc) seed = pc.maturityValue;
+  }
+  const c = computeFd(fd, nowMs, seed);
+  cache.set(fd.id, c);
+  return c;
 }
 
 // Add `months` to a YYYY-MM-DD date → YYYY-MM-DD (UTC math, no tz drift). Used
