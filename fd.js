@@ -7,7 +7,9 @@
 //     startDate:'YYYY-MM-DD', maturityDate:'YYYY-MM-DD',
 //     compounding:'quarterly'|'monthly'|'half-yearly'|'yearly'|'simple',
 //     payout:'cumulative'|'payout',                     // reinvest vs interest paid out
-//     status:'active'|'matured'|'broken', notes, createdAt, updatedAt }
+//     status:'active'|'broken',                          // 'matured' is derived from the date, never stored
+//     brokenDate:'YYYY-MM-DD',                           // set only when status='broken' (early closure)
+//     notes, createdAt, updatedAt }
 
 const DAY = 86400000;
 
@@ -50,17 +52,29 @@ export function computeFd(fd, nowMs) {
   const start = fd.startDate || null;
   const maturity = fd.maturityDate || null;
 
+  // A broken FD (closed early) ends on its broken date, not its maturity date -
+  // interest accrues only up to then, at the same rate (no penalty modelled).
+  const broken = (fd.status || 'active') === 'broken';
+  const brokenDate = broken ? (fd.brokenDate || todayISO) : null;
+
   const tenureYears = start && maturity ? Math.max(0, yearsBetween(start, maturity)) : 0;
   const tenureMonths = tenureYears * 12;
 
-  // Maturity value: a payout FD returns just the principal (interest was paid
-  // out along the way); a cumulative FD reinvests, so it compounds.
-  const maturityValue = payout ? P : valueAt(P, rate, tenureYears, comp);
-  const totalInterest = payout ? (P * rate * tenureYears) / 100 : maturityValue - P;
+  // Effective term end: the broken date for a broken FD, else the maturity date.
+  // Everything financial is derived off this, so a normal FD is unchanged.
+  const termEnd = broken ? brokenDate : maturity;
+  const termYears = start && termEnd ? Math.max(0, yearsBetween(start, termEnd)) : 0;
+  const termMonths = termYears * 12;
 
-  // Accrued value as of today (clamped to the tenure once matured).
+  // Maturity/exit value: a payout FD returns just the principal (interest was
+  // paid out along the way); a cumulative FD reinvests, so it compounds. A broken
+  // FD uses the shorter broken-date term.
+  const maturityValue = payout ? P : valueAt(P, rate, termYears, comp);
+  const totalInterest = payout ? (P * rate * termYears) / 100 : maturityValue - P;
+
+  // Accrued value as of today (clamped to the effective term once ended).
   const elapsedRaw = start ? Math.max(0, yearsBetween(start, todayISO)) : 0;
-  const elapsedYears = tenureYears > 0 ? Math.min(elapsedRaw, tenureYears) : elapsedRaw;
+  const elapsedYears = termYears > 0 ? Math.min(elapsedRaw, termYears) : elapsedRaw;
   const currentValue = payout ? P : valueAt(P, rate, elapsedYears, comp);
   const accruedInterest = payout ? (P * rate * elapsedYears) / 100 : currentValue - P;
 
@@ -68,19 +82,22 @@ export function computeFd(fd, nowMs) {
   const daysToMaturity = maturityT != null ? Math.ceil((maturityT - now) / DAY) : null;
   const pastMaturity = maturityT != null && now >= maturityT;
 
-  // User's status wins; an FD still marked active but past its date reads matured.
+  // Broken wins; else an FD still marked active but past its date reads matured.
   const userStatus = fd.status || 'active';
-  const effectiveStatus = userStatus === 'active' && pastMaturity ? 'matured' : userStatus;
+  const effectiveStatus = broken
+    ? 'broken'
+    : userStatus === 'active' && pastMaturity ? 'matured' : userStatus;
 
   // Monthly interest income: payout FDs pay it out for real; for cumulative it's
-  // the total interest averaged over the tenure (what the FD "throws off"/month).
+  // the total interest averaged over the (effective) term - what it throws off/month.
   const monthlyIncome = payout
     ? (P * rate) / 1200
-    : tenureMonths > 0 ? totalInterest / tenureMonths : 0;
+    : termMonths > 0 ? totalInterest / termMonths : 0;
 
   return {
     principal: P, rate, comp, payout, start, maturity,
     tenureYears, tenureMonths,
+    broken, brokenDate, termYears,
     maturityValue, totalInterest,
     currentValue, accruedInterest,
     daysToMaturity, pastMaturity,

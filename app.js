@@ -1654,7 +1654,12 @@ async function openFdForm(existing) {
   const tenure = numInput('', 'Months');
   const compounding = el('select', {}, mod.FD_COMPOUNDING.map((x) => { const o = el('option', { value: x, text: x }); if (x === f.compounding) o.selected = true; return o; }));
   const payout = el('select', {}, [['cumulative', 'Cumulative (reinvest)'], ['payout', 'Payout (interest out)']].map(([v, l]) => { const o = el('option', { value: v, text: l }); if (v === f.payout) o.selected = true; return o; }));
-  const status = el('select', {}, mod.FD_STATUS.map((x) => { const o = el('option', { value: x, text: x }); if (x === f.status) o.selected = true; return o; }));
+  // Status is derived from dates (active → matured) - the only thing a human sets
+  // is whether the FD was broken (closed early), which also caps interest at the
+  // broken date. So instead of an active/matured/broken dropdown, just a toggle.
+  const brokenChk = el('input', { type: 'checkbox' });
+  brokenChk.checked = f.status === 'broken';
+  const brokenDate = el('input', { type: 'date', value: f.brokenDate || todayISO() });
   const notes = el('textarea', { placeholder: 'Your notes' });
   notes.value = f.notes || '';
 
@@ -1667,7 +1672,8 @@ async function openFdForm(existing) {
     maturityDate: maturityDate.value || null,
     compounding: compounding.value,
     payout: payout.value,
-    status: status.value,
+    status: brokenChk.checked ? 'broken' : 'active',
+    brokenDate: brokenChk.checked ? (brokenDate.value || null) : null,
     notes: notes.value.trim(),
     createdAt: f.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -1677,10 +1683,13 @@ async function openFdForm(existing) {
   const refresh = () => {
     readout.innerHTML = '';
     const c = mod.computeFd(buildRec(), Date.now());
+    // A broken FD ends on its broken date, so show that shorter term + exit value.
+    const term = c.broken ? c.termYears : c.tenureYears;
+    const hasEnd = c.broken ? !!c.brokenDate : !!c.maturity;
     readout.appendChild(el('div', { class: 'mf-bench-now' }, [
-      el('span', {}, ['Tenure ', b(c.tenureYears ? c.tenureYears.toFixed(2) + ' yr' : '—')]),
-      el('span', {}, ['Maturity ', b(c.maturity ? fmtCur(c.maturityValue, 'INR') : '—')]),
-      el('span', {}, ['Interest ', b(c.maturity ? fmtCur(c.totalInterest, 'INR') : '—')]),
+      el('span', {}, ['Tenure ', b(term ? term.toFixed(2) + ' yr' : '—')]),
+      el('span', {}, [(c.broken ? 'Exit value ' : 'Maturity '), b(hasEnd ? fmtCur(c.maturityValue, 'INR') : '—')]),
+      el('span', {}, ['Interest ', b(hasEnd ? fmtCur(c.totalInterest, 'INR') : '—')]),
     ]));
   };
   // Typing a tenure fills the maturity date from the start date; then recompute.
@@ -1690,6 +1699,13 @@ async function openFdForm(existing) {
     refresh();
   });
   [principal, rate, compounding, payout, startDate, maturityDate].forEach((inp) => inp.addEventListener('input', refresh));
+
+  // Broken toggle: reveal the broken-date field only when checked, and recompute.
+  const brokenDateField = field('Broken on', brokenDate);
+  const syncBroken = () => brokenDateField.classList.toggle('hidden', !brokenChk.checked);
+  brokenChk.addEventListener('change', () => { syncBroken(); refresh(); });
+  brokenDate.addEventListener('input', refresh);
+  syncBroken();
   refresh();
 
   const del = async () => {
@@ -1712,7 +1728,10 @@ async function openFdForm(existing) {
     el('div', { class: 'field-row' }, [field('Start date', startDate), field('Maturity date', maturityDate)]),
     field('Tenure (months) → fills maturity date', tenure),
     el('div', { class: 'field-row' }, [field('Compounding', compounding), field('Type', payout)]),
-    field('Status', status),
+    el('div', { class: 'field' }, [
+      el('label', { class: 'fd-check', style: 'display:flex;align-items:center;gap:8px;cursor:pointer' }, [brokenChk, el('span', { text: 'Broken (closed early)' })]),
+    ]),
+    brokenDateField,
     field('Notes', notes),
     readout,
   ];

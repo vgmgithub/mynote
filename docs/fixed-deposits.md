@@ -27,7 +27,8 @@ Key `id` (auto-increment), index `owner` (`'me'`).
   startDate, maturityDate,   // 'YYYY-MM-DD'
   compounding,          // 'quarterly' (default) | 'monthly' | 'half-yearly' | 'yearly' | 'simple'
   payout,               // 'cumulative' (reinvest) | 'payout' (interest paid out)
-  status,               // 'active' | 'matured' | 'broken'
+  status,               // 'active' | 'broken'  ('matured' is derived from the date, never stored)
+  brokenDate,           // 'YYYY-MM-DD' — set only when status='broken' (early closure)
   notes, createdAt, updatedAt,
 }
 ```
@@ -35,8 +36,9 @@ Key `id` (auto-increment), index `owner` (`'me'`).
 Everything financial is **derived** by `computeFd` (never stored → no drift):
 - **Cumulative** FD compounds: `maturityValue = P·(1 + r/(100n))^(n·t)`, n = periods/yr (quarterly 4, monthly 12, half 2, yearly 1); `simple` uses `P·(1 + r·t/100)`. Interest = maturity − principal.
 - **Payout** FD returns just the principal at maturity (interest paid out along the way); total interest = `P·r·t/100`, monthly income = `P·r/1200`.
-- **currentValue** = accrued value as of today (elapsed years clamped to the tenure), so a fresh FD reads ≈ principal and a matured one reads its full maturity value.
-- **effectiveStatus** — the user's `status` wins, but an FD still marked `active` past its maturity date reads `matured`.
+- **currentValue** = accrued value as of today (elapsed years clamped to the effective term), so a fresh FD reads ≈ principal and a matured one reads its full maturity value.
+- **Broken FD (early closure)** — when `status='broken'`, the effective term ends on `brokenDate` (falls back to today if unset), not the maturity date. Interest accrues only up to then, at the same rate (no penalty rate modelled). So `maturityValue`/`totalInterest` become the *exit* value and interest-earned-to-broken-date, and `currentValue` = that exit value. A normal FD is unaffected (its term end is the maturity date, exactly as before).
+- **effectiveStatus** — `broken` wins; otherwise an FD still marked `active` past its maturity date reads `matured`. So the only status a human ever sets is **broken** (via a checkbox) — active↔matured is fully derived from the dates.
 - Dates use whole-day math (`365.25`-day years, UTC parse) so there's no timezone drift; `addMonths` fills the maturity date from a typed tenure.
 
 ## UI (renderFD → `#fdView`, reuses stock/MF CSS classes)
@@ -45,7 +47,7 @@ Everything financial is **derived** by `computeFd` (never stored → no drift):
 - **FDs (holdings)** — filter `Active | Matured | All` (live counts) + sort `Maturity (soonest) | Amount | Rate | Bank` + the FD card list. Each card: bank, `rate% · compounding` + status badge, interest headline, invested, maturity date + days-to-maturity, and the maturity-value card.
 - **Overview** — summary card (*Maturity value / Interest to earn / Invested / Current value / Avg rate / Active FDs*) + **Invested by bank** (`.bar-row`) + **Interest income potential** (avg ₹/month + ₹/year across active FDs) + **Next maturity**.
 - **Ladder** — every FD with a maturity date, in maturity order — the rungs: a month/year date chip, bank, `₹principal @ rate% · Nd left`, and the maturity-value card. Matured rungs dim (`.fd-done`). Tap any rung → edit.
-- **`openFdForm`** — a single sheet (`.sheet.has-fixed-footer`): bank (datalist), principal, rate, start/maturity dates, a **tenure-months → fills maturity date** helper, compounding, type (cumulative/payout), status, notes, and a **live readout** (tenure / maturity value / interest). Save / Delete (edit only) / Cancel.
+- **`openFdForm`** — a single sheet (`.sheet.has-fixed-footer`): bank (datalist), principal, rate, start/maturity dates, a **tenure-months → fills maturity date** helper, compounding, type (cumulative/payout), a **"Broken (closed early)" checkbox** (replaces the old active/matured/broken dropdown — active↔matured is derived from dates, so broken is the only manual status) that reveals a **Broken-on date** field when ticked, notes, and a **live readout** (tenure / maturity — or *exit* value when broken / interest). Save / Delete (edit only) / Cancel.
 
 ## Not built (yet)
 
