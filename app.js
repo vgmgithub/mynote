@@ -1500,6 +1500,19 @@ async function renderFD() {
   });
   const wRate = totInv > 0 ? wRateSum / totInv : 0;
 
+  // Rolling-ladder view: total money committed across the whole ladder (active +
+  // matured), how much of it is *reinvested* matured proceeds (principal+interest
+  // rolled into new FDs), and the fresh capital that's still your own (total −
+  // reinvested). Broken FDs are early exits, not part of the rolling ladder, so
+  // they're excluded here.
+  let totalInvested = 0, reinvested = 0;
+  rows.forEach(({ c }) => {
+    if (c.effectiveStatus === 'broken') return;
+    totalInvested += c.principal;
+    if (c.effectiveStatus === 'matured') reinvested += c.maturityValue;
+  });
+  const currentInvested = totalInvested - reinvested;
+
   const holdContent = el('div', { class: 'tab-content' + (_fdTab === 'holdings' ? '' : ' hidden') });
   const ovrvContent = el('div', { class: 'tab-content' + (_fdTab === 'overview' ? '' : ' hidden') });
   const ladderContent = el('div', { class: 'tab-content' + (_fdTab === 'ladder' ? '' : ' hidden') });
@@ -1508,8 +1521,9 @@ async function renderFD() {
   const summarySec = el('section', { class: 'summary' + (_fdTab === 'ladder' ? ' hidden' : '') }, [
     el('div', { class: 'row-between summary-top' }, [
       el('div', {}, [
-        el('div', { class: 'label', text: 'Maturity value (active)' }),
-        el('div', { class: 'big', text: fmtCur(totMatVal, 'INR') }),
+        el('div', { class: 'label', text: 'Total invested value' }),
+        el('div', { class: 'big', text: fmtCur(totalInvested, 'INR') }),
+        el('div', { class: 'fd-subline', text: 'Current invested ' + fmtCur(currentInvested, 'INR') }),
       ]),
       el('div', { class: 'summary-earned' }, [
         el('div', { class: 'label', text: 'Interest to earn' }),
@@ -1517,8 +1531,8 @@ async function renderFD() {
       ]),
     ]),
     el('div', { class: 'grid' }, [
-      _mfCell('Invested', fmtCur(totInv, 'INR')),
-      _mfCell('Current value', fmtCur(totCurVal, 'INR')),
+      _mfCell('Reinvested (P+I)', fmtCur(reinvested, 'INR')),
+      _mfCell('Maturity value (active)', fmtCur(totMatVal, 'INR')),
       _mfCell('Avg rate', wRate ? wRate.toFixed(2) + '%' : '—'),
       _mfCell('Active FDs', String(activeRows.length)),
     ]),
@@ -1582,12 +1596,15 @@ async function renderFD() {
   if (!ladderRows.length) {
     ladderContent.appendChild(el('div', { class: 'empty' }, [el('div', { class: 'e-icon', text: '🪜' }), el('p', { text: 'Add maturity dates to see your ladder.' })]));
   } else {
-    ladderContent.appendChild(el('p', { class: 'hint', text: 'Your FDs in maturity order — the rungs of the ladder. Tap one to edit.' }));
+    ladderContent.appendChild(el('p', { class: 'hint', text: 'Your FDs in maturity order — the rungs of the ladder. A gap month means no FD matures then (no interest landing that month), so you can plug it. Tap a rung to edit.' }));
     const wrap = el('div', { class: 'fd-ladder' });
-    ladderRows.forEach(({ f, c }) => {
+    const mkey = (iso) => (iso || '').slice(0, 7);   // YYYY-MM
+    const byMonth = {};
+    ladderRows.forEach((r) => { const k = mkey(r.c.maturity); (byMonth[k] = byMonth[k] || []).push(r); });
+    const rung = ({ f, c }) => {
       const done = c.effectiveStatus !== 'active';
       const sub = `${fmtCur(c.principal, 'INR')} @ ${c.rate}%` + (done ? ' · matured' : c.daysToMaturity >= 0 ? ` · ${c.daysToMaturity}d left` : ' · due');
-      wrap.appendChild(el('div', { class: 'card fd-ladder-row' + (done ? ' fd-done' : ''), onclick: () => openFdForm(f) }, [
+      return el('div', { class: 'card fd-ladder-row' + (done ? ' fd-done' : ''), onclick: () => openFdForm(f) }, [
         el('div', { class: 'fd-ladder-date' }, [
           el('div', { class: 'fd-ladder-mon', text: _fdMonthLabel(c.maturity) }),
           el('div', { class: 'fd-ladder-yr', text: (c.maturity || '').slice(0, 4) }),
@@ -1597,8 +1614,31 @@ async function renderFD() {
           el('div', { class: 'cat', text: sub }),
         ]),
         el('div', { class: 'fd-ladder-val' }, [_mfValueCard(c.maturityValue, c.principal, false)]),
-      ]));
-    });
+      ]);
+    };
+    const gapRung = (k) => el('div', { class: 'card fd-ladder-row fd-ladder-gap' }, [
+      el('div', { class: 'fd-ladder-date' }, [
+        el('div', { class: 'fd-ladder-mon', text: _FD_MONS[+k.slice(5, 7) - 1] }),
+        el('div', { class: 'fd-ladder-yr', text: k.slice(0, 4) }),
+      ]),
+      el('div', { class: 'fd-ladder-body' }, [
+        el('div', { class: 'name', text: 'No maturity' }),
+        el('div', { class: 'cat', text: 'No FD maturing this month' }),
+      ]),
+    ]);
+    // Walk every month from the first rung to the last; a month with no maturing
+    // FD gets a gap card so the missing interest-landing is visible (the whole
+    // point of a ladder is every month having something mature). Guard caps the
+    // walk at 600 months so a bad date can't spin forever.
+    let [y, m] = mkey(ladderRows[0].c.maturity).split('-').map(Number);
+    const [ey, em] = mkey(ladderRows[ladderRows.length - 1].c.maturity).split('-').map(Number);
+    let guard = 0;
+    while ((y < ey || (y === ey && m <= em)) && guard++ < 600) {
+      const k = `${y}-${String(m).padStart(2, '0')}`;
+      if (byMonth[k]) byMonth[k].forEach((r) => wrap.appendChild(rung(r)));
+      else wrap.appendChild(gapRung(k));
+      m++; if (m > 12) { m = 1; y++; }
+    }
     ladderContent.appendChild(wrap);
   }
 
