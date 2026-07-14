@@ -27,11 +27,15 @@ export const FD_STATUS = ['active', 'matured', 'broken'];
 const PERIODS = { yearly: 1, 'half-yearly': 2, quarterly: 4, monthly: 12 };
 
 // Whole-day-accurate year fraction between two YYYY-MM-DD dates (both parsed as
-// UTC midnight, so no timezone drift).
+// UTC midnight, so no timezone drift). Inclusive day-count (+1, the deposit date
+// itself counts as day 1) over a flat 365-day year - matches how Indian bank FD
+// systems compute tenure, verified against a real FD (₹9500 @ 7.75% quarterly,
+// 30-Jun-2026 to 31-Dec-2027): bank matured at ₹10,665; this convention computes
+// ₹10,664.88 (12 paise off, vs ₹3.21 off with the old exclusive/365.25 rule).
 function yearsBetween(aISO, bISO) {
   const a = Date.parse(aISO), b = Date.parse(bISO);
   if (isNaN(a) || isNaN(b)) return 0;
-  return (b - a) / (365.25 * DAY);
+  return ((b - a) / DAY + 1) / 365;
 }
 
 // Value of principal P after `years`, given annual rate% and compounding.
