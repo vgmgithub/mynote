@@ -30,6 +30,6 @@ The app is **served by Apache**, not a Node dev server. There's no preview serve
 
 ## SW version cadence
 
-Every code change bumps `CACHE = 'mynote-stocks-vNN'` in `service-worker.js`. Current version after moving the stock card's stale-price label inline (tiny, right-aligned on the Current price line; see [features.md](features.md)): **v168**. The next change should be v169.
+Every code change bumps `CACHE = 'mynote-stocks-vNN'` in `service-worker.js`. Current version after moving the stale-price label off each stock card to one per-portfolio "Updated" line on the Overview Portfolios card (see [features.md](features.md)): **v169**. The next change should be v170.
 
 **Updates are user-triggered (v44+).** New versions are detected in the background but only applied when the user taps **Menu → "Check for updates"**. No more cache flushes, no more surprise reloads. See [gotchas.md → Service worker updates](gotchas.md#service-worker-updates--user-triggered-v44).

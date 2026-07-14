@@ -477,17 +477,9 @@ function stockCard(s) {
     right.appendChild(el('div', { class: 'pct ' + (dpct != null ? pctClass(dpct) : 'flat'), text: dpct != null ? fmtPct(dpct) : '-' }));
     if (c.priced) {
       left.appendChild(el('div', { class: 'meta-line' }, [b(String(Number(s.units) || 0)), ' @ ' + fmtCur(s.buyPrice, cur)]));
-      // "Price updated" now rides inline on the right of the current-price line in
-      // a very tiny font (was its own line below).
-      const priceLine = el('div', { class: 'meta-line price-line' }, ['Current price ', b(fmtCur(s.currentPrice, cur))]);
-      const age = priceAgeDays(s);
-      if (age != null) {
-        priceLine.appendChild(el('span', {
-          class: 'price-age' + (age >= STALE_PRICE_DAYS ? ' warn' : ''),
-          text: age === 0 ? 'updated today' : 'updated ' + age + 'd ago',
-        }));
-      }
-      left.appendChild(priceLine);
+      // Per-stock "price updated" indicator was removed - the last-updated time is
+      // now shown once per portfolio on the Overview tab's Portfolios card.
+      left.appendChild(el('div', { class: 'meta-line' }, ['Current price ', b(fmtCur(s.currentPrice, cur))]));
       const kv = (label, valNode) => el('div', { class: 'kv' }, [el('span', { class: 'kv-label', text: label }), valNode]);
       right.appendChild(kv('Overall return', el('span', { class: 'kv-val ' + (c.pl >= 0 ? 'pos' : 'neg'), text: (c.pl >= 0 ? '+' : '') + fmtCur(c.pl, cur) })));
       right.appendChild(kv('Current value', el('span', { class: 'kv-val', text: fmtCur(c.value, cur) })));
@@ -676,10 +668,17 @@ async function renderTrends() {
   PORTFOLIOS.forEach((p) => {
     const lm = latest[p.id];
     const valTxt = lm && lm.value != null ? fmtCur(lm.value, p.cur) : '-';
+    // Per-portfolio "prices updated" — the most recent price update among this
+    // portfolio's active holdings (each portfolio tracked separately). Shown here
+    // once instead of on every stock card.
+    const ages = allStocks.filter((s) => s.portfolio === p.id && s.status !== 'sold').map(priceAgeDays).filter((a) => a != null);
+    const age = ages.length ? Math.min.apply(null, ages) : null;
+    const updTxt = age == null ? '' : age === 0 ? 'Updated today' : 'Updated ' + age + 'd ago';
     grid.appendChild(el('div', { class: 'stat' }, [
       el('div', { class: ('stat-v ' + _statSizeClass(valTxt)).trim(), text: valTxt }),
       el('div', { class: 'stat-k', text: p.label }),
       el('div', { class: 'stat-k ' + (lm && lm.returnPct != null ? pctClass(lm.returnPct) : ''), text: lm ? (lm.returnPct != null ? fmtPct(lm.returnPct) : ' ') : 'No data' }),
+      el('div', { class: 'stat-upd' + (age != null && age >= STALE_PRICE_DAYS ? ' warn' : ''), text: updTxt }),
     ]));
   });
   pcard.appendChild(grid);
