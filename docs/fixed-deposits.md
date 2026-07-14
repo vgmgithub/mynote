@@ -40,6 +40,7 @@ Everything financial is **derived** by `computeFd` (never stored → no drift):
 - **Broken FD (early closure)** — when `status='broken'`, the effective term ends on `brokenDate` (falls back to today if unset), not the maturity date. Interest accrues only up to then, at the same rate (no penalty rate modelled). So `maturityValue`/`totalInterest` become the *exit* value and interest-earned-to-broken-date, and `currentValue` = that exit value. A normal FD is unaffected (its term end is the maturity date, exactly as before).
 - **effectiveStatus** — `broken` wins; otherwise an FD still marked `active` past its maturity date reads `matured`. So the only status a human ever sets is **broken** (via a checkbox) — active↔matured is fully derived from the dates.
 - Dates use whole-day math (`365.25`-day years, UTC parse) so there's no timezone drift; `addMonths` fills the maturity date from a typed tenure.
+- **Display rounding** — every pure *interest* figure in the FD UI (Interest to earn, Interest matured, income potential, the per-FD card/ladder-badge/form-readout interest amounts) is shown rounded to the nearest rupee via `fmtFdInt()` (app.js) — no paise. Principal/invested/maturity-value figures keep the normal 2-decimal `fmtCur`. The underlying `computeFd` numbers are untouched (still full precision) — only display is rounded.
 
 ## UI (renderFD → `#fdView`, reuses stock/MF CSS classes)
 

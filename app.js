@@ -1465,6 +1465,13 @@ function updateFdNavActive() {
 const _FD_MONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const _fdMonthLabel = (iso) => { const m = /^\d{4}-(\d{2})/.exec(iso || ''); return m ? _FD_MONS[+m[1] - 1] : ''; };
 
+// FD interest figures are rounded to the nearest rupee (no paise) - paisa-level
+// precision doesn't matter for these, and it makes bank-statement comparisons
+// easier to eyeball. Only used for pure interest amounts; principal/invested/
+// maturity figures elsewhere keep the normal fmtCur (2 decimals).
+const _fdIntFmt = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
+const fmtFdInt = (n) => _fdIntFmt.format(Math.round(Number(n) || 0));
+
 async function renderFD() {
   const host = $('#fdView');
   host.innerHTML = '';
@@ -1529,12 +1536,12 @@ async function renderFD() {
       ]),
       el('div', { class: 'summary-earned' }, [
         el('div', { class: 'label', text: 'Interest to earn' }),
-        el('div', { class: 'v pos', text: fmtCur(totInterest, 'INR') }),
+        el('div', { class: 'v pos', text: fmtFdInt(totInterest) }),
       ]),
     ]),
     el('div', { class: 'grid' }, [
       _mfCell('Reinvested (P+I)', fmtCur(reinvested, 'INR')),
-      _mfCell('Interest matured', fmtCur(interestMatured, 'INR'), 'pos'),
+      _mfCell('Interest matured', fmtFdInt(interestMatured), 'pos'),
       _mfCell('Avg rate', wRate ? wRate.toFixed(2) + '%' : '—'),
       _mfCell('Active FDs', String(activeRows.length)),
     ]),
@@ -1582,7 +1589,7 @@ async function renderFD() {
   }
   ovrvContent.appendChild(el('div', { class: 'chart-card' }, [
     el('h3', { text: 'Interest income potential' }),
-    el('div', { class: 'mf-goal-meta', text: `≈ ${fmtCur(monthlyIncome, 'INR')} / month · ${fmtCur(monthlyIncome * 12, 'INR')} / year` }),
+    el('div', { class: 'mf-goal-meta', text: `≈ ${fmtFdInt(monthlyIncome)} / month · ${fmtFdInt(monthlyIncome * 12)} / year` }),
     el('p', { class: 'hint', text: 'Average interest thrown off by your active FDs over their tenure (payout FDs use their actual periodic interest).' }),
   ]));
   const upcoming = activeRows.filter(({ c }) => c.daysToMaturity != null).sort((a, b2) => a.c.daysToMaturity - b2.c.daysToMaturity)[0];
@@ -1617,7 +1624,7 @@ async function renderFD() {
         ]),
         // Green badge shows the INTEREST landing at this maturity (the point of the
         // ladder) - the principal is already on the sub-line above.
-        el('div', { class: 'fd-ladder-val' }, [el('span', { class: 'mf-value-card positive', text: '+' + fmtCur(c.totalInterest, 'INR') })]),
+        el('div', { class: 'fd-ladder-val' }, [el('span', { class: 'mf-value-card positive', text: '+' + fmtFdInt(c.totalInterest) })]),
       ]);
     };
     const gapRung = (k) => el('div', { class: 'card fd-ladder-row fd-ladder-gap' }, [
@@ -1672,7 +1679,7 @@ function _fdCard(f, c) {
         catLine,
       ]),
       el('div', { class: 'card-right' }, [
-        el('div', { class: 'pct pos', text: '+' + fmtCur(c.totalInterest, 'INR') }),
+        el('div', { class: 'pct pos', text: '+' + fmtFdInt(c.totalInterest) }),
         el('div', { class: 'meta-line', text: 'interest' }),
       ]),
     ]),
@@ -1733,7 +1740,7 @@ async function openFdForm(existing) {
     readout.appendChild(el('div', { class: 'mf-bench-now' }, [
       el('span', {}, ['Tenure ', b(term ? term.toFixed(2) + ' yr' : '—')]),
       el('span', {}, [(c.broken ? 'Exit value ' : 'Maturity '), b(hasEnd ? fmtCur(c.maturityValue, 'INR') : '—')]),
-      el('span', {}, ['Interest ', b(hasEnd ? fmtCur(c.totalInterest, 'INR') : '—')]),
+      el('span', {}, ['Interest ', b(hasEnd ? fmtFdInt(c.totalInterest) : '—')]),
     ]));
   };
   // Typing a tenure fills the maturity date from the start date; then recompute.
