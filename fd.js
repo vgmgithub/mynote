@@ -27,11 +27,13 @@ export const FD_STATUS = ['active', 'matured', 'broken'];
 const PERIODS = { yearly: 1, 'half-yearly': 2, quarterly: 4, monthly: 12 };
 
 // Whole-day-accurate year fraction between two YYYY-MM-DD dates (both parsed as
-// UTC midnight, so no timezone drift).
-function yearsBetween(aISO, bISO) {
+// UTC midnight, so no timezone drift). `inclusive365` switches to inclusive
+// day-count (deposit date counts as day 1) over a flat 365-day year - see the
+// convention note in computeFd for why/when.
+function yearsBetween(aISO, bISO, inclusive365) {
   const a = Date.parse(aISO), b = Date.parse(bISO);
   if (isNaN(a) || isNaN(b)) return 0;
-  return (b - a) / (365.25 * DAY);
+  return inclusive365 ? ((b - a) / DAY + 1) / 365 : (b - a) / (365.25 * DAY);
 }
 
 // Value of principal P after `years`, given annual rate% and compounding.
@@ -52,18 +54,29 @@ export function computeFd(fd, nowMs) {
   const start = fd.startDate || null;
   const maturity = fd.maturityDate || null;
 
+  // Day-count convention: FDs contracted for more than ~18 months match an
+  // inclusive-day/flat-365 convention better (verified against a real FD: ₹9,500
+  // @ 7.75% quarterly, 18mo1day → ₹10,664.88 vs bank's ₹10,665, 12 paise off).
+  // FDs of 18 months or under matched the original exclusive-day/365.25
+  // convention better (₹2,000 @ 8.75%, 13mo). Decided once from the FD's
+  // *contracted* tenure (start→maturity), never from elapsed days, so a single
+  // FD can't switch convention partway through its life.
+  const EIGHTEEN_MONTHS_DAYS = 548;
+  const contractedDays = start && maturity ? (Date.parse(maturity) - Date.parse(start)) / DAY : 0;
+  const inclusive365 = contractedDays > EIGHTEEN_MONTHS_DAYS;
+
   // A broken FD (closed early) ends on its broken date, not its maturity date -
   // interest accrues only up to then, at the same rate (no penalty modelled).
   const broken = (fd.status || 'active') === 'broken';
   const brokenDate = broken ? (fd.brokenDate || todayISO) : null;
 
-  const tenureYears = start && maturity ? Math.max(0, yearsBetween(start, maturity)) : 0;
+  const tenureYears = start && maturity ? Math.max(0, yearsBetween(start, maturity, inclusive365)) : 0;
   const tenureMonths = tenureYears * 12;
 
   // Effective term end: the broken date for a broken FD, else the maturity date.
   // Everything financial is derived off this, so a normal FD is unchanged.
   const termEnd = broken ? brokenDate : maturity;
-  const termYears = start && termEnd ? Math.max(0, yearsBetween(start, termEnd)) : 0;
+  const termYears = start && termEnd ? Math.max(0, yearsBetween(start, termEnd, inclusive365)) : 0;
   const termMonths = termYears * 12;
 
   // Maturity/exit value: a payout FD returns just the principal (interest was
@@ -73,7 +86,7 @@ export function computeFd(fd, nowMs) {
   const totalInterest = payout ? (P * rate * termYears) / 100 : maturityValue - P;
 
   // Accrued value as of today (clamped to the effective term once ended).
-  const elapsedRaw = start ? Math.max(0, yearsBetween(start, todayISO)) : 0;
+  const elapsedRaw = start ? Math.max(0, yearsBetween(start, todayISO, inclusive365)) : 0;
   const elapsedYears = termYears > 0 ? Math.min(elapsedRaw, termYears) : elapsedRaw;
   const currentValue = payout ? P : valueAt(P, rate, elapsedYears, comp);
   const accruedInterest = payout ? (P * rate * elapsedYears) / 100 : currentValue - P;
