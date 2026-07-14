@@ -942,6 +942,14 @@ body.locked { overflow: hidden; }
 .fd-ladder-gap .fd-ladder-body .name { color: var(--muted); font-weight: 600; }
 /* FD summary — "Current invested" line under the big Total invested number */
 .fd-subline { font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
+/* FD form → Chain tab: the reinvestment chain (funded-from → this → rolled-into) */
+.fd-chain { display: flex; flex-direction: column; gap: 8px; }
+.fd-chain-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer; }
+.fd-chain-row .fd-chain-body { min-width: 0; }
+.fd-chain-row .name { font-size: 0.9rem; font-weight: 600; }
+.fd-chain-row .cat { font-size: 0.72rem; color: var(--muted); }
+.fd-chain-int { flex: 0 0 auto; font-weight: 600; font-size: 0.9rem; }
+.fd-chain-current { border-color: var(--accent); cursor: default; }
 .mf-catline { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .mf-beat { font-size: 0.62rem; padding: 1px 6px; }
 /* Invested · Value on one line with Value emphasized */

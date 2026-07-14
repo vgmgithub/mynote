@@ -1499,6 +1499,30 @@ async function renderFD() {
   const maturedRows = rows.filter(({ c }) => c.effectiveStatus !== 'active');
   let list = _fdFilter === 'active' ? activeRows.slice() : _fdFilter === 'matured' ? maturedRows.slice() : rows.slice();
 
+  // Reinvestment-chain lookups (parentFdId links) - for card badges + matured trim.
+  const fdByIdAll = new Map(rows.map(({ f }) => [f.id, f]));
+  const childByParent = new Map();
+  rows.forEach(({ f }) => { if (f.parentFdId != null) childByParent.set(f.parentFdId, f); });
+  const chainOf = (f) => ({
+    parent: f.parentFdId != null ? (fdByIdAll.get(f.parentFdId) || null) : null,
+    child: childByParent.get(f.id) || null,
+  });
+
+  // Matured page grows forever in a rolling ladder, so show only the most recent
+  // N matured FDs where N = active-FD count (the current ladder width). Older
+  // matured links are kept in the data (chains intact) - just hidden from the list.
+  let maturedTrimmed = 0;
+  if (_fdFilter === 'matured') {
+    const n = Math.max(activeRows.length, 1);
+    if (list.length > n) {
+      const keep = new Set(list.slice().sort((a, b2) =>
+        (b2.c.maturity ? Date.parse(b2.c.maturity) : 0) - (a.c.maturity ? Date.parse(a.c.maturity) : 0)
+      ).slice(0, n).map(({ f }) => f.id));
+      maturedTrimmed = list.length - keep.size;
+      list = list.filter(({ f }) => keep.has(f.id));
+    }
+  }
+
   // Totals over active FDs (the live ladder).
   let totInv = 0, totCurVal = 0, totInterest = 0, monthlyIncome = 0;
   activeRows.forEach(({ c }) => {
@@ -1569,9 +1593,10 @@ async function renderFD() {
       return am - bm;
     });
     const wrap = el('section', { class: 'stock-list' });
-    list.forEach(({ f, c }) => wrap.appendChild(_fdCard(f, c)));
+    list.forEach(({ f, c }) => wrap.appendChild(_fdCard(f, c, chainOf(f))));
     holdContent.appendChild(wrap);
   }
+  if (maturedTrimmed > 0) holdContent.appendChild(el('p', { class: 'hint', text: `Showing the ${list.length} most recent matured FDs · ${maturedTrimmed} older reinvested one${maturedTrimmed > 1 ? 's' : ''} hidden (still in your data).` }));
   holdContent.appendChild(el('p', { class: 'hint mf-foot', text: 'Cumulative FDs compound (quarterly by default); payout FDs return principal at maturity with interest paid out along the way. Not financial advice.' }));
 
   // ---- Overview tab: allocation by bank + income potential + next maturity ----
@@ -1662,7 +1687,7 @@ async function renderFD() {
   host.appendChild(ladderContent);
 }
 
-function _fdCard(f, c) {
+function _fdCard(f, c, chain) {
   const statusBadge = c.effectiveStatus === 'active'
     ? el('span', { class: 'badge good mf-beat', text: 'active' })
     : c.effectiveStatus === 'broken'
@@ -1670,6 +1695,10 @@ function _fdCard(f, c) {
       : el('span', { class: 'badge muted mf-beat', text: 'matured' });
   const catLine = el('div', { class: 'cat mf-catline' }, [`${c.rate}% · ${c.comp}` + (c.payout ? ' · payout' : '')]);
   catLine.appendChild(statusBadge);
+  // Reinvestment-chain badges: funded from a matured FD (↻ from) and/or rolled
+  // into a newer one (↻ rolled over). Makes the ladder's money-flow visible.
+  if (chain && chain.parent) catLine.appendChild(el('span', { class: 'badge muted mf-beat', text: '↻ from ' + (chain.parent.bank || 'FD') }));
+  if (chain && chain.child) catLine.appendChild(el('span', { class: 'badge muted mf-beat', text: '↻ rolled over' }));
   const matTxt = c.maturity
     ? (c.effectiveStatus === 'active'
         ? (c.daysToMaturity >= 0 ? `Matures ${c.maturity} · ${c.daysToMaturity}d` : `Due ${c.maturity}`)
@@ -1698,6 +1727,14 @@ async function openFdForm(existing) {
   const mod = await import('./fd.js');
   const f = Object.assign({ owner: 'me', status: 'active', compounding: 'quarterly', payout: 'cumulative' }, existing || {});
 
+  // Load every FD for the "Funded by" picker + the Chain tab (reinvestment links).
+  const allFds = (await DB.byIndex('fds', 'owner', 'me')) || [];
+  const nowFd = Date.now();
+  const fdById = new Map(allFds.map((x) => [x.id, x]));
+  const compById = new Map(allFds.map((x) => [x.id, mod.computeFd(x, nowFd)]));
+  const childByParent = new Map();   // parentFdId → the FD funded from it
+  allFds.forEach((x) => { if (x.parentFdId != null) childByParent.set(x.parentFdId, x); });
+
   const bankList = el('datalist', { id: 'fdbanklist' }, mod.FD_BANKS.map((x) => el('option', { value: x })));
   const bank = el('input', { type: 'text', value: f.bank || '', list: 'fdbanklist', placeholder: 'Bank / platform' });
   const numInput = (v, ph) => el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: v != null && v !== '' ? v : '', placeholder: ph });
@@ -1717,6 +1754,22 @@ async function openFdForm(existing) {
   const notes = el('textarea', { placeholder: 'Your notes' });
   notes.value = f.notes || '';
 
+  // "Funded by (matured FD)" — the matured FD whose proceeds seeded this one.
+  // Only matured FDs that don't already fund another FD are offered (plus the one
+  // this FD already points to). This is the reinvestment link that lets the Home
+  // totals avoid double-counting recycled money.
+  const parentSel = el('select', {}, [el('option', { value: '', text: '— none (fresh money) —' })]);
+  allFds.forEach((x) => {
+    if (x.id === f.id) return;                                   // never self
+    if (compById.get(x.id).effectiveStatus !== 'matured') return; // only a matured FD can be a source
+    const takenBy = childByParent.get(x.id);
+    if (takenBy && takenBy.id !== f.id) return;                 // already funds another FD
+    const cx = compById.get(x.id);
+    const o = el('option', { value: String(x.id), text: `${x.bank || 'FD'} · ${fmtIntCur(cx.maturityValue)} · matured ${x.maturityDate || ''}` });
+    if (f.parentFdId === x.id) o.selected = true;
+    parentSel.appendChild(o);
+  });
+
   const buildRec = () => ({
     owner: 'me',
     bank: bank.value.trim(),
@@ -1728,6 +1781,7 @@ async function openFdForm(existing) {
     payout: payout.value,
     status: brokenChk.checked ? 'broken' : 'active',
     brokenDate: brokenChk.checked ? (brokenDate.value || null) : null,
+    parentFdId: parentSel.value ? Number(parentSel.value) : null,
     notes: notes.value.trim(),
     createdAt: f.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -1774,20 +1828,74 @@ async function openFdForm(existing) {
     await DB.put('fds', rec); closeModal(); toast(isEdit ? 'FD updated' : 'FD added'); renderFD();
   };
 
-  const scrollChildren = [
-    el('h2', { text: isEdit ? (f.bank || 'Edit FD') : 'Add fixed deposit' }),
-    bankList,
+  // ---- Details tab (the form) ----
+  const detailsContent = el('div', {}, [
     field('Bank / platform', bank),
     el('div', { class: 'field-row' }, [field('Principal', principal), field('Rate % p.a.', rate)]),
     el('div', { class: 'field-row' }, [field('Start date', startDate), field('Maturity date', maturityDate)]),
     field('Tenure (months) → fills maturity date', tenure),
     el('div', { class: 'field-row' }, [field('Compounding', compounding), field('Type', payout)]),
+    field('Funded by (matured FD)', parentSel),
     el('div', { class: 'field' }, [
       el('label', { class: 'fd-check', style: 'display:flex;align-items:center;gap:8px;cursor:pointer' }, [brokenChk, el('span', { text: 'Broken (closed early)' })]),
     ]),
     brokenDateField,
     field('Notes', notes),
     readout,
+  ]);
+
+  // ---- Chain tab: the reinvestment chain this FD belongs to ----
+  // Walk up via parentFdId, down via childByParent; render each link's basics.
+  const chainList = el('div', { class: 'fd-chain' });
+  const buildChain = () => {
+    const up = []; let cur = f, guard = 0;
+    while (cur && cur.parentFdId != null && guard++ < 60) { const p = fdById.get(cur.parentFdId); if (!p) break; up.unshift(p); cur = p; }
+    const down = []; cur = f; guard = 0;
+    while (cur && childByParent.get(cur.id) && guard++ < 60) { const ch = childByParent.get(cur.id); down.push(ch); cur = ch; }
+    return [...up, f, ...down];
+  };
+  const renderChain = () => {
+    chainList.innerHTML = '';
+    const chain = buildChain();
+    if (chain.length <= 1) {
+      chainList.appendChild(el('p', { class: 'hint', text: 'Not linked to any other FD yet. Set “Funded by” on the Details tab to chain a matured FD into this one — the reinvestment chain then shows here.' }));
+      return;
+    }
+    chain.forEach((x) => {
+      const isThis = x.id === f.id;
+      const cx = isThis ? mod.computeFd(buildRec(), nowFd) : compById.get(x.id);
+      chainList.appendChild(el('div', { class: 'card fd-chain-row' + (isThis ? ' fd-chain-current' : ''), onclick: isThis ? undefined : () => openFdForm(x) }, [
+        el('div', { class: 'fd-chain-body' }, [
+          el('div', { class: 'name', text: (x.bank || 'FD') + (isThis ? ' · this FD' : '') }),
+          el('div', { class: 'cat', text: `${fmtCur(cx.principal, 'INR')} @ ${cx.rate}% · ${cx.effectiveStatus}` + (x.maturityDate ? ` · mat ${x.maturityDate}` : '') }),
+        ]),
+        el('div', { class: 'fd-chain-int pos', text: '+' + fmtIntCur(cx.totalInterest) }),
+      ]));
+    });
+  };
+  const chainContent = el('div', { class: 'hidden' }, [
+    el('p', { class: 'hint', text: 'Reinvestment chain — funded-from (above) → this FD → rolled-into (below). Tap a link to open it.' }),
+    chainList,
+  ]);
+
+  // ---- Tabs (Chain only when editing an existing FD) ----
+  const detailsTabBtn = el('button', { class: 'active', type: 'button', text: 'Details' });
+  const chainTabBtn = el('button', { type: 'button', text: 'Chain' });
+  const tabs = [{ btn: detailsTabBtn, content: detailsContent }];
+  if (isEdit) tabs.push({ btn: chainTabBtn, content: chainContent });
+  const showTab = (which) => {
+    tabs.forEach((t) => { const on = t === which; t.btn.classList.toggle('active', on); t.content.classList.toggle('hidden', !on); });
+    if (which.btn === chainTabBtn) renderChain();
+  };
+  detailsTabBtn.addEventListener('click', () => showTab(tabs[0]));
+  if (isEdit) chainTabBtn.addEventListener('click', () => showTab(tabs[1]));
+
+  const scrollChildren = [
+    el('h2', { text: isEdit ? (f.bank || 'Edit FD') : 'Add fixed deposit' }),
+    el('div', { class: 'seg' }, isEdit ? [detailsTabBtn, chainTabBtn] : [detailsTabBtn]),
+    bankList,
+    detailsContent,
+    ...(isEdit ? [chainContent] : []),
   ];
   const btns = [el('button', { class: 'btn primary', text: 'Save', onclick: save })];
   if (isEdit) btns.push(el('button', { class: 'btn danger', text: 'Delete', onclick: del }));
@@ -1828,21 +1936,31 @@ async function renderHome() {
         totalValue += c.value || 0;
       }
     }
-    // Fixed Deposits — MATURED only (their original principal + the interest they
-    // actually earned by maturity). Active FDs stay excluded - they're a distinct,
-    // still-locked-in asset class tracked in the FD surface's own totals - but a
-    // matured FD is a completed, realized outcome, so its principal and earned
-    // interest fold into the same figure as Stocks/MF here.
+    // Fixed Deposits — MATURED, but NOT superseded by a matured child. In a
+    // reinvestment ladder each new FD's principal already telescopes the previous
+    // matured FD's principal + interest, so counting every matured FD would count
+    // the same rupees each cycle. A matured FD is "superseded" if the FD it was
+    // reinvested into (its child, via parentFdId) has ALSO matured - then that
+    // newer matured FD already contains its money, so we skip the older one and
+    // count only the latest matured link in each chain. Active FDs stay excluded
+    // (still-locked capital, tracked in the FD surface's own totals); a matured
+    // FD whose child is still active IS counted (its principal = all recycled
+    // principal+interest to date, its interest = the freshly realized gain).
     const fds = (await DB.byIndex('fds', 'owner', 'me')) || [];
     if (fds.length) {
       const fdMod = await import('./fd.js');
       const nowT = Date.now();
+      const fdComp = new Map(fds.map((x) => [x.id, fdMod.computeFd(x, nowT)]));
+      const supersededIds = new Set();
+      fds.forEach((x) => {
+        if (x.parentFdId != null && fdComp.get(x.id).effectiveStatus === 'matured') supersededIds.add(x.parentFdId);
+      });
       for (const fdRec of fds) {
-        const c = fdMod.computeFd(fdRec, nowT);
-        if (c.effectiveStatus === 'matured') {
-          totalInvested += c.principal;
-          totalValue += c.maturityValue;
-        }
+        const c = fdComp.get(fdRec.id);
+        if (c.effectiveStatus !== 'matured') continue;   // active/broken excluded
+        if (supersededIds.has(fdRec.id)) continue;        // older link in a chain - already telescoped into a newer matured FD
+        totalInvested += c.principal;
+        totalValue += c.maturityValue;
       }
     }
   } catch (_) {}

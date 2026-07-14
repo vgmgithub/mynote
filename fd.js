@@ -9,6 +9,7 @@
 //     payout:'cumulative'|'payout',                     // reinvest vs interest paid out
 //     status:'active'|'broken',                          // 'matured' is derived from the date, never stored
 //     brokenDate:'YYYY-MM-DD',                           // set only when status='broken' (early closure)
+//     parentFdId,                                        // id of the matured FD this one was funded from (reinvestment chain); null = fresh money. computeFd ignores it; app.js uses it for chain view + no-double-count Home totals.
 //     notes, createdAt, updatedAt }
 
 const DAY = 86400000;
