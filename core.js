@@ -35,10 +35,10 @@ export function fmtCur(n, cur) {
   if (!f) {
     try {
       f = new Intl.NumberFormat(cur === 'INR' ? 'en-IN' : 'en-US', {
-        style: 'currency', currency: cur, maximumFractionDigits: 2,
+        style: 'currency', currency: cur, maximumFractionDigits: 0,
       });
     } catch (e) {
-      f = { format: (x) => (cur === 'INR' ? '₹' : '$') + (Number(x) || 0).toFixed(2) };
+      f = { format: (x) => (cur === 'INR' ? '₹' : '$') + (Number(x) || 0).toFixed(0) };
     }
     _fmt[cur] = f;
   }
@@ -47,7 +47,7 @@ export function fmtCur(n, cur) {
 
 export const fmtPct = (n) => {
   const v = Number(n) || 0;
-  return (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+  return (v >= 0 ? '+' : '') + v.toFixed(0) + '%';
 };
 export const pctClass = (n) => (n > 0 ? 'pos' : n < 0 ? 'neg' : 'flat');
 export const todayISO = () => new Date().toISOString().slice(0, 10);
