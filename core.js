@@ -49,6 +49,11 @@ export const fmtPct = (n) => {
   const v = Number(n) || 0;
   return (v >= 0 ? '+' : '') + v.toFixed(0) + '%';
 };
+
+export const fmtIntRate = (n) => {
+  const v = Number(n) || 0;
+  return v.toFixed(2) + '%';
+};
 export const pctClass = (n) => (n > 0 ? 'pos' : n < 0 ? 'neg' : 'flat');
 export const todayISO = () => new Date().toISOString().slice(0, 10);
 

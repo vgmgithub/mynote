@@ -1601,7 +1601,7 @@ async function renderFD() {
     el('div', { class: 'grid' }, [
       _mfCell('Reinvested', fmtCur(totRolled, 'INR')),
       _mfCell('Interest matured', fmtIntCur(interestMatured), 'pos'),
-      _mfCell('Return %', returnPct ? returnPct.toFixed(2) + '%' : '—'),
+      _mfCell('Return %', returnPct ? fmtIntRate(returnPct) : '—'),
       _mfCell('Active FDs', String(activeRows.length)),
     ]),
   ]);
@@ -1673,7 +1673,7 @@ async function renderFD() {
     const byMonth = {};
     ladderRows.forEach((r) => { const k = mkey(r.c.maturity); (byMonth[k] = byMonth[k] || []).push(r); });
     const rung = ({ f, c }) => {
-      const sub = `${fmtCur(c.principal, 'INR')} @ ${c.rate}%` + (c.daysToMaturity >= 0 ? ` · ${c.daysToMaturity}d left` : ' · due');
+      const sub = `${fmtCur(c.principal, 'INR')} @ ${fmtIntRate(c.rate)}` + (c.daysToMaturity >= 0 ? ` · ${c.daysToMaturity}d left` : ' · due');
       return el('div', { class: 'card fd-ladder-row', onclick: () => openFdForm(f) }, [
         el('div', { class: 'fd-ladder-date' }, [
           el('div', { class: 'fd-ladder-mon', text: _fdMonthLabel(c.maturity) }),
@@ -1724,7 +1724,7 @@ function _fdCard(f, c, chain) {
   const statusBadge = c.effectiveStatus === 'active'
     ? el('span', { class: 'badge good mf-beat', text: 'active' })
     : el('span', { class: 'badge muted mf-beat', text: 'matured' });
-  const catLine = el('div', { class: 'cat mf-catline' }, [`${c.rate}% · ${c.comp}` + (c.payout ? ' · payout' : '')]);
+  const catLine = el('div', { class: 'cat mf-catline' }, [`${fmtIntRate(c.rate)} · ${c.comp}` + (c.payout ? ' · payout' : '')]);
   catLine.appendChild(statusBadge);
   // A compact blue "reinvested" badge flags an FD funded by rolling in matured
   // FD(s) - replaces the old "↻ from {bank}" text (which wrapped to another line)
