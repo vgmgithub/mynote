@@ -192,7 +192,7 @@ main { padding: 14px; }
 /* Holdings summary card: prices-updated status, tucked bottom-right */
 .summary-upd { text-align: right; font-size: 0.6rem; color: var(--muted); margin-top: 6px; }
 .summary-upd.warn { color: var(--warn); font-weight: 600; }
-.price-status-section { padding: 4px 16px 0; text-align: right; font-size: 0.65rem; }
+.price-status-section { padding: 1px 16px 0; text-align: right; font-size: 0.65rem; }
 .price-status { color: var(--muted); }
 .price-status.warn { color: var(--warn); font-weight: 600; }
 /* Price status section below portfolios card */
