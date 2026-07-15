@@ -283,7 +283,7 @@ async function renderPortfolioAnalyzer(host, portfolio) {
     analyzer.appendChild(_paFlag('neutral', 'Allocation unavailable', 'Add current prices to your holdings to see weight-based risk.'));
   } else if (concentrated.length) {
     analyzer.appendChild(_paFlag('bad', '⚠️ Concentration risk',
-      concentrated.map((v) => v.stock.name + ' · ' + v.alloc.toFixed(1) + '%').join('   ')));
+      concentrated.map((v) => v.stock.name + ' · ' + v.alloc.toFixed(2) + '%').join('   ')));
   } else {
     analyzer.appendChild(_paFlag('good', '✓ Well diversified', 'No single holding exceeds 15% of value.'));
   }
@@ -299,7 +299,7 @@ async function renderPortfolioAnalyzer(host, portfolio) {
       wrap.appendChild(el('div', { class: 'bar-row' }, [
         el('span', { class: 'bl', text: v.stock.name + dot }),
         el('div', { class: 'bar-track' }, [el('div', { class: 'bar-fill' + (v.alloc > 15 ? ' over' : ''), style: 'width:' + (v.alloc / maxAlloc * 100).toFixed(1) + '%' })]),
-        el('span', { class: 'bn', text: v.alloc.toFixed(1) + '%' }),
+        el('span', { class: 'bn', text: v.alloc.toFixed(2) + '%' }),
       ]));
     });
     analyzer.appendChild(wrap);
@@ -317,7 +317,7 @@ async function renderPortfolioAnalyzer(host, portfolio) {
       wrap.appendChild(el('div', { class: 'bar-row' }, [
         el('span', { class: 'bl', text: name + ' (' + d.count + ')' }),
         el('div', { class: 'bar-track' }, [el('div', { class: 'bar-fill' + (over ? ' over' : ''), style: 'width:' + (metric * 100).toFixed(1) + '%' })]),
-        el('span', { class: 'bn', text: pct.toFixed(0) + '%' }),
+        el('span', { class: 'bn', text: pct.toFixed(2) + '%' }),
       ]));
     });
     if (sectors[0] && total > 0 && (sectors[0][1].value / total * 100) > 40) {
@@ -395,9 +395,9 @@ function computePortfolioHealth(holdings, valued, sectors, total) {
   const reasons = [];
   reasons.push(unpriced ? unpriced + ' without price' : 'prices covered');
   reasons.push(stale ? stale + ' stale price' + (stale > 1 ? 's' : '') : 'prices fresh');
-  if (maxAlloc > 15) reasons.push('top holding ' + maxAlloc.toFixed(0) + '%');
+  if (maxAlloc > 15) reasons.push('top holding ' + maxAlloc.toFixed(2) + '%');
   else reasons.push('weight balanced');
-  if (maxSectorPct > 40) reasons.push('sector ' + maxSectorPct.toFixed(0) + '%');
+  if (maxSectorPct > 40) reasons.push('sector ' + maxSectorPct.toFixed(2) + '%');
   else reasons.push('sector spread ok');
 
   const tone = score >= 80 ? 'good' : score >= 60 ? 'neutral' : 'bad';
@@ -1641,7 +1641,7 @@ async function renderFD() {
       alloc.appendChild(el('div', { class: 'bar-row' }, [
         el('span', { class: 'bl', text: bk }),
         el('span', { class: 'bar-track' }, [el('span', { class: 'bar-fill', style: `width:${Math.max(2, pct).toFixed(1)}%` })]),
-        el('span', { class: 'bn', text: pct.toFixed(0) + '%' }),
+        el('span', { class: 'bn', text: pct.toFixed(2) + '%' }),
       ]));
     });
     ovrvContent.appendChild(alloc);
@@ -2267,7 +2267,7 @@ async function renderMF() {
       alloc.appendChild(el('div', { class: 'bar-row' }, [
         el('span', { class: 'bl', text: t }),
         el('span', { class: 'bar-track' }, [el('span', { class: 'bar-fill', style: `width:${Math.max(2, pct).toFixed(1)}%` })]),
-        el('span', { class: 'bn', text: pct.toFixed(0) + '%' }),
+        el('span', { class: 'bn', text: pct.toFixed(2) + '%' }),
       ]));
     });
     ovrvContent.appendChild(alloc);
@@ -2322,7 +2322,7 @@ async function renderMF() {
           el('span', { class: 'mf-goal-track' }, [el('div', { class: 'mf-goal-fill', style: `width:${progress}%` })]),
           el('span', { class: 'mf-goal-target', text: fmtCur(target2030, 'INR') }),
         ]),
-        el('div', { class: 'mf-goal-meta', text: progress.toFixed(0) + '% toward target' }),
+        el('div', { class: 'mf-goal-meta', text: progress.toFixed(2) + '% toward target' }),
       ]);
       ovrvContent.appendChild(goalCard);
     }

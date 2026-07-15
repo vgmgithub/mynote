@@ -47,7 +47,7 @@ export function fmtCur(n, cur) {
 
 export const fmtPct = (n) => {
   const v = Number(n) || 0;
-  return (v >= 0 ? '+' : '') + v.toFixed(0) + '%';
+  return (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
 };
 
 export const fmtIntRate = (n) => {
