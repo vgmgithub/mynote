@@ -1,7 +1,7 @@
 // IndexedDB data layer. All data lives on this device only.
 export const DB = (function () {
   const NAME = 'mynote-stocks';
-  const VERSION = 5;
+  const VERSION = 6;
   let dbp = null;
 
   function open() {
@@ -47,6 +47,14 @@ export const DB = (function () {
         if (!db.objectStoreNames.contains('fds')) {
           const s = db.createObjectStore('fds', { keyPath: 'id', autoIncrement: true });
           s.createIndex('owner', 'owner', { unique: false });
+        }
+        // Dividend tracker. One row per tracked stock, indexed by `market`
+        // ('in' | 'us'). Holds per-calendar-year units + dividend-per-unit and the
+        // historical payout months — see dividend.js for the record shape and the
+        // annual/YoY analysis. Added in v6.
+        if (!db.objectStoreNames.contains('dividends')) {
+          const s = db.createObjectStore('dividends', { keyPath: 'id', autoIncrement: true });
+          s.createIndex('market', 'market', { unique: false });
         }
       };
       req.onsuccess = () => resolve(req.result);
@@ -100,7 +108,7 @@ export const DB = (function () {
       // `feed` is best-effort: very old backups (v2 export) won't have it, and
       // the store may not exist if the user is mid-upgrade. Don't fail the
       // whole export over a missing store.
-      const [stocks, snapshots, monthly, meta, feed, funds, fds] = await Promise.all([
+      const [stocks, snapshots, monthly, meta, feed, funds, fds, dividends] = await Promise.all([
         this.all('stocks'),
         this.all('snapshots'),
         this.all('monthly'),
@@ -108,6 +116,7 @@ export const DB = (function () {
         this.all('feed').catch(() => []),
         this.all('funds').catch(() => []),
         this.all('fds').catch(() => []),
+        this.all('dividends').catch(() => []),
       ]);
       return {
         app: 'mynote-stocks',
@@ -120,6 +129,7 @@ export const DB = (function () {
         feed,
         funds,
         fds,
+        dividends,
       };
     },
     // Replace all data with the contents of a previously exported object.
@@ -135,6 +145,7 @@ export const DB = (function () {
         this.clear('feed').catch(() => {}),
         this.clear('funds').catch(() => {}),
         this.clear('fds').catch(() => {}),
+        this.clear('dividends').catch(() => {}),
       ]);
       const tasks = [];
       (data.stocks || []).forEach((s) => tasks.push(this.put('stocks', s)));
@@ -145,6 +156,7 @@ export const DB = (function () {
       (data.feed || []).forEach((f) => tasks.push(this.put('feed', f).catch(() => {})));
       (data.funds || []).forEach((f) => tasks.push(this.put('funds', f).catch(() => {})));
       (data.fds || []).forEach((f) => tasks.push(this.put('fds', f).catch(() => {})));
+      (data.dividends || []).forEach((d) => tasks.push(this.put('dividends', d).catch(() => {})));
       await Promise.all(tasks);
     },
   };

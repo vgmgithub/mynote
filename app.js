@@ -42,6 +42,9 @@ let _mfStatsTab = 'day';      // 'day' | 'month' | 'year' (sub-tabs within stats
 let _fdSort = 'maturity';    // 'maturity' | 'principal' | 'rate' | 'bank'
 let _fdFilter = 'active';    // 'active' | 'matured' | 'all'
 let _fdTab = 'holdings';     // 'holdings' | 'overview' | 'ladder' (bottom nav)
+// Dividend view state (only used inside the Dividends surface).
+let _divTab = 'stocks';      // 'stocks' | 'overview' | 'calendar' (bottom nav)
+let _divMarket = 'in';       // 'in' | 'us' (Me-India / Me-US)
 const MF_TYPES = ['Multi Cap', 'Flexi Cap', 'Large Cap', 'Mid Cap', 'Small Cap', 'Tax Saver', 'Technology', 'Pharma', 'Energy', 'International', 'Index', 'Debt', 'Hybrid'];
 const MF_STATUS = ['Investing', 'Investing On/Off', 'Investing Variable', 'Stopped', 'Sold'];
 
@@ -1419,27 +1422,31 @@ async function render() {
 const STOCK_SURFACE = ['#summary', '#toolbar', '#stockList', '#monthlyView', '#heatmapView', '#trendView', '#feedView', '#addBtn', '#ocrBtn'];
 function setAppMode(mode) {
   state.appMode = mode;
-  const isHome = mode === 'home', isStocks = mode === 'stocks', isMF = mode === 'mf', isFD = mode === 'fd';
+  const isHome = mode === 'home', isStocks = mode === 'stocks', isMF = mode === 'mf', isFD = mode === 'fd', isDiv = mode === 'div';
   $('#homeView').classList.toggle('hidden', !isHome);
   $('#mfView').classList.toggle('hidden', !isMF);
   $('#fdView').classList.toggle('hidden', !isFD);
+  $('#divView').classList.toggle('hidden', !isDiv);
   $('#portfolioTabs').classList.toggle('hidden', !isStocks);
   $('#bottomNav').classList.toggle('hidden', !isStocks);
   $('#mfBottomNav').classList.toggle('hidden', !isMF);
   $('#fdBottomNav').classList.toggle('hidden', !isFD);
+  $('#divBottomNav').classList.toggle('hidden', !isDiv);
   $('#mfAddBtn').classList.toggle('hidden', !isMF);
   $('#mfFetchBtn').classList.toggle('hidden', !isMF);
   $('#fdAddBtn').classList.toggle('hidden', !isFD);
+  $('#divAddBtn').classList.toggle('hidden', !isDiv);
   $('#backBtn').classList.toggle('hidden', isHome);
-  $('#appTitle').innerHTML = isHome ? '' : (isMF ? 'Mutual&nbsp;Funds' : isFD ? 'Fixed&nbsp;Deposits' : 'MyNote&nbsp;Stocks');
+  $('#appTitle').innerHTML = isHome ? '' : (isMF ? 'Mutual&nbsp;Funds' : isFD ? 'Fixed&nbsp;Deposits' : isDiv ? 'Dividends' : 'MyNote&nbsp;Stocks');
   if (isStocks) {
     render();
   } else {
-    // Nothing from the stock surface should show on Home/MF/FD.
+    // Nothing from the stock surface should show on Home/MF/FD/Dividends.
     STOCK_SURFACE.forEach((sel) => $(sel).classList.add('hidden'));
     if (isHome) renderHome();
     if (isMF) { buildMfBottomNav(); renderMF(); }
     if (isFD) { buildFdBottomNav(); renderFD(); }
+    if (isDiv) { buildDivBottomNav(); renderDividend(); }
   }
 }
 
@@ -1474,6 +1481,23 @@ function buildFdBottomNav() {
 }
 function updateFdNavActive() {
   $('#fdBottomNav').querySelectorAll('button').forEach((x) => x.classList.toggle('active', x.getAttribute('data-view') === _fdTab));
+}
+
+// ---------- Dividends surface (Stocks | Overview | Calendar) ----------
+// Mirrors the MF/FD surfaces: a fixed bottom nav (built once), lazy-loaded pure
+// logic in dividend.js, app.js does the `dividends`-store CRUD + rendering.
+function buildDivBottomNav() {
+  const nav = $('#divBottomNav');
+  if (nav.childElementCount) { updateDivNavActive(); return; }
+  nav.innerHTML = '';
+  [['stocks', '💰', 'Stocks'], ['overview', '📊', 'Overview'], ['calendar', '🗓️', 'Calendar']].forEach(([v, ico, label]) => {
+    nav.appendChild(el('button', { 'data-view': v, onclick: () => { if (_divTab === v) return; _divTab = v; renderDividend(); } },
+      [el('span', { class: 'bn-ico', text: ico }), label]));
+  });
+  updateDivNavActive();
+}
+function updateDivNavActive() {
+  $('#divBottomNav').querySelectorAll('button').forEach((x) => x.classList.toggle('active', x.getAttribute('data-view') === _divTab));
 }
 
 const _FD_MONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -2016,7 +2040,8 @@ async function renderHome() {
   const stockCard = _homeCard('📈', 'Stocks', 'Holdings · trends · news', () => setAppMode('stocks'));
   const mfCard = _homeCard('📊', 'Mutual Funds', 'SIPs · XIRR · 2030 goal', () => openMF());
   const fdCard = _homeCard('🏦', 'Fixed Deposits', 'FD ladder · maturity · interest', () => setAppMode('fd'));
-  host.appendChild(el('div', { class: 'home-cards' }, [stockCard, mfCard, fdCard]));
+  const divCard = _homeCard('💰', 'Dividends', 'per-stock · yearly · YoY', () => openDividend());
+  host.appendChild(el('div', { class: 'home-cards' }, [stockCard, mfCard, fdCard, divCard]));
   host.appendChild(el('p', { class: 'hint home-foot', text: 'Backup covers everything - open the ⋮ menu → Backup & Restore.' }));
 
   // Live stats for Stock and MF cards
@@ -2056,6 +2081,17 @@ async function renderHome() {
       const fdSub = fdCard.querySelector('.home-card-sub');
       if (fdSub) fdSub.textContent = `${activeCount} active · ${fmtIntCur(invested)} invested`;
     }
+    // Dividends — subtext shows the tracked-stock count + this calendar year's
+    // Indian (₹) dividend total. US is a separate currency, so it's not summed in.
+    const divList = (await DB.all('dividends')) || [];
+    if (divList.length) {
+      const divMod = await import('./dividend.js');
+      const inRows = divList.filter((d) => d.market === 'in');
+      const curYear = new Date().getFullYear();
+      const inThisYr = inRows.reduce((s, d) => s + divMod.yearTotal(d, curYear), 0);
+      const divSub = divCard.querySelector('.home-card-sub');
+      if (divSub) divSub.textContent = `${divList.length} stocks · ${fmtIntCur(inThisYr)} in ${curYear}`;
+    }
   } catch (_) {}
 }
 function _homeCard(icon, title, sub, onclick) {
@@ -2067,6 +2103,267 @@ function _homeCard(icon, title, sub, onclick) {
     ]),
     el('span', { class: 'home-card-arrow', text: '›' }),
   ]);
+}
+
+// ---------- Dividends surface ----------
+// Lazy-loaded: dividend.js (pure logic) only loads when the user opens Dividends.
+// First open seeds one record per Me-India / Me-US holding (name + current-year
+// units), guarded by a meta flag so deleting everything won't re-seed.
+async function openDividend() {
+  try {
+    const existing = (await DB.all('dividends')) || [];
+    if (!existing.length) {
+      const seeded = await DB.get('meta', 'divSeeded').catch(() => null);
+      if (!seeded || !seeded.value) {
+        const mod = await import('./dividend.js');
+        const nowIso = new Date().toISOString();
+        const curYear = new Date().getFullYear();
+        const [meIn, meUs] = await Promise.all([
+          DB.byPortfolio('stocks', 'me-in').catch(() => []),
+          DB.byPortfolio('stocks', 'me-us').catch(() => []),
+        ]);
+        let seededCount = 0;
+        const seedFrom = async (stocks, market) => {
+          for (const s of (stocks || [])) {
+            if (s.status !== 'holding') continue;
+            if (!(s.name || '').trim()) continue;
+            await DB.put('dividends', mod.buildSeedRecord(s, market, curYear, nowIso));
+            seededCount++;
+          }
+        };
+        await seedFrom(meIn, 'in');
+        await seedFrom(meUs, 'us');
+        // Only burn the one-time seed flag if we actually created records — that
+        // way opening Dividends before any holdings exist won't block a later seed.
+        if (seededCount) await DB.put('meta', { key: 'divSeeded', value: true });
+      }
+    }
+  } catch (_) { /* seeding is best-effort — an empty surface still works */ }
+  setAppMode('div');
+}
+
+async function renderDividend() {
+  const host = $('#divView');
+  host.innerHTML = '';
+  updateDivNavActive();
+  // The + (add) button only makes sense on the Stocks tab.
+  $('#divAddBtn').classList.toggle('hidden', _divTab !== 'stocks');
+  const mod = await import('./dividend.js');
+  const all = (await DB.all('dividends')) || [];
+  if (_divTab === 'overview') return renderDivOverview(host, all, mod);
+  if (_divTab === 'calendar') return renderDivCalendar(host, all, mod);
+  return renderDivStocks(host, all, mod);
+}
+
+// ---- Stocks tab: India/US filter + per-stock cards ----
+function renderDivStocks(host, all, mod) {
+  const curYear = new Date().getFullYear();
+  const seg = el('div', { class: 'seg trends-filter' }, [['in', 'India'], ['us', 'US']].map(([v, label]) =>
+    el('button', {
+      class: (_divMarket === v ? 'active' : ''), 'data-filter': v, text: label,
+      onclick: () => { if (_divMarket === v) return; _divMarket = v; renderDividend(); },
+    })));
+  host.appendChild(seg);
+
+  const rows = all.filter((d) => d.market === _divMarket);
+  if (!rows.length) {
+    host.appendChild(el('div', { class: 'empty' }, [
+      el('div', { class: 'e-icon', text: '💰' }),
+      el('p', { text: 'No dividend stocks here yet.' }),
+      el('p', { class: 'hint', text: 'Tap + to add one. New holdings you add under Stocks can be added here too.' }),
+    ]));
+    return;
+  }
+  const cur = mod.curOfMarket(_divMarket);
+  rows.sort((a, b2) => mod.yearTotal(b2, curYear) - mod.yearTotal(a, curYear));
+  const wrap = el('section', { class: 'stock-list' });
+  rows.forEach((rec) => wrap.appendChild(_divCard(rec, mod, curYear, cur)));
+  host.appendChild(wrap);
+}
+
+function _divCard(rec, mod, curYear, cur) {
+  const months = mod.parseMonths(rec.months);
+  const curTotal = mod.yearTotal(rec, curYear);
+  const breakdown = el('div', { class: 'div-years' });
+  mod.yearsOf(rec).forEach((y) => {
+    const yr = (rec.years || []).find((r) => Number(r.year) === y) || {};
+    const perTxt = yr.perUnit != null && yr.perUnit !== '' ? mod.fmtDiv(Number(yr.perUnit), cur) : '—';
+    breakdown.appendChild(el('div', { class: 'div-year-row' }, [
+      el('span', { class: 'div-year-k', text: String(y) }),
+      el('span', { class: 'div-year-v', text: mod.fmtDiv(mod.yearTotal(rec, y), cur) }),
+      el('span', { class: 'div-year-sub', text: `${Number(yr.units) || 0} × ${perTxt}` }),
+    ]));
+  });
+  return el('div', { class: 'card', onclick: () => openDivForm(rec) }, [
+    el('div', { class: 'top' }, [
+      el('div', {}, [
+        el('div', { class: 'name', text: rec.name || 'Stock' }),
+        el('div', { class: 'cat', text: months.length ? '🗓️ ' + months.join(', ') : 'No payout months set' }),
+      ]),
+      el('div', { class: 'card-right' }, [
+        el('div', { class: 'kv-val', text: mod.fmtDiv(curTotal, cur) }),
+        el('div', { class: 'kv-label', text: String(curYear) }),
+      ]),
+    ]),
+    breakdown,
+  ]);
+}
+
+// ---- Overview tab: year-wise analysis, India (₹) and US ($) kept separate ----
+function renderDivOverview(host, all, mod) {
+  const build = (market) => {
+    const cur = mod.curOfMarket(market);
+    const rows = mod.annualAnalysis(all.filter((d) => d.market === market));
+    const card = el('div', { class: 'chart-card' }, [
+      el('h3', { text: (market === 'in' ? '🇮🇳 India (₹)' : '🇺🇸 US ($)') + ' · Annual analysis' }),
+    ]);
+    if (!rows.length) { card.appendChild(el('p', { class: 'hint', text: 'No dividends recorded yet — add per-year figures on the Stocks tab.' })); return card; }
+    const table = el('div', { class: 'div-table' });
+    table.appendChild(el('div', { class: 'div-trow div-thead' }, [
+      el('span', { text: 'Year' }), el('span', { text: 'Total' }), el('span', { text: 'Per mo' }), el('span', { text: 'YoY' }),
+    ]));
+    rows.forEach((r) => {
+      const incTxt = r.incrementPct == null ? '—' : fmtPct(r.incrementPct);
+      const profitTxt = r.profit == null ? '' : (r.profit >= 0 ? '+' : '') + mod.fmtDiv(r.profit, cur);
+      table.appendChild(el('div', { class: 'div-trow' }, [
+        el('span', { class: 'div-tyear', text: String(r.year) }),
+        el('span', { text: mod.fmtDiv(r.total, cur) }),
+        el('span', { text: mod.fmtDiv(r.monthly, cur) }),
+        el('span', { class: 'div-yoy ' + (r.incrementPct == null ? '' : pctClass(r.incrementPct)) }, [
+          el('div', { text: incTxt }),
+          profitTxt ? el('div', { class: 'div-profit', text: profitTxt }) : el('span'),
+        ]),
+      ]));
+    });
+    card.appendChild(table);
+    return card;
+  };
+  host.appendChild(build('in'));
+  host.appendChild(build('us'));
+}
+
+// ---- Calendar tab: which months each stock has historically paid ----
+function renderDivCalendar(host, all, mod) {
+  const grouped = mod.byMonth(all);
+  const curMonthIx = new Date().getMonth();
+  host.appendChild(el('p', { class: 'hint', style: 'margin:2px 0 10px', text: 'Months each stock has paid before — a guide to what may credit this month. India (₹) and US ($) shown together.' }));
+  mod.MONTHS.forEach((m, ix) => {
+    const list = grouped[m];
+    if (!list.length) return;
+    const isCur = ix === curMonthIx;
+    const card = el('div', { class: 'chart-card div-month' + (isCur ? ' div-month-cur' : '') }, [
+      el('h3', { text: m + (isCur ? ' · this month' : '') }),
+    ]);
+    list.forEach(({ rec, expected }) => {
+      const cur = mod.curOfMarket(rec.market);
+      card.appendChild(el('div', { class: 'bar-row div-cal-row' }, [
+        el('span', { class: 'bl', text: (rec.market === 'us' ? '🇺🇸 ' : '🇮🇳 ') + (rec.name || 'Stock') }),
+        el('span', { class: 'bn', text: expected ? '≈ ' + mod.fmtDiv(expected, cur) : '—' }),
+      ]));
+    });
+    host.appendChild(card);
+  });
+  if (!host.querySelector('.div-month')) {
+    host.appendChild(el('div', { class: 'empty' }, [
+      el('div', { class: 'e-icon', text: '🗓️' }),
+      el('p', { text: 'No payout months set yet.' }),
+      el('p', { class: 'hint', text: 'Open a stock on the Stocks tab and tap the months it usually pays.' }),
+    ]));
+  }
+}
+
+// ---- Add / edit a dividend stock ----
+async function openDivForm(existing) {
+  const isEdit = !!(existing && existing.id != null);
+  const mod = await import('./dividend.js');
+  const rec = Object.assign({ market: _divMarket, name: '', months: [], years: [] }, existing || {});
+
+  const name = el('input', { type: 'text', value: rec.name || '', placeholder: 'Stock name' });
+  const market = el('select', {}, [['in', 'India (₹)'], ['us', 'US ($)']].map(([v, l]) => {
+    const o = el('option', { value: v, text: l }); if (v === rec.market) o.selected = true; return o;
+  }));
+
+  // Payout-month toggles (Jan–Dec).
+  const selMonths = new Set(mod.parseMonths(rec.months));
+  const monthsWrap = el('div', { class: 'div-mon-grid' }, mod.MONTHS.map((m) => {
+    const btn = el('button', { type: 'button', class: 'div-mon-btn' + (selMonths.has(m) ? ' active' : ''), text: m });
+    btn.addEventListener('click', () => {
+      if (selMonths.has(m)) { selMonths.delete(m); btn.classList.remove('active'); }
+      else { selMonths.add(m); btn.classList.add('active'); }
+    });
+    return btn;
+  }));
+
+  // Per-year rows: year / units / dividend-per-unit.
+  const yearRowsWrap = el('div', { class: 'div-year-editor' });
+  const yearRefs = [];
+  const numInput = (v, ph) => el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: v != null && v !== '' ? v : '', placeholder: ph });
+  const addYearRow = (year, units, perUnit) => {
+    const yy = el('input', { type: 'number', inputmode: 'numeric', step: '1', value: year != null ? year : '', placeholder: 'Year' });
+    const uu = numInput(units, 'Units');
+    const pp = numInput(perUnit, 'Div/unit');
+    const rm = el('button', { class: 'icon-btn', type: 'button', text: '×' });
+    const ref = { yy, uu, pp, removed: false };
+    const row = el('div', { class: 'div-yedit-row' }, [yy, uu, pp, rm]);
+    rm.addEventListener('click', () => { row.remove(); ref.removed = true; });
+    yearRefs.push(ref);
+    yearRowsWrap.appendChild(row);
+  };
+  const sortedYears = (rec.years || []).slice().sort((a, b2) => Number(b2.year) - Number(a.year));
+  if (sortedYears.length) sortedYears.forEach((y) => addYearRow(y.year, y.units, y.perUnit));
+  else addYearRow(new Date().getFullYear(), '', '');
+  const addYearBtn = el('button', { class: 'btn ghost small', type: 'button', text: '+ Add year', onclick: () => addYearRow(new Date().getFullYear(), '', '') });
+
+  const collectYears = () => {
+    const map = new Map();
+    for (const r of yearRefs) {
+      if (r.removed) continue;
+      const y = parseInt(r.yy.value, 10);
+      if (!Number.isFinite(y)) continue;
+      map.set(y, { year: y, units: num(r.uu.value) || 0, perUnit: r.pp.value === '' ? null : num(r.pp.value) });
+    }
+    return [...map.values()].sort((a, b2) => a.year - b2.year);
+  };
+
+  const save = async () => {
+    if (!name.value.trim()) { toast('Enter the stock name'); return; }
+    const out = {
+      market: market.value,
+      name: name.value.trim(),
+      months: [...selMonths].sort((a, b2) => mod.MONTHS.indexOf(a) - mod.MONTHS.indexOf(b2)),
+      years: collectYears(),
+      createdAt: rec.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    if (isEdit) out.id = rec.id;
+    await DB.put('dividends', out);
+    closeModal(); toast(isEdit ? 'Saved' : 'Added'); renderDividend();
+  };
+  const del = async () => {
+    if (!window.confirm('Delete ' + (rec.name || 'this stock') + ' from dividends?')) return;
+    await DB.del('dividends', rec.id); closeModal(); toast('Deleted'); renderDividend();
+  };
+
+  const content = el('div', {}, [
+    field('Stock name', name),
+    field('Market', market),
+    field('Payout months — tap the months it usually pays', monthsWrap),
+    field('Per-year units & dividend per unit', el('div', {}, [
+      el('div', { class: 'div-yedit-head' }, [el('span', { text: 'Year' }), el('span', { text: 'Units' }), el('span', { text: 'Div/unit' }), el('span')]),
+      yearRowsWrap,
+      addYearBtn,
+    ])),
+  ]);
+  const btns = [el('button', { class: 'btn primary', text: 'Save', onclick: save })];
+  if (isEdit) btns.push(el('button', { class: 'btn danger', text: 'Delete', onclick: del }));
+  btns.push(el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }));
+  openModal(el('div', { class: 'sheet has-fixed-footer' }, [
+    el('div', { class: 'sheet-scroll' }, [
+      el('h2', { text: isEdit ? (rec.name || 'Edit stock') : 'Add dividend stock' }),
+      content,
+    ]),
+    el('div', { class: 'sheet-footer' }, [el('div', { class: 'btn-row', style: 'flex-wrap:wrap' }, btns)]),
+  ]));
 }
 
 // ---------- Mutual Funds surface ----------
@@ -4433,6 +4730,7 @@ function bind() {
   $('#mfAddBtn').addEventListener('click', () => openFundForm(null));
   $('#mfFetchBtn').addEventListener('click', () => fetchMfNavs());
   $('#fdAddBtn').addEventListener('click', () => openFdForm(null));
+  $('#divAddBtn').addEventListener('click', () => openDivForm(null));
   $('#backBtn').addEventListener('click', () => setAppMode('home'));
   $('#menuBtn').addEventListener('click', openMenu);
   const onSearch = debounce(renderList, 120);
