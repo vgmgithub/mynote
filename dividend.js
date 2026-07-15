@@ -1,14 +1,23 @@
 // Dividend-tracker logic. Pure — no DOM, no storage, no side effects.
-// Lazy-loaded from app.js (openDividend / renderDividend) so the rest of the
-// app never pays for it until the user opens the Dividends surface.
+// Lazy-loaded from app.js (renderDividend) so the rest of the app never pays
+// for it until the user opens the Dividends surface.
+//
+// A stock is tracked here only while its `stocks` record has divAvailable===true
+// (toggled on the stock's edit form) — app.js keeps one 'dividends' record in
+// sync per eligible stock, linked by `stockId`. Toggling it off just hides the
+// stock from the surface; its history is kept in case it's turned back on.
 //
 // One record per tracked stock (store: 'dividends'):
-//   { id, market:'in'|'us', name,
+//   { id, stockId, market:'in'|'us', name,
 //     months:['Feb','May'],                       // historical payout months
-//     years:[{ year:2026, units:25, perUnit:14.5 }, ...],   // per calendar year
+//     years:[...],                                 // per calendar year, shape below
 //     createdAt, updatedAt }
-// Per-year total = units * perUnit. Currency = INR when market==='in', else USD.
-// India (₹) and US ($) are never summed together — analysis is always per-market.
+// India years: { year:2026, units:25, perUnit:14.5 } — total = units * perUnit
+//   (units differ year to year, so both are tracked instead of one static count).
+// US years:    { year:2026, amount:0.30 } — total = amount (entered directly; no
+//   per-unit math, since the user just reads one dividend figure off their broker).
+// Currency = INR when market==='in', else USD. India (₹) and US ($) are never
+// summed together — analysis is always per-market.
 
 export const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const _MON_IX = MONTHS.reduce((m, name, i) => { m[name.toLowerCase()] = i; return m; }, {});
@@ -53,10 +62,18 @@ export function parseMonths(input) {
 
 export const monthsToStr = (arr) => (arr || []).join(', ');
 
-// Total dividend for one calendar year on a record: units * perUnit.
+// Total dividend for one calendar year on a record. US years store a direct
+// amount (no units/per-unit math); India years store units * perUnit. A US
+// year entered before the direct-amount change still has the old units/perUnit
+// shape (no `amount` yet) — fall back to that math so old data isn't zeroed
+// out; it self-heals to the `amount` shape the next time that year is saved.
 export function yearTotal(rec, year) {
   const y = (rec.years || []).find((r) => Number(r.year) === Number(year));
   if (!y) return 0;
+  if (rec.market === 'us') {
+    if (y.amount != null) return Number(y.amount) || 0;
+    return (Number(y.units) || 0) * (Number(y.perUnit) || 0);
+  }
   return (Number(y.units) || 0) * (Number(y.perUnit) || 0);
 }
 
@@ -108,14 +125,20 @@ export function byMonth(records) {
   return out;
 }
 
-// Seed a dividend record from an existing stock holding: name + current-year
-// units pre-filled, dividend-per-unit and payout months left for the user.
+// Seed a dividend record from an existing stock holding, linked by stockId.
+// India pre-fills the current year's units (dividend-per-unit left for the
+// user); US has no units concept here, so the current year just starts blank
+// for a direct dividend amount. Payout months are always left for the user.
 export function buildSeedRecord(stock, market, curYear, nowIso) {
+  const yearEntry = market === 'us'
+    ? { year: curYear, amount: null }
+    : { year: curYear, units: Number(stock.units) || 0, perUnit: null };
   return {
+    stockId: stock.id,
     market,
     name: (stock.name || '').trim(),
     months: [],
-    years: [{ year: curYear, units: Number(stock.units) || 0, perUnit: null }],
+    years: [yearEntry],
     createdAt: nowIso,
     updatedAt: nowIso,
   };

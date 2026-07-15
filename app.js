@@ -1435,7 +1435,6 @@ function setAppMode(mode) {
   $('#mfAddBtn').classList.toggle('hidden', !isMF);
   $('#mfFetchBtn').classList.toggle('hidden', !isMF);
   $('#fdAddBtn').classList.toggle('hidden', !isFD);
-  $('#divAddBtn').classList.toggle('hidden', !isDiv);
   $('#backBtn').classList.toggle('hidden', isHome);
   $('#appTitle').innerHTML = isHome ? '' : (isMF ? 'Mutual&nbsp;Funds' : isFD ? 'Fixed&nbsp;Deposits' : isDiv ? 'Dividends' : 'MyNote&nbsp;Stocks');
   if (isStocks) {
@@ -2081,11 +2080,13 @@ async function renderHome() {
       const fdSub = fdCard.querySelector('.home-card-sub');
       if (fdSub) fdSub.textContent = `${activeCount} active · ${fmtIntCur(invested)} invested`;
     }
-    // Dividends — subtext shows the tracked-stock count + this calendar year's
-    // Indian (₹) dividend total. US is a separate currency, so it's not summed in.
-    const divList = (await DB.all('dividends')) || [];
+    // Dividends — subtext shows the dividend-available-toggled stock count + this
+    // calendar year's Indian (₹) total. US is a separate currency, not summed in.
+    // Read-only pass (write:false): just tallies whatever's already tracked,
+    // without auto-creating records for newly-toggled stocks on every Home render.
+    const divMod = await import('./dividend.js');
+    const divList = await _eligibleDividendRecords(divMod, { write: false });
     if (divList.length) {
-      const divMod = await import('./dividend.js');
       const inRows = divList.filter((d) => d.market === 'in');
       const curYear = new Date().getFullYear();
       const inThisYr = inRows.reduce((s, d) => s + divMod.yearTotal(d, curYear), 0);
@@ -2107,38 +2108,47 @@ function _homeCard(icon, title, sub, onclick) {
 
 // ---------- Dividends surface ----------
 // Lazy-loaded: dividend.js (pure logic) only loads when the user opens Dividends.
-// First open seeds one record per Me-India / Me-US holding (name + current-year
-// units), guarded by a meta flag so deleting everything won't re-seed.
-async function openDividend() {
-  try {
-    const existing = (await DB.all('dividends')) || [];
-    if (!existing.length) {
-      const seeded = await DB.get('meta', 'divSeeded').catch(() => null);
-      if (!seeded || !seeded.value) {
-        const mod = await import('./dividend.js');
-        const nowIso = new Date().toISOString();
-        const curYear = new Date().getFullYear();
-        const [meIn, meUs] = await Promise.all([
-          DB.byPortfolio('stocks', 'me-in').catch(() => []),
-          DB.byPortfolio('stocks', 'me-us').catch(() => []),
-        ]);
-        let seededCount = 0;
-        const seedFrom = async (stocks, market) => {
-          for (const s of (stocks || [])) {
-            if (s.status !== 'holding') continue;
-            if (!(s.name || '').trim()) continue;
-            await DB.put('dividends', mod.buildSeedRecord(s, market, curYear, nowIso));
-            seededCount++;
-          }
-        };
-        await seedFrom(meIn, 'in');
-        await seedFrom(meUs, 'us');
-        // Only burn the one-time seed flag if we actually created records — that
-        // way opening Dividends before any holdings exist won't block a later seed.
-        if (seededCount) await DB.put('meta', { key: 'divSeeded', value: true });
+// Membership is driven live by each stock's `divAvailable` toggle (set on the
+// Stocks edit form) — there's no manual add/delete here. Every render re-joins
+// the eligible Me-India / Me-US holdings against the 'dividends' store, linked
+// by stockId, auto-creating a record for a newly-toggled-on stock and hiding
+// (not deleting) the record for one that's been toggled off, sold, or removed —
+// so re-enabling later restores its history.
+async function _eligibleDividendRecords(mod, { write } = {}) {
+  const [meIn, meUs, divs] = await Promise.all([
+    DB.byPortfolio('stocks', 'me-in').catch(() => []),
+    DB.byPortfolio('stocks', 'me-us').catch(() => []),
+    DB.all('dividends').catch(() => []),
+  ]);
+  const eligible = [...meIn, ...meUs].filter((s) => s.status === 'holding' && s.divAvailable && (s.name || '').trim());
+  const byStockId = new Map(divs.filter((d) => d.stockId != null).map((d) => [d.stockId, d]));
+  // Legacy fallback: records seeded before stockId linking existed, matched by
+  // name+market. Backfilled with stockId (write mode only) so future joins are exact.
+  const byNameMarket = new Map(divs.map((d) => [(d.market || '') + '|' + (d.name || '').trim().toLowerCase(), d]));
+  const nowIso = new Date().toISOString();
+  const curYear = new Date().getFullYear();
+  const out = [];
+  for (const s of eligible) {
+    const market = s.portfolio === 'me-us' ? 'us' : 'in';
+    let rec = byStockId.get(s.id);
+    if (!rec) {
+      const legacy = byNameMarket.get(market + '|' + (s.name || '').trim().toLowerCase());
+      if (legacy && legacy.stockId == null) {
+        if (write) { legacy.stockId = s.id; await DB.put('dividends', legacy); }
+        rec = legacy;
       }
     }
-  } catch (_) { /* seeding is best-effort — an empty surface still works */ }
+    if (!rec) {
+      if (!write) continue; // read-only pass (Home stats): skip stocks with no record yet
+      rec = mod.buildSeedRecord(s, market, curYear, nowIso);
+      rec.id = await DB.put('dividends', rec);
+    }
+    out.push(Object.assign({}, rec, { name: (s.name || '').trim() })); // keep displayed name fresh
+  }
+  return out;
+}
+
+function openDividend() {
   setAppMode('div');
 }
 
@@ -2146,10 +2156,8 @@ async function renderDividend() {
   const host = $('#divView');
   host.innerHTML = '';
   updateDivNavActive();
-  // The + (add) button only makes sense on the Stocks tab.
-  $('#divAddBtn').classList.toggle('hidden', _divTab !== 'stocks');
   const mod = await import('./dividend.js');
-  const all = (await DB.all('dividends')) || [];
+  const all = await _eligibleDividendRecords(mod, { write: true });
   if (_divTab === 'overview') return renderDivOverview(host, all, mod);
   if (_divTab === 'calendar') return renderDivCalendar(host, all, mod);
   return renderDivStocks(host, all, mod);
@@ -2169,8 +2177,8 @@ function renderDivStocks(host, all, mod) {
   if (!rows.length) {
     host.appendChild(el('div', { class: 'empty' }, [
       el('div', { class: 'e-icon', text: '💰' }),
-      el('p', { text: 'No dividend stocks here yet.' }),
-      el('p', { class: 'hint', text: 'Tap + to add one. New holdings you add under Stocks can be added here too.' }),
+      el('p', { text: 'No dividend-tracked stocks here yet.' }),
+      el('p', { class: 'hint', text: 'Open a holding under Stocks → edit → turn on "Dividend available" to track it here.' }),
     ]));
     return;
   }
@@ -2184,14 +2192,15 @@ function renderDivStocks(host, all, mod) {
 function _divCard(rec, mod, curYear, cur) {
   const months = mod.parseMonths(rec.months);
   const curTotal = mod.yearTotal(rec, curYear);
+  const isUs = rec.market === 'us';
   const breakdown = el('div', { class: 'div-years' });
   mod.yearsOf(rec).forEach((y) => {
     const yr = (rec.years || []).find((r) => Number(r.year) === y) || {};
-    const perTxt = yr.perUnit != null && yr.perUnit !== '' ? mod.fmtDiv(Number(yr.perUnit), cur) : '—';
+    const subTxt = isUs ? '' : `${Number(yr.units) || 0} × ${yr.perUnit != null && yr.perUnit !== '' ? mod.fmtDiv(Number(yr.perUnit), cur) : '—'}`;
     breakdown.appendChild(el('div', { class: 'div-year-row' }, [
       el('span', { class: 'div-year-k', text: String(y) }),
       el('span', { class: 'div-year-v', text: mod.fmtDiv(mod.yearTotal(rec, y), cur) }),
-      el('span', { class: 'div-year-sub', text: `${Number(yr.units) || 0} × ${perTxt}` }),
+      el('span', { class: 'div-year-sub', text: subTxt }),
     ]));
   });
   return el('div', { class: 'card', onclick: () => openDivForm(rec) }, [
@@ -2272,16 +2281,13 @@ function renderDivCalendar(host, all, mod) {
   }
 }
 
-// ---- Add / edit a dividend stock ----
-async function openDivForm(existing) {
-  const isEdit = !!(existing && existing.id != null);
+// ---- Edit a dividend-tracked stock's payout months + per-year figures ----
+// Name/market come from the linked stock (not editable here — change the name
+// on the Stocks edit form) and there's no delete: untrack by turning off
+// "Dividend available" on that same form.
+async function openDivForm(rec) {
   const mod = await import('./dividend.js');
-  const rec = Object.assign({ market: _divMarket, name: '', months: [], years: [] }, existing || {});
-
-  const name = el('input', { type: 'text', value: rec.name || '', placeholder: 'Stock name' });
-  const market = el('select', {}, [['in', 'India (₹)'], ['us', 'US ($)']].map(([v, l]) => {
-    const o = el('option', { value: v, text: l }); if (v === rec.market) o.selected = true; return o;
-  }));
+  const isUs = rec.market === 'us';
 
   // Payout-month toggles (Jan–Dec).
   const selMonths = new Set(mod.parseMonths(rec.months));
@@ -2294,23 +2300,34 @@ async function openDivForm(existing) {
     return btn;
   }));
 
-  // Per-year rows: year / units / dividend-per-unit.
+  // Per-year rows. India: year / units / dividend-per-unit. US: year / direct
+  // dividend amount (no units — the user reads one figure off their broker).
   const yearRowsWrap = el('div', { class: 'div-year-editor' });
   const yearRefs = [];
   const numInput = (v, ph) => el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: v != null && v !== '' ? v : '', placeholder: ph });
-  const addYearRow = (year, units, perUnit) => {
+  const addYearRow = (year, a, b2) => {
     const yy = el('input', { type: 'number', inputmode: 'numeric', step: '1', value: year != null ? year : '', placeholder: 'Year' });
-    const uu = numInput(units, 'Units');
-    const pp = numInput(perUnit, 'Div/unit');
     const rm = el('button', { class: 'icon-btn', type: 'button', text: '×' });
-    const ref = { yy, uu, pp, removed: false };
-    const row = el('div', { class: 'div-yedit-row' }, [yy, uu, pp, rm]);
+    let row, ref;
+    if (isUs) {
+      const amt = numInput(a, 'Dividend amount');
+      ref = { yy, amt, removed: false };
+      row = el('div', { class: 'div-yedit-row div-yedit-row-us' }, [yy, amt, rm]);
+    } else {
+      const uu = numInput(a, 'Units');
+      const pp = numInput(b2, 'Div/unit');
+      ref = { yy, uu, pp, removed: false };
+      row = el('div', { class: 'div-yedit-row' }, [yy, uu, pp, rm]);
+    }
     rm.addEventListener('click', () => { row.remove(); ref.removed = true; });
     yearRefs.push(ref);
     yearRowsWrap.appendChild(row);
   };
-  const sortedYears = (rec.years || []).slice().sort((a, b2) => Number(b2.year) - Number(a.year));
-  if (sortedYears.length) sortedYears.forEach((y) => addYearRow(y.year, y.units, y.perUnit));
+  const sortedYears = (rec.years || []).slice().sort((x, y) => Number(y.year) - Number(x.year));
+  // A US year saved before the direct-amount change has no `amount` yet (old
+  // units/perUnit shape) — show its computed total so the figure isn't lost.
+  const usAmountOf = (y) => (y.amount != null ? y.amount : (y.units != null && y.perUnit != null ? (Number(y.units) || 0) * (Number(y.perUnit) || 0) : ''));
+  if (sortedYears.length) sortedYears.forEach((y) => addYearRow(y.year, isUs ? usAmountOf(y) : y.units, isUs ? undefined : y.perUnit));
   else addYearRow(new Date().getFullYear(), '', '');
   const addYearBtn = el('button', { class: 'btn ghost small', type: 'button', text: '+ Add year', onclick: () => addYearRow(new Date().getFullYear(), '', '') });
 
@@ -2320,49 +2337,43 @@ async function openDivForm(existing) {
       if (r.removed) continue;
       const y = parseInt(r.yy.value, 10);
       if (!Number.isFinite(y)) continue;
-      map.set(y, { year: y, units: num(r.uu.value) || 0, perUnit: r.pp.value === '' ? null : num(r.pp.value) });
+      if (isUs) map.set(y, { year: y, amount: r.amt.value === '' ? null : num(r.amt.value) });
+      else map.set(y, { year: y, units: num(r.uu.value) || 0, perUnit: r.pp.value === '' ? null : num(r.pp.value) });
     }
-    return [...map.values()].sort((a, b2) => a.year - b2.year);
+    return [...map.values()].sort((x, y) => x.year - y.year);
   };
 
   const save = async () => {
-    if (!name.value.trim()) { toast('Enter the stock name'); return; }
-    const out = {
-      market: market.value,
-      name: name.value.trim(),
+    const out = Object.assign({}, rec, {
       months: [...selMonths].sort((a, b2) => mod.MONTHS.indexOf(a) - mod.MONTHS.indexOf(b2)),
       years: collectYears(),
-      createdAt: rec.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-    };
-    if (isEdit) out.id = rec.id;
+    });
     await DB.put('dividends', out);
-    closeModal(); toast(isEdit ? 'Saved' : 'Added'); renderDividend();
-  };
-  const del = async () => {
-    if (!window.confirm('Delete ' + (rec.name || 'this stock') + ' from dividends?')) return;
-    await DB.del('dividends', rec.id); closeModal(); toast('Deleted'); renderDividend();
+    closeModal(); toast('Saved'); renderDividend();
   };
 
+  const yearHead = isUs
+    ? el('div', { class: 'div-yedit-head div-yedit-head-us' }, [el('span', { text: 'Year' }), el('span', { text: 'Dividend amount' }), el('span')])
+    : el('div', { class: 'div-yedit-head' }, [el('span', { text: 'Year' }), el('span', { text: 'Units' }), el('span', { text: 'Div/unit' }), el('span')]);
   const content = el('div', {}, [
-    field('Stock name', name),
-    field('Market', market),
     field('Payout months — tap the months it usually pays', monthsWrap),
-    field('Per-year units & dividend per unit', el('div', {}, [
-      el('div', { class: 'div-yedit-head' }, [el('span', { text: 'Year' }), el('span', { text: 'Units' }), el('span', { text: 'Div/unit' }), el('span')]),
+    field(isUs ? 'Per-year dividend amount' : 'Per-year units & dividend per unit', el('div', {}, [
+      yearHead,
       yearRowsWrap,
       addYearBtn,
     ])),
   ]);
-  const btns = [el('button', { class: 'btn primary', text: 'Save', onclick: save })];
-  if (isEdit) btns.push(el('button', { class: 'btn danger', text: 'Delete', onclick: del }));
-  btns.push(el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }));
   openModal(el('div', { class: 'sheet has-fixed-footer' }, [
     el('div', { class: 'sheet-scroll' }, [
-      el('h2', { text: isEdit ? (rec.name || 'Edit stock') : 'Add dividend stock' }),
+      el('h2', { text: rec.name || 'Edit stock' }),
+      el('p', { class: 'hint', text: (isUs ? 'US ($)' : 'India (₹)') + ' · name and market are set on the Stocks edit form.' }),
       content,
     ]),
-    el('div', { class: 'sheet-footer' }, [el('div', { class: 'btn-row', style: 'flex-wrap:wrap' }, btns)]),
+    el('div', { class: 'sheet-footer' }, [el('div', { class: 'btn-row', style: 'flex-wrap:wrap' }, [
+      el('button', { class: 'btn primary', text: 'Save', onclick: save }),
+      el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }),
+    ])]),
   ]));
 }
 
@@ -3614,8 +3625,12 @@ function openStockForm(existing) {
   const soldPrice = numInput(s.soldPrice, '0');
   const soldUnits = numInput(s.soldUnits, 'units sold');
   const soldDate = el('input', { type: 'date', value: s.soldDate || todayISO() });
-  const notes = el('textarea', { placeholder: 'Notes (optional)' });
-  notes.value = s.notes || '';
+  const divAvailable = el('input', { type: 'checkbox' });
+  divAvailable.checked = !!s.divAvailable;
+  const divSwitch = el('label', { class: 'switch' }, [
+    divAvailable,
+    el('span', { class: 'switch-track' }, [el('span', { class: 'switch-thumb' })]),
+  ]);
 
   const soldBlock = el('div', { class: 'sold-only' + (s.status === 'sold' ? '' : ' hidden') }, [
     el('div', { class: 'field-row' }, [field('Sold price', soldPrice), field('Units sold', soldUnits)]),
@@ -3697,7 +3712,7 @@ function openStockForm(existing) {
       soldPrice: sold ? num(soldPrice.value) : null,
       soldUnits: sold ? num(soldUnits.value) : null,
       soldDate: sold ? (soldDate.value || todayISO()) : null,
-      notes: notes.value.trim(),
+      divAvailable: divAvailable.checked,
       history: hist,
       updatedAt: new Date().toISOString(),
     };
@@ -3727,7 +3742,7 @@ function openStockForm(existing) {
     field('Current price', currentPrice),
     soldBlock,
     histBlock,
-    field('Notes', notes),
+    field('Dividend available — shows this stock on the Dividends page', divSwitch),
     el('div', { class: 'btn-row' }, [
       el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }),
       el('button', { class: 'btn primary', text: isEdit ? 'Save' : 'Add', onclick: save }),
@@ -4730,7 +4745,6 @@ function bind() {
   $('#mfAddBtn').addEventListener('click', () => openFundForm(null));
   $('#mfFetchBtn').addEventListener('click', () => fetchMfNavs());
   $('#fdAddBtn').addEventListener('click', () => openFdForm(null));
-  $('#divAddBtn').addEventListener('click', () => openDivForm(null));
   $('#backBtn').addEventListener('click', () => setAppMode('home'));
   $('#menuBtn').addEventListener('click', openMenu);
   const onSearch = debounce(renderList, 120);
