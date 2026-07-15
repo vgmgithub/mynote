@@ -3,7 +3,7 @@
 import { DB } from './db.js';
 import {
   PORTFOLIOS, CATEGORIES, CONVICTIONS, convIcon, curOf,
-  fmtCur, fmtPct, pctClass, todayISO, num,
+  fmtCur, fmtPct, fmtIntRate, pctClass, todayISO, num,
   calc, latestHist, displayPct, summarize,
   ymToLabel, labelToYm, monthKey, thisYm,
 } from './core.js';
