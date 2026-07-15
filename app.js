@@ -221,14 +221,19 @@ function renderSummary() {
     el('div', { class: 'k', text: k }), el('div', { class: 'v ' + (cls || ''), text: v }),
   ])));
   host.appendChild(grid);
-  // Prices-updated status for THIS portfolio (switches with the Me/Wife/US tab),
-  // tucked into the bottom-right corner - the most recent price update among the
-  // active holdings. Same info also aggregates per-portfolio on the Overview tab.
+
+  // Render price status below the summary card
+  renderPriceStatus();
+}
+
+function renderPriceStatus() {
+  const statusHost = $('#price-status');
+  statusHost.innerHTML = '';
   const ages = state.stocks.filter((x) => x.status !== 'sold').map(priceAgeDays).filter((a) => a != null);
   const age = ages.length ? Math.min.apply(null, ages) : null;
   if (age != null) {
-    host.appendChild(el('div', {
-      class: 'summary-upd' + (age >= STALE_PRICE_DAYS ? ' warn' : ''),
+    statusHost.appendChild(el('div', {
+      class: 'price-status' + (age >= STALE_PRICE_DAYS ? ' warn' : ''),
       text: age === 0 ? 'Prices updated today' : 'Prices updated ' + age + 'd ago',
     }));
   }
@@ -1386,6 +1391,7 @@ async function render() {
   const v = state.view;
   const holdings = v === 'holdings';
   $('#summary').classList.toggle('hidden', !holdings);
+  $('#price-status').classList.toggle('hidden', !holdings);
   $('#toolbar').classList.toggle('hidden', !holdings);
   $('#stockList').classList.toggle('hidden', !holdings);
   $('#monthlyView').classList.toggle('hidden', v !== 'monthly');
@@ -1401,6 +1407,7 @@ async function render() {
   if (v === 'trends') { await renderTrends(); return; }
   if (v === 'feed') { await renderFeed(); return; }
   renderSummary();
+  renderPriceStatus();
   renderList();
   $('#search').value = state.search;
 }
