@@ -676,14 +676,9 @@ async function renderTrends() {
 
   const pcard = el('div', { class: 'chart-card' }, [el('h3', { text: 'Portfolios' })]);
   const grid = el('div', { class: 'stats' });
-  const priceStatuses = []; // collect price statuses for each portfolio
   PORTFOLIOS.forEach((p) => {
     const lm = latest[p.id];
     const valTxt = lm && lm.value != null ? fmtCur(lm.value, p.cur) : '-';
-    const ages = allStocks.filter((s) => s.portfolio === p.id && s.status !== 'sold').map(priceAgeDays).filter((a) => a != null);
-    const age = ages.length ? Math.min.apply(null, ages) : null;
-    const updTxt = age == null ? '' : age === 0 ? 'Updated today' : 'Updated ' + age + 'd ago';
-    priceStatuses.push({ portfolio: p.id, label: p.label, age, updTxt, warn: age != null && age >= STALE_PRICE_DAYS });
     grid.appendChild(el('div', { class: 'stat' }, [
       el('div', { class: ('stat-v ' + _statSizeClass(valTxt)).trim(), text: valTxt }),
       el('div', { class: 'stat-k', text: p.label }),
@@ -701,34 +696,6 @@ async function renderTrends() {
     ]));
   }
   host.appendChild(pcard);
-
-  // Price status section below card, above the toolbar
-  const statusContainer = el('div', { class: 'price-status-container' });
-  priceStatuses.forEach((ps) => {
-    if (ps.updTxt) {
-      statusContainer.appendChild(el('div', { class: 'price-status-row' }, [
-        el('span', { class: 'ps-label', text: ps.label }),
-        el('span', { class: 'ps-text' + (ps.warn ? ' warn' : ''), text: ps.updTxt }),
-      ]));
-    }
-  });
-  if (statusContainer.children.length > 0) {
-    host.appendChild(statusContainer);
-  }
-
-  // Filter for showing active vs sold holdings
-  const filterSeg = el('div', { class: 'seg trends-filter' }, [
-    ['holding', 'Active holdings'],
-    ['sold', 'With sold holdings'],
-  ].map(([v, label]) =>
-    el('button', {
-      class: (state.trendsFilter === v ? 'active' : ''),
-      'data-filter': v,
-      text: label,
-      onclick: () => { if (state.trendsFilter === v) return; state.trendsFilter = v; renderTrends(); },
-    })
-  ));
-  host.appendChild(filterSeg);
 
   const holdings = allStocks.filter((s) => s.status !== 'sold');
   if (!holdings.length) {
