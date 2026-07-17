@@ -1,7 +1,7 @@
 // IndexedDB data layer. All data lives on this device only.
 export const DB = (function () {
   const NAME = 'mynote-stocks';
-  const VERSION = 6;
+  const VERSION = 7;
   let dbp = null;
 
   function open() {
@@ -56,6 +56,14 @@ export const DB = (function () {
           const s = db.createObjectStore('dividends', { keyPath: 'id', autoIncrement: true });
           s.createIndex('market', 'market', { unique: false });
         }
+        // Metals ledger (gold + silver). One row per transaction, indexed by
+        // `metal` ('gold' | 'silver'). Holds grams + ₹ amount + platform; totals
+        // roll up per metal — see metal.js. SGBs are NOT here (they live in the
+        // `stocks` store and are only listed on the Metals SGB tab). Added in v7.
+        if (!db.objectStoreNames.contains('metals')) {
+          const s = db.createObjectStore('metals', { keyPath: 'id', autoIncrement: true });
+          s.createIndex('metal', 'metal', { unique: false });
+        }
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
@@ -108,7 +116,7 @@ export const DB = (function () {
       // `feed` is best-effort: very old backups (v2 export) won't have it, and
       // the store may not exist if the user is mid-upgrade. Don't fail the
       // whole export over a missing store.
-      const [stocks, snapshots, monthly, meta, feed, funds, fds, dividends] = await Promise.all([
+      const [stocks, snapshots, monthly, meta, feed, funds, fds, dividends, metals] = await Promise.all([
         this.all('stocks'),
         this.all('snapshots'),
         this.all('monthly'),
@@ -117,6 +125,7 @@ export const DB = (function () {
         this.all('funds').catch(() => []),
         this.all('fds').catch(() => []),
         this.all('dividends').catch(() => []),
+        this.all('metals').catch(() => []),
       ]);
       return {
         app: 'mynote-stocks',
@@ -130,6 +139,7 @@ export const DB = (function () {
         funds,
         fds,
         dividends,
+        metals,
       };
     },
     // Replace all data with the contents of a previously exported object.
@@ -146,6 +156,7 @@ export const DB = (function () {
         this.clear('funds').catch(() => {}),
         this.clear('fds').catch(() => {}),
         this.clear('dividends').catch(() => {}),
+        this.clear('metals').catch(() => {}),
       ]);
       const tasks = [];
       (data.stocks || []).forEach((s) => tasks.push(this.put('stocks', s)));
@@ -157,6 +168,7 @@ export const DB = (function () {
       (data.funds || []).forEach((f) => tasks.push(this.put('funds', f).catch(() => {})));
       (data.fds || []).forEach((f) => tasks.push(this.put('fds', f).catch(() => {})));
       (data.dividends || []).forEach((d) => tasks.push(this.put('dividends', d).catch(() => {})));
+      (data.metals || []).forEach((m) => tasks.push(this.put('metals', m).catch(() => {})));
       await Promise.all(tasks);
     },
   };

@@ -45,6 +45,8 @@ let _fdTab = 'holdings';     // 'holdings' | 'overview' | 'ladder' (bottom nav)
 // Dividend view state (only used inside the Dividends surface).
 let _divTab = 'stocks';      // 'stocks' | 'overview' | 'calendar' (bottom nav)
 let _divMarket = 'in';       // 'in' | 'us' (Me-India / Me-US)
+// Metals view state (only used inside the Metals surface).
+let _metalTab = 'gold';      // 'gold' | 'silver' | 'sgb' (bottom nav)
 const MF_TYPES = ['Multi Cap', 'Flexi Cap', 'Large Cap', 'Mid Cap', 'Small Cap', 'Tax Saver', 'Technology', 'Pharma', 'Energy', 'International', 'Index', 'Debt', 'Hybrid'];
 const MF_STATUS = ['Investing', 'Investing On/Off', 'Investing Variable', 'Stopped', 'Sold'];
 
@@ -1422,30 +1424,34 @@ async function render() {
 const STOCK_SURFACE = ['#summary', '#toolbar', '#stockList', '#monthlyView', '#heatmapView', '#trendView', '#feedView', '#addBtn', '#ocrBtn'];
 function setAppMode(mode) {
   state.appMode = mode;
-  const isHome = mode === 'home', isStocks = mode === 'stocks', isMF = mode === 'mf', isFD = mode === 'fd', isDiv = mode === 'div';
+  const isHome = mode === 'home', isStocks = mode === 'stocks', isMF = mode === 'mf', isFD = mode === 'fd', isDiv = mode === 'div', isMetal = mode === 'metal';
   $('#homeView').classList.toggle('hidden', !isHome);
   $('#mfView').classList.toggle('hidden', !isMF);
   $('#fdView').classList.toggle('hidden', !isFD);
   $('#divView').classList.toggle('hidden', !isDiv);
+  $('#metalView').classList.toggle('hidden', !isMetal);
   $('#portfolioTabs').classList.toggle('hidden', !isStocks);
   $('#bottomNav').classList.toggle('hidden', !isStocks);
   $('#mfBottomNav').classList.toggle('hidden', !isMF);
   $('#fdBottomNav').classList.toggle('hidden', !isFD);
   $('#divBottomNav').classList.toggle('hidden', !isDiv);
+  $('#metalBottomNav').classList.toggle('hidden', !isMetal);
   $('#mfAddBtn').classList.toggle('hidden', !isMF);
   $('#mfFetchBtn').classList.toggle('hidden', !isMF);
   $('#fdAddBtn').classList.toggle('hidden', !isFD);
+  if (!isMetal) $('#metalAddBtn').classList.add('hidden'); // renderMetal shows it on Gold/Silver only
   $('#backBtn').classList.toggle('hidden', isHome);
-  $('#appTitle').innerHTML = isHome ? '' : (isMF ? 'Mutual&nbsp;Funds' : isFD ? 'Fixed&nbsp;Deposits' : isDiv ? 'Dividends' : 'MyNote&nbsp;Stocks');
+  $('#appTitle').innerHTML = isHome ? '' : (isMF ? 'Mutual&nbsp;Funds' : isFD ? 'Fixed&nbsp;Deposits' : isDiv ? 'Dividends' : isMetal ? 'Metals' : 'MyNote&nbsp;Stocks');
   if (isStocks) {
     render();
   } else {
-    // Nothing from the stock surface should show on Home/MF/FD/Dividends.
+    // Nothing from the stock surface should show on Home/MF/FD/Dividends/Metals.
     STOCK_SURFACE.forEach((sel) => $(sel).classList.add('hidden'));
     if (isHome) renderHome();
     if (isMF) { buildMfBottomNav(); renderMF(); }
     if (isFD) { buildFdBottomNav(); renderFD(); }
     if (isDiv) { buildDivBottomNav(); renderDividend(); }
+    if (isMetal) { buildMetalBottomNav(); renderMetal(); }
   }
 }
 
@@ -1497,6 +1503,23 @@ function buildDivBottomNav() {
 }
 function updateDivNavActive() {
   $('#divBottomNav').querySelectorAll('button').forEach((x) => x.classList.toggle('active', x.getAttribute('data-view') === _divTab));
+}
+
+// ---------- Metals surface (Gold | Silver | SGB) ----------
+// Mirrors the MF/FD/Dividend surfaces: a fixed bottom nav (built once),
+// lazy-loaded pure logic in metal.js, app.js does the `metals`-store CRUD.
+function buildMetalBottomNav() {
+  const nav = $('#metalBottomNav');
+  if (nav.childElementCount) { updateMetalNavActive(); return; }
+  nav.innerHTML = '';
+  [['gold', '🥇', 'Gold'], ['silver', '🥈', 'Silver'], ['sgb', '📜', 'SGB']].forEach(([v, ico, label]) => {
+    nav.appendChild(el('button', { 'data-view': v, onclick: () => { if (_metalTab === v) return; _metalTab = v; renderMetal(); } },
+      [el('span', { class: 'bn-ico', text: ico }), label]));
+  });
+  updateMetalNavActive();
+}
+function updateMetalNavActive() {
+  $('#metalBottomNav').querySelectorAll('button').forEach((x) => x.classList.toggle('active', x.getAttribute('data-view') === _metalTab));
 }
 
 const _FD_MONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -2040,7 +2063,8 @@ async function renderHome() {
   const mfCard = _homeCard('📊', 'Mutual Funds', 'SIPs · XIRR · 2030 goal', () => openMF());
   const fdCard = _homeCard('🏦', 'Fixed Deposits', 'FD ladder · maturity · interest', () => setAppMode('fd'));
   const divCard = _homeCard('💰', 'Dividends', 'per-stock · yearly · YoY', () => openDividend());
-  host.appendChild(el('div', { class: 'home-cards' }, [stockCard, mfCard, fdCard, divCard]));
+  const metalCard = _homeCard('🥇', 'Metals', 'gold · silver · SGB', () => openMetal());
+  host.appendChild(el('div', { class: 'home-cards' }, [stockCard, mfCard, fdCard, divCard, metalCard]));
   host.appendChild(el('p', { class: 'hint home-foot', text: 'Backup covers everything - open the ⋮ menu → Backup & Restore.' }));
 
   // Live stats for Stock and MF cards
@@ -2092,6 +2116,21 @@ async function renderHome() {
       const inThisYr = inRows.reduce((s, d) => s + divMod.yearTotal(d, curYear), 0);
       const divSub = divCard.querySelector('.home-card-sub');
       if (divSub) divSub.textContent = `${divList.length} stocks · ${fmtIntCur(inThisYr)} in ${curYear}`;
+    }
+    // Metals — subtext shows combined current value (₹) at the saved ₹/gram prices
+    // (gold + silver together, both INR), or invested if not priced yet.
+    const metalTxns = (await DB.all('metals')) || [];
+    if (metalTxns.length) {
+      const metalMod = await import('./metal.js');
+      const prices = (await DB.get('meta', 'metalPrices').catch(() => null)) || {};
+      const pv = prices.value || {};
+      let value = 0, invested = 0;
+      for (const m of ['gold', 'silver']) {
+        const s = metalMod.summary(metalTxns, m, pv[m] || 0);
+        value += s.value; invested += s.invested;
+      }
+      const metalSub = metalCard.querySelector('.home-card-sub');
+      if (metalSub) metalSub.textContent = value > 0 ? `Value ${fmtIntCur(value)}` : `Invested ${fmtIntCur(invested)}`;
     }
   } catch (_) {}
 }
@@ -2374,6 +2413,255 @@ async function openDivForm(rec) {
       el('button', { class: 'btn primary', text: 'Save', onclick: save }),
       el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }),
     ])]),
+  ]));
+}
+
+// ---------- Metals surface ----------
+// Lazy-loaded: metal.js only loads when the user opens Metals. First open seeds
+// one opening-balance ledger entry per metal (from the sheet's non-SGB net) plus
+// starting ₹/gram prices, guarded by a meta flag so deleting everything won't re-seed.
+async function openMetal() {
+  try {
+    const existing = (await DB.all('metals')) || [];
+    if (!existing.length) {
+      const seeded = await DB.get('meta', 'metalSeeded').catch(() => null);
+      if (!seeded || !seeded.value) {
+        const mod = await import('./metal.js');
+        const nowIso = new Date().toISOString();
+        const d = todayISO();
+        // Net non-SGB position from the "Metal" sheet (bond-interest ₹ excluded
+        // from invested). User verifies/edits these opening rows in-app.
+        await DB.put('metals', mod.buildOpeningEntry('gold', 0.2875, 1724.20, nowIso, d));
+        await DB.put('metals', mod.buildOpeningEntry('silver', 123.705, 12975.81, nowIso, d));
+        const havePrices = await DB.get('meta', 'metalPrices').catch(() => null);
+        if (!havePrices) await DB.put('meta', { key: 'metalPrices', value: { gold: 14532.4, silver: 229.45, source: 'sheet', updatedAt: nowIso } });
+        await DB.put('meta', { key: 'metalSeeded', value: true });
+      }
+    }
+  } catch (_) { /* best-effort seed — empty surface still works */ }
+  setAppMode('metal');
+}
+
+async function renderMetal() {
+  const host = $('#metalView');
+  host.innerHTML = '';
+  updateMetalNavActive();
+  // The + (add transaction) button only makes sense on the Gold/Silver ledgers.
+  $('#metalAddBtn').classList.toggle('hidden', _metalTab === 'sgb');
+  if (_metalTab === 'sgb') return renderMetalSgb(host);
+  return renderMetalLedger(host, _metalTab);
+}
+
+// ---- Gold / Silver tab: summary + price control + transaction ledger ----
+async function renderMetalLedger(host, metal) {
+  const mod = await import('./metal.js');
+  const [txns, pricesMeta] = await Promise.all([
+    DB.byIndex('metals', 'metal', metal).catch(() => []),
+    DB.get('meta', 'metalPrices').catch(() => null),
+  ]);
+  const prices = (pricesMeta && pricesMeta.value) || {};
+  const price = Number(prices[metal]) || 0;
+  const s = mod.summary(txns || [], metal, price);
+  const gramsTxt = (Math.round(s.grams * 10000) / 10000) + ' g';
+
+  host.appendChild(el('section', { class: 'summary' }, [
+    el('div', { class: 'row-between' }, [
+      el('span', { class: 'label', text: (metal === 'gold' ? 'Gold' : 'Silver') + ' holdings' }),
+      s.plPct != null
+        ? el('span', { class: 'badge ' + (s.pl >= 0 ? 'good' : 'bad'), text: fmtPct(s.plPct) })
+        : el('span', { class: 'badge muted', text: 'set price' }),
+    ]),
+    el('div', { class: 'big', text: s.value > 0 ? fmtCur(s.value, 'INR') : '-' }),
+    el('div', { class: 'grid' }, [
+      _mfCell('Grams', gramsTxt),
+      _mfCell('Invested', fmtCur(s.invested, 'INR')),
+      _mfCell('Profit / Loss', (s.pl >= 0 ? '+' : '') + fmtCur(s.pl, 'INR'), s.pl >= 0 ? 'pos' : 'neg'),
+      _mfCell('Rate', price > 0 ? fmtCur(price, 'INR') + '/g' : '—'),
+    ]),
+  ]));
+
+  host.appendChild(el('div', { class: 'metal-price-row' }, [
+    el('span', { class: 'hint', text: price > 0
+      ? `${metal === 'gold' ? 'Gold' : 'Silver'} ${fmtCur(price, 'INR')}/g` + (prices.source === 'intl-spot' ? ' · intl estimate' : '')
+      : 'No price set' }),
+    el('button', { class: 'btn ghost small', type: 'button', text: 'Set price', onclick: () => openMetalPrice() }),
+  ]));
+
+  if (!txns || !txns.length) {
+    host.appendChild(el('div', { class: 'empty' }, [
+      el('div', { class: 'e-icon', text: metal === 'gold' ? '🥇' : '🥈' }),
+      el('p', { text: 'No transactions yet.' }),
+      el('p', { class: 'hint', text: 'Tap + to add a buy, sell, or interest credit.' }),
+    ]));
+    return;
+  }
+  const wrap = el('section', { class: 'stock-list' });
+  txns.slice().sort((a, b2) => (b2.date || '').localeCompare(a.date || '')).forEach((t) => wrap.appendChild(_metalTxnCard(t)));
+  host.appendChild(wrap);
+}
+
+function _metalTxnCard(t) {
+  const grams = Number(t.grams) || 0;
+  const amt = Number(t.amount) || 0;
+  const typeLabel = t.type === 'sell' ? 'Sell' : t.type === 'interest' ? 'Interest' : 'Buy';
+  const gTxt = (grams >= 0 ? '+' : '−') + (Math.round(Math.abs(grams) * 10000) / 10000) + ' g';
+  return el('div', { class: 'card', onclick: () => openMetalTxn(t) }, [
+    el('div', { class: 'top' }, [
+      el('div', {}, [
+        el('div', { class: 'name', text: gTxt }),
+        el('div', { class: 'cat', text: `${t.date || ''} · ${typeLabel}${t.via ? ' · ' + t.via : ''}` }),
+      ]),
+      el('div', { class: 'card-right' }, [
+        el('div', { class: 'kv-val', text: (amt < 0 ? '−' : '') + fmtCur(Math.abs(amt), 'INR') }),
+        t.type === 'interest' ? el('div', { class: 'kv-label', text: 'free' }) : document.createTextNode(''),
+      ]),
+    ]),
+    t.note ? el('div', { class: 'meta-line', text: t.note }) : document.createTextNode(''),
+  ]);
+}
+
+// ---- SGB tab: read-only list pulled from the Stocks store (name matches /sgb/i) ----
+async function renderMetalSgb(host) {
+  const all = (await DB.all('stocks')) || [];
+  const sgbs = all.filter((s) => /sgb/i.test(s.name || ''));
+  host.appendChild(el('p', { class: 'hint', style: 'margin:2px 0 10px', text: 'Sovereign Gold Bonds from your Stocks list — add or edit them under Stocks; they appear here for reference.' }));
+  if (!sgbs.length) {
+    host.appendChild(el('div', { class: 'empty' }, [
+      el('div', { class: 'e-icon', text: '📜' }),
+      el('p', { text: 'No SGBs found.' }),
+      el('p', { class: 'hint', text: 'Add a holding with "SGB" in its name under Stocks to see it here.' }),
+    ]));
+    return;
+  }
+  const wrap = el('section', { class: 'stock-list' });
+  sgbs.forEach((s) => {
+    const grams = Number(s.units) || 0;
+    const inv = grams * (Number(s.buyPrice) || 0);
+    const val = grams * (Number(s.currentPrice) || 0);
+    const pl = val - inv;
+    wrap.appendChild(el('div', { class: 'card' }, [
+      el('div', { class: 'top' }, [
+        el('div', {}, [
+          el('div', { class: 'name', text: s.name }),
+          el('div', { class: 'cat', text: `${grams} g` + (s.buyPrice ? ' · buy ' + fmtCur(s.buyPrice, 'INR') + '/g' : '') }),
+        ]),
+        el('div', { class: 'card-right' }, [
+          el('div', { class: 'kv-val', text: fmtCur(val > 0 ? val : inv, 'INR') }),
+          val > 0 ? el('div', { class: 'meta-line ' + (pl >= 0 ? 'pos' : 'neg'), text: (pl >= 0 ? '+' : '') + fmtCur(pl, 'INR') }) : document.createTextNode(''),
+        ]),
+      ]),
+    ]));
+  });
+  host.appendChild(wrap);
+}
+
+// ---- Add / edit a metal transaction ----
+async function openMetalTxn(existing) {
+  const isEdit = !!(existing && existing.id != null);
+  const t = Object.assign({ metal: (_metalTab === 'silver' ? 'silver' : 'gold'), type: 'buy', via: 'Aura', date: todayISO() }, existing || {});
+
+  const date = el('input', { type: 'date', value: t.date || todayISO() });
+  const metal = el('select', {}, [['gold', 'Gold'], ['silver', 'Silver']].map(([v, l]) => { const o = el('option', { value: v, text: l }); if (v === t.metal) o.selected = true; return o; }));
+  const type = el('select', {}, [['buy', 'Buy'], ['sell', 'Sell'], ['interest', 'Interest / bonus']].map(([v, l]) => { const o = el('option', { value: v, text: l }); if (v === t.type) o.selected = true; return o; }));
+  const numInput = (val, ph) => el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: val != null && val !== '' ? val : '', placeholder: ph });
+  const grams = numInput(t.grams != null && t.grams !== '' ? Math.abs(Number(t.grams)) : '', 'Grams');
+  const amount = numInput(t.amount != null && t.amount !== '' ? Math.abs(Number(t.amount)) : '', '₹ amount');
+  const via = el('input', { type: 'text', value: t.via || '', placeholder: 'Aura / Physical / Employer' });
+  const note = el('input', { type: 'text', value: t.note || '', placeholder: 'Note (optional)' });
+
+  const hint = el('p', { class: 'hint' });
+  const amountField = field('₹ amount', amount);
+  const updHint = () => {
+    const iv = type.value === 'interest';
+    amount.disabled = iv;
+    amountField.style.opacity = iv ? '0.5' : '';
+    hint.textContent = type.value === 'sell' ? 'Sell: grams leave your holding; ₹ is the sale proceeds (stored as negative).'
+      : iv ? 'Interest / bonus: free grams added; ₹ is not counted as invested.'
+      : 'Buy: grams added; ₹ is what you invested.';
+  };
+  type.addEventListener('change', updHint); updHint();
+
+  const save = async () => {
+    const g = num(grams.value), a = num(amount.value);
+    if (!(g > 0)) { toast('Enter grams'); return; }
+    const isSell = type.value === 'sell';
+    const rec = {
+      metal: metal.value,
+      date: date.value || todayISO(),
+      grams: isSell ? -Math.abs(g) : Math.abs(g),
+      amount: type.value === 'interest' ? 0 : (isSell ? -Math.abs(a || 0) : Math.abs(a || 0)),
+      via: via.value.trim(),
+      type: type.value,
+      note: note.value.trim(),
+      createdAt: t.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    if (isEdit) rec.id = t.id;
+    await DB.put('metals', rec);
+    closeModal(); toast(isEdit ? 'Saved' : 'Added');
+    _metalTab = metal.value === 'silver' ? 'silver' : 'gold';
+    renderMetal();
+  };
+  const del = async () => {
+    if (!window.confirm('Delete this transaction?')) return;
+    await DB.del('metals', t.id); closeModal(); toast('Deleted'); renderMetal();
+  };
+
+  const btns = [el('button', { class: 'btn primary', text: 'Save', onclick: save })];
+  if (isEdit) btns.push(el('button', { class: 'btn danger', text: 'Delete', onclick: del }));
+  btns.push(el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }));
+  openModal(el('div', { class: 'sheet has-fixed-footer' }, [
+    el('div', { class: 'sheet-scroll' }, [
+      el('h2', { text: isEdit ? 'Edit transaction' : 'Add metal transaction' }),
+      el('div', { class: 'field-row' }, [field('Date', date), field('Metal', metal)]),
+      field('Type', type),
+      el('div', { class: 'field-row' }, [field('Grams', grams), amountField]),
+      field('Via', via),
+      field('Note', note),
+      hint,
+    ]),
+    el('div', { class: 'sheet-footer' }, [el('div', { class: 'btn-row', style: 'flex-wrap:wrap' }, btns)]),
+  ]));
+}
+
+// ---- Set gold/silver ₹/gram prices (manual, with optional spot estimate) ----
+async function openMetalPrice() {
+  const mod = await import('./metal.js');
+  const pricesMeta = await DB.get('meta', 'metalPrices').catch(() => null);
+  const prices = (pricesMeta && pricesMeta.value) || {};
+  const numInput = (val, ph) => el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: val != null && val !== '' ? val : '', placeholder: ph });
+  const gold = numInput(prices.gold, '₹ / gram');
+  const silver = numInput(prices.silver, '₹ / gram');
+  const status = el('p', { class: 'hint', text: 'Enter the ₹/gram you see (e.g. on Aura) — this values your holdings.' });
+
+  const fetchBtn = el('button', { class: 'btn ghost small', type: 'button', text: 'Fetch spot estimate' });
+  fetchBtn.addEventListener('click', async () => {
+    fetchBtn.disabled = true; status.textContent = 'Fetching international spot…';
+    try {
+      const est = await mod.fetchSpotEstimate();
+      gold.value = est.gold; silver.value = est.silver;
+      status.textContent = 'Filled international spot — runs ~25-30% below Indian retail, so adjust up to your rate.';
+    } catch (e) {
+      status.textContent = 'Could not fetch (offline or blocked) — enter the price manually.';
+    } finally { fetchBtn.disabled = false; }
+  });
+
+  const save = async () => {
+    const g = num(gold.value), s = num(silver.value);
+    const value = Object.assign({}, prices, { gold: g || 0, silver: s || 0, source: 'manual', updatedAt: new Date().toISOString() });
+    await DB.put('meta', { key: 'metalPrices', value });
+    closeModal(); toast('Prices saved'); renderMetal();
+  };
+  openModal(el('div', { class: 'sheet' }, [
+    el('h2', { text: 'Set metal prices' }),
+    field('Gold (₹/gram)', gold),
+    field('Silver (₹/gram)', silver),
+    el('div', { class: 'btn-row', style: 'flex-wrap:wrap' }, [fetchBtn]),
+    status,
+    el('div', { class: 'btn-row' }, [
+      el('button', { class: 'btn primary', text: 'Save', onclick: save }),
+      el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }),
+    ]),
   ]));
 }
 
@@ -4745,6 +5033,7 @@ function bind() {
   $('#mfAddBtn').addEventListener('click', () => openFundForm(null));
   $('#mfFetchBtn').addEventListener('click', () => fetchMfNavs());
   $('#fdAddBtn').addEventListener('click', () => openFdForm(null));
+  $('#metalAddBtn').addEventListener('click', () => openMetalTxn(null));
   $('#backBtn').addEventListener('click', () => setAppMode('home'));
   $('#menuBtn').addEventListener('click', openMenu);
   const onSearch = debounce(renderList, 120);
