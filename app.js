@@ -2146,33 +2146,7 @@ function _homeCard(icon, title, sub, onclick) {
 // Two stacked bullion bars (gold + silver) — the Metals launcher icon. Static
 // markup, no user data, so innerHTML is safe here.
 function _metalBarIcon() {
-  const span = el('span', { class: 'metal-bar-ico' });
-  // Two chunky isometric gold bullion bars with diagonal shine stripes + a
-  // sparkle cluster — matches the reference art (both bars gold).
-  span.innerHTML = '<svg viewBox="0 0 24 24" width="24" height="24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">'
-    + '<defs>'
-    + '<clipPath id="metalSilverTop"><path d="M9 7.6 L11.2 4.2 L19.4 4.2 L17.2 7.6 Z"/></clipPath>'
-    + '<clipPath id="metalGoldTop"><path d="M3 13.6 L6.8 8.4 L20.8 8.4 L17 13.6 Z"/></clipPath>'
-    + '</defs>'
-    + '<path d="M7.4 11.2 L9 7.6 L17.2 7.6 L15.6 11.2 Z" fill="#e8a323"/>'
-    + '<path d="M9 7.6 L11.2 4.2 L19.4 4.2 L17.2 7.6 Z" fill="#ffe07a"/>'
-    + '<g clip-path="url(#metalSilverTop)" opacity="0.6">'
-    + '<path d="M10.2 4 L12.4 4 L10 7.8 L7.8 7.8 Z" fill="#ffffff"/>'
-    + '<path d="M14.4 4 L15.8 4 L13.4 7.8 L12 7.8 Z" fill="#ffffff"/>'
-    + '</g>'
-    + '<path d="M0.6 19 L3 13.6 L4 14.3 L1.6 19.7 Z" fill="#c78a1c"/>'
-    + '<path d="M1.6 19.7 L4 14.3 L17 14.3 L14.6 19.7 Z" fill="#e8a323"/>'
-    + '<path d="M3 13.6 L6.8 8.4 L20.8 8.4 L17 13.6 Z" fill="#ffd965"/>'
-    + '<g clip-path="url(#metalGoldTop)" opacity="0.7">'
-    + '<path d="M8.6 8 L11.4 8 L7.8 13.4 L5 13.4 Z" fill="#ffffff"/>'
-    + '<path d="M14.4 8 L16.4 8 L12.8 13.4 L10.8 13.4 Z" fill="#ffffff"/>'
-    + '</g>'
-    + '<path d="M13.2 3.4 L14 5.4 L16 6.2 L14 7 L13.2 9 L12.4 7 L10.4 6.2 L12.4 5.4 Z" fill="#ffffff"/>'
-    + '<path d="M16.6 2 L17.1 3.2 L18.3 3.7 L17.1 4.2 L16.6 5.4 L16.1 4.2 L14.9 3.7 L16.1 3.2 Z" fill="#ffffff"/>'
-    + '<path d="M9.6 5.4 L10 6.3 L10.9 6.7 L10 7.1 L9.6 8 L9.2 7.1 L8.3 6.7 L9.2 6.3 Z" fill="#ffffff" opacity="0.9"/>'
-    + '<path d="M17.8 6.6 L18.1 7.3 L18.8 7.6 L18.1 7.9 L17.8 8.6 L17.5 7.9 L16.8 7.6 L17.5 7.3 Z" fill="#ffffff" opacity="0.85"/>'
-    + '</svg>';
-  return span;
+  return el('img', { src: './icons/gold-bars.png', class: 'metal-bar-ico', alt: 'Gold bars' });
 }
 
 // Combined metals portfolio: digital gold + SGB (from Stocks, valued at the gold
