@@ -1990,11 +1990,11 @@ async function renderHome() {
     el('p', { class: 'home-tag', text: 'Private tracker - everything stays on this device.' }),
   ]));
 
-  // Calculate total invested and earned across both Stocks and Mutual Funds
+  // Calculate total invested and earned across Stocks, Mutual Funds, Fixed Deposits, and Metals
   let totalInvested = 0, totalValue = 0;
   try {
     // Stocks — Me-India only (holdings, not sold). SGB gold bonds excluded here -
-    // they'll be tracked under a future Metal Investment surface, not Stocks.
+    // they're tracked under Metals surface.
     const meInStocks = (await DB.byPortfolio('stocks', 'me-in')) || [];
     for (const s of meInStocks) {
       if (s.status === 'holding' && !/sgb/i.test(s.name || '')) {
@@ -2002,7 +2002,7 @@ async function renderHome() {
         totalValue += Number(s.units || 0) * Number(s.currentPrice || 0);
       }
     }
-    // Mutual Funds — Investing only (exclude Sold, matches the MF card subtext below)
+    // Mutual Funds — Investing only (exclude Sold)
     const funds = await DB.byIndex('funds', 'owner', 'me') || [];
     for (const f of funds) {
       if (f.status === 'Sold' || f.soldDate) continue;
@@ -2012,16 +2012,7 @@ async function renderHome() {
         totalValue += c.value || 0;
       }
     }
-    // Fixed Deposits — MATURED, but NOT superseded by a matured child. In a
-    // reinvestment ladder each new FD's principal already telescopes the previous
-    // matured FD's principal + interest, so counting every matured FD would count
-    // the same rupees each cycle. A matured FD is "superseded" if the FD it was
-    // reinvested into (its child, via parentFdIds) has ALSO matured - then that
-    // newer matured FD already contains its money, so we skip the older one and
-    // count only the latest matured link in each chain. Active FDs stay excluded
-    // (still-locked capital, tracked in the FD surface's own totals); a matured
-    // FD whose child is still active IS counted (its principal = all recycled
-    // principal+interest to date, its interest = the freshly realized gain).
+    // Fixed Deposits — MATURED, but NOT superseded by a matured child
     const fds = (await DB.byIndex('fds', 'owner', 'me')) || [];
     if (fds.length) {
       const fdMod = await import('./fd.js');
@@ -2035,12 +2026,16 @@ async function renderHome() {
       });
       for (const fdRec of fds) {
         const c = fdComp.get(fdRec.id);
-        if (c.effectiveStatus !== 'matured') continue;   // active/broken excluded
-        if (supersededIds.has(fdRec.id)) continue;        // older link in a chain - already telescoped into a newer matured FD
+        if (c.effectiveStatus !== 'matured') continue;
+        if (supersededIds.has(fdRec.id)) continue;
         totalInvested += c.principal;
         totalValue += c.maturityValue;
       }
     }
+    // Metals — gold + silver (at current market prices)
+    const metalData = await metalPortfolio();
+    totalInvested += (metalData.gold.invested || 0) + (metalData.silver.invested || 0);
+    totalValue += (metalData.gold.value || 0) + (metalData.silver.value || 0);
   } catch (_) {}
 
   // Earned is derived from the exact same (filtered) invested/value totals above -
