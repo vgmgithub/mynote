@@ -46,7 +46,7 @@ let _fdTab = 'holdings';     // 'holdings' | 'overview' | 'ladder' (bottom nav)
 let _divTab = 'stocks';      // 'stocks' | 'overview' | 'calendar' (bottom nav)
 let _divMarket = 'in';       // 'in' | 'us' (Me-India / Me-US)
 // Metals view state (only used inside the Metals surface).
-let _metalTab = 'gold';      // 'gold' | 'silver' | 'sgb' (bottom nav)
+let _metalTab = 'overview';  // 'overview' | 'gold' | 'silver' | 'sgb' (bottom nav)
 const MF_TYPES = ['Multi Cap', 'Flexi Cap', 'Large Cap', 'Mid Cap', 'Small Cap', 'Tax Saver', 'Technology', 'Pharma', 'Energy', 'International', 'Index', 'Debt', 'Hybrid'];
 const MF_STATUS = ['Investing', 'Investing On/Off', 'Investing Variable', 'Stopped', 'Sold'];
 
@@ -1512,7 +1512,7 @@ function buildMetalBottomNav() {
   const nav = $('#metalBottomNav');
   if (nav.childElementCount) { updateMetalNavActive(); return; }
   nav.innerHTML = '';
-  [['gold', '🥇', 'Gold'], ['silver', '🥈', 'Silver'], ['sgb', '📜', 'SGB'], ['overview', '📊', 'Overview']].forEach(([v, ico, label]) => {
+  [['overview', '📊', 'Overview'], ['gold', '🥇', 'Gold'], ['silver', '🥈', 'Silver'], ['sgb', '📜', 'SGB']].forEach(([v, ico, label]) => {
     nav.appendChild(el('button', { 'data-view': v, onclick: () => { if (_metalTab === v) return; _metalTab = v; renderMetal(); } },
       [el('span', { class: 'bn-ico', text: ico }), label]));
   });
@@ -2063,7 +2063,7 @@ async function renderHome() {
   const mfCard = _homeCard('📊', 'Mutual Funds', 'SIPs · XIRR · 2030 goal', () => openMF());
   const fdCard = _homeCard('🏦', 'Fixed Deposits', 'FD ladder · maturity · interest', () => setAppMode('fd'));
   const divCard = _homeCard('💰', 'Dividends', 'per-stock · yearly · YoY', () => openDividend());
-  const metalCard = _homeCard('🥇', 'Metals', 'gold · silver · SGB', () => openMetal());
+  const metalCard = _homeCard(_metalBarIcon(), 'Metals', 'gold · silver · SGB', () => openMetal());
   host.appendChild(el('div', { class: 'home-cards' }, [stockCard, mfCard, fdCard, divCard, metalCard]));
   host.appendChild(el('p', { class: 'hint home-foot', text: 'Backup covers everything - open the ⋮ menu → Backup & Restore.' }));
 
@@ -2117,26 +2117,24 @@ async function renderHome() {
       const divSub = divCard.querySelector('.home-card-sub');
       if (divSub) divSub.textContent = `${divList.length} stocks · ${fmtIntCur(inThisYr)} in ${curYear}`;
     }
-    // Metals — subtext shows combined current value (₹) at the saved ₹/gram prices
-    // (gold + silver together, both INR), or invested if not priced yet.
-    const metalTxns = (await DB.all('metals')) || [];
-    if (metalTxns.length) {
-      const metalMod = await import('./metal.js');
-      const prices = (await DB.get('meta', 'metalPrices').catch(() => null)) || {};
-      const pv = prices.value || {};
-      let value = 0, invested = 0;
-      for (const m of ['gold', 'silver']) {
-        const s = metalMod.summary(metalTxns, m, pv[m] || 0);
-        value += s.value; invested += s.invested;
-      }
+    // Metals — subtext shows total gold & silver grams (gold includes SGB) plus
+    // combined invested, matching the other cards' "… invested" convention.
+    const mp = await metalPortfolio();
+    if (mp.hasTxns || mp.gold.sgbCount) {
+      const inv = mp.gold.invested + mp.silver.invested;
       const metalSub = metalCard.querySelector('.home-card-sub');
-      if (metalSub) metalSub.textContent = value > 0 ? `Value ${fmtIntCur(value)}` : `Invested ${fmtIntCur(invested)}`;
+      if (metalSub) metalSub.textContent = `Gold ${_gramsShort(mp.gold.grams)}g · Silver ${_gramsShort(mp.silver.grams)}g · ${fmtIntCur(inv)} invested`;
     }
   } catch (_) {}
 }
 function _homeCard(icon, title, sub, onclick) {
+  // `icon` is usually an emoji string, but may be a DOM node (e.g. the metals
+  // gold/silver-bar SVG) — append nodes, render strings as text.
+  const ico = el('span', { class: 'home-card-ico' });
+  if (icon && typeof icon === 'object' && icon.nodeType) ico.appendChild(icon);
+  else ico.textContent = icon;
   return el('button', { class: 'home-card', type: 'button', onclick }, [
-    el('span', { class: 'home-card-ico', text: icon }),
+    ico,
     el('span', { class: 'home-card-body' }, [
       el('span', { class: 'home-card-title', text: title }),
       el('span', { class: 'home-card-sub', text: sub }),
@@ -2144,6 +2142,46 @@ function _homeCard(icon, title, sub, onclick) {
     el('span', { class: 'home-card-arrow', text: '›' }),
   ]);
 }
+
+// Two stacked bullion bars (gold + silver) — the Metals launcher icon. Static
+// markup, no user data, so innerHTML is safe here.
+function _metalBarIcon() {
+  const span = el('span', { class: 'metal-bar-ico' });
+  span.innerHTML = '<svg viewBox="0 0 24 24" width="24" height="24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">'
+    + '<path d="M8.5 8.2h7.2l1.9 4.1H6.6z" fill="#e7c25b" stroke="#b8912f" stroke-width="0.6" stroke-linejoin="round"/>'
+    + '<path d="M3.4 15.4h8.1l2 4.3H1.4z" fill="#cfd4da" stroke="#9aa1ab" stroke-width="0.6" stroke-linejoin="round"/>'
+    + '<path d="M12.9 15.4h7.7l2 4.3h-11.7z" fill="#e7c25b" stroke="#b8912f" stroke-width="0.6" stroke-linejoin="round"/>'
+    + '</svg>';
+  return span;
+}
+
+// Combined metals portfolio: digital gold + SGB (from Stocks, valued at the gold
+// ₹/gram price) as one gold figure, plus silver. Shared by Home + Overview so the
+// two never drift. SGB grams count as gold ("end of the day it's gold").
+async function metalPortfolio() {
+  const mod = await import('./metal.js');
+  const [txns, pricesMeta, stocks] = await Promise.all([
+    DB.all('metals').catch(() => []),
+    DB.get('meta', 'metalPrices').catch(() => null),
+    DB.all('stocks').catch(() => []),
+  ]);
+  const prices = (pricesMeta && pricesMeta.value) || {};
+  const goldPrice = Number(prices.gold) || 0, silverPrice = Number(prices.silver) || 0;
+  const gd = mod.summary(txns, 'gold', goldPrice);      // digital gold only
+  const silver = mod.summary(txns, 'silver', silverPrice);
+  const sgbs = stocks.filter((x) => /sgb/i.test(x.name || ''));
+  let sgbGrams = 0, sgbInv = 0;
+  sgbs.forEach((x) => { const u = Number(x.units) || 0; sgbGrams += u; sgbInv += u * (Number(x.buyPrice) || 0); });
+  const grams = gd.grams + sgbGrams;
+  const gold = {
+    grams, invested: gd.invested + sgbInv, value: grams * goldPrice,
+    realized: gd.realized, digital: gd, sgbGrams, sgbInv, sgbCount: sgbs.length, price: goldPrice,
+  };
+  gold.pl = gold.value - gold.invested;
+  gold.plPct = gold.invested > 0 ? (gold.pl / gold.invested) * 100 : null;
+  return { gold, silver, prices, hasTxns: (txns || []).length > 0 };
+}
+const _gramsShort = (x) => String(Math.round((Number(x) || 0) * 100) / 100);
 
 // ---------- Dividends surface ----------
 // Lazy-loaded: dividend.js (pure logic) only loads when the user opens Dividends.
@@ -2543,17 +2581,10 @@ function _metalTxnCard(t) {
   ]);
 }
 
-// ---- Overview tab: gold vs silver split (excl. SGB, which is listed separately) ----
+// ---- Overview tab: gold vs silver split. Gold INCLUDES SGB (from Stocks),
+// valued at the gold ₹/gram price — "end of the day it's gold". ----
 async function renderMetalOverview(host) {
-  const mod = await import('./metal.js');
-  const [txns, pricesMeta, stocks] = await Promise.all([
-    DB.all('metals').catch(() => []),
-    DB.get('meta', 'metalPrices').catch(() => null),
-    DB.all('stocks').catch(() => []),
-  ]);
-  const prices = (pricesMeta && pricesMeta.value) || {};
-  const g = mod.summary(txns, 'gold', Number(prices.gold) || 0);
-  const s = mod.summary(txns, 'silver', Number(prices.silver) || 0);
+  const { gold: g, silver: s } = await metalPortfolio();
   const totInv = g.invested + s.invested;
   const totVal = g.value + s.value;
   const totPl = totVal - totInv;
@@ -2562,7 +2593,7 @@ async function renderMetalOverview(host) {
 
   host.appendChild(el('section', { class: 'summary' }, [
     el('div', { class: 'row-between' }, [
-      el('span', { class: 'label', text: 'Gold + Silver (excl. SGB)' }),
+      el('span', { class: 'label', text: 'Gold + Silver' }),
       totPlPct != null
         ? el('span', { class: 'badge ' + (totPl >= 0 ? 'good' : 'bad'), text: fmtPct(totPlPct) })
         : el('span', { class: 'badge muted', text: 'set price' }),
@@ -2593,33 +2624,25 @@ async function renderMetalOverview(host) {
   host.appendChild(allocCard('Allocation by value', g.value, s.value));
   host.appendChild(allocCard('Allocation by invested', g.invested, s.invested));
 
-  // Per-metal comparison table.
+  // Per-metal comparison table (Gold row includes SGB).
   const rowFor = (name, x) => el('div', { class: 'div-trow' }, [
     el('span', { class: 'div-tyear', text: name }),
-    el('span', { text: (Math.round(x.grams * 10000) / 10000) + ' g' }),
+    el('span', { text: _gramsShort(x.grams) + ' g' }),
     el('span', { text: fmtCur(x.value, 'INR') }),
     el('span', { class: 'div-yoy ' + (x.pl >= 0 ? 'pos' : 'neg'), text: x.plPct != null ? fmtPct(x.plPct) : '—' }),
   ]);
-  host.appendChild(el('div', { class: 'chart-card' }, [
+  const table = el('div', { class: 'chart-card' }, [
     el('h3', { text: 'Gold vs Silver' }),
     el('div', { class: 'div-table' }, [
       el('div', { class: 'div-trow div-thead' }, [el('span', { text: 'Metal' }), el('span', { text: 'Grams' }), el('span', { text: 'Value' }), el('span', { text: 'P/L' })]),
       rowFor('Gold', g),
       rowFor('Silver', s),
     ]),
-  ]));
-
-  // SGB reference — kept separate from the split above.
-  const sgbs = stocks.filter((x) => /sgb/i.test(x.name || ''));
-  if (sgbs.length) {
-    let sgGrams = 0, sgInv = 0, sgVal = 0;
-    sgbs.forEach((x) => { const u = Number(x.units) || 0; sgGrams += u; sgInv += u * (Number(x.buyPrice) || 0); sgVal += u * (Number(x.currentPrice) || 0); });
-    host.appendChild(el('div', { class: 'chart-card' }, [
-      el('h3', { text: 'SGB (tracked in Stocks)' }),
-      el('div', { class: 'mf-goal-meta', text: `${Math.round(sgGrams * 10000) / 10000} g gold · invested ${fmtCur(sgInv, 'INR')} · value ${fmtCur(sgVal, 'INR')}` }),
-      el('p', { class: 'hint', text: 'Kept separate from the split above. Gold + Silver + SGB combined value ' + fmtCur(totVal + sgVal, 'INR') + '.' }),
-    ]));
+  ]);
+  if (g.sgbGrams > 0) {
+    table.appendChild(el('p', { class: 'hint', text: `Gold includes ${_gramsShort(g.sgbGrams)} g SGB (valued at the gold price); digital gold is ${_gramsShort(g.digital.grams)} g. SGB is entered under Stocks.` }));
   }
+  host.appendChild(table);
 }
 
 // ---- SGB tab: read-only list pulled from the Stocks store (name matches /sgb/i) ----
