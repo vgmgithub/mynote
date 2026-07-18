@@ -1,4 +1,4 @@
-const CACHE = 'mynote-stocks-v188';
+const CACHE = 'mynote-stocks-v189';
 const ASSETS = [
   './',
   './index.html',
@@ -18,6 +18,7 @@ const ASSETS = [
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',
+  './icons/gold-bars.png',
 ];
 
 // Precache fresh copies (bypass the HTTP cache so we never bake in a stale file).
