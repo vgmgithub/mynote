@@ -1512,7 +1512,7 @@ function buildMetalBottomNav() {
   const nav = $('#metalBottomNav');
   if (nav.childElementCount) { updateMetalNavActive(); return; }
   nav.innerHTML = '';
-  [['gold', '🥇', 'Gold'], ['silver', '🥈', 'Silver'], ['sgb', '📜', 'SGB']].forEach(([v, ico, label]) => {
+  [['gold', '🥇', 'Gold'], ['silver', '🥈', 'Silver'], ['sgb', '📜', 'SGB'], ['overview', '📊', 'Overview']].forEach(([v, ico, label]) => {
     nav.appendChild(el('button', { 'data-view': v, onclick: () => { if (_metalTab === v) return; _metalTab = v; renderMetal(); } },
       [el('span', { class: 'bn-ico', text: ico }), label]));
   });
@@ -2418,25 +2418,30 @@ async function openDivForm(rec) {
 
 // ---------- Metals surface ----------
 // Lazy-loaded: metal.js only loads when the user opens Metals. First open seeds
-// one opening-balance ledger entry per metal (from the sheet's non-SGB net) plus
-// starting ₹/gram prices, guarded by a meta flag so deleting everything won't re-seed.
+// the real non-SGB transactions from the sheet (metal.js SEED_METAL_TXNS) plus
+// starting ₹/gram prices. Guarded by `metalSeededV2`; migrates away from the old
+// lumped opening-balance seed (v1) if that's all that's present.
 async function openMetal() {
   try {
-    const existing = (await DB.all('metals')) || [];
-    if (!existing.length) {
-      const seeded = await DB.get('meta', 'metalSeeded').catch(() => null);
-      if (!seeded || !seeded.value) {
-        const mod = await import('./metal.js');
+    const seededV2 = await DB.get('meta', 'metalSeededV2').catch(() => null);
+    if (!seededV2 || !seededV2.value) {
+      const mod = await import('./metal.js');
+      const existing = (await DB.all('metals')) || [];
+      // Only auto-seed into an empty store, or replace the v1 auto-seed (rows
+      // tagged seed:true or the old via:'Opening' lumps). If the user has added
+      // their own rows, leave everything untouched — just flag as seeded.
+      const onlyAuto = existing.length > 0 && existing.every((m) => m.seed === true || m.via === 'Opening');
+      if (existing.length === 0 || onlyAuto) {
+        for (const m of existing) await DB.del('metals', m.id);
         const nowIso = new Date().toISOString();
-        const d = todayISO();
-        // Net non-SGB position from the "Metal" sheet (bond-interest ₹ excluded
-        // from invested). User verifies/edits these opening rows in-app.
-        await DB.put('metals', mod.buildOpeningEntry('gold', 0.2875, 1724.20, nowIso, d));
-        await DB.put('metals', mod.buildOpeningEntry('silver', 123.705, 12975.81, nowIso, d));
-        const havePrices = await DB.get('meta', 'metalPrices').catch(() => null);
-        if (!havePrices) await DB.put('meta', { key: 'metalPrices', value: { gold: 14532.4, silver: 229.45, source: 'sheet', updatedAt: nowIso } });
-        await DB.put('meta', { key: 'metalSeeded', value: true });
+        for (const t of mod.SEED_METAL_TXNS) {
+          await DB.put('metals', Object.assign({}, t, { seed: true, createdAt: nowIso, updatedAt: nowIso }));
+        }
       }
+      const havePrices = await DB.get('meta', 'metalPrices').catch(() => null);
+      if (!havePrices) await DB.put('meta', { key: 'metalPrices', value: { gold: 14532.4, silver: 229.45, source: 'sheet', updatedAt: new Date().toISOString() } });
+      await DB.put('meta', { key: 'metalSeededV2', value: true });
+      await DB.put('meta', { key: 'metalSeeded', value: true });
     }
   } catch (_) { /* best-effort seed — empty surface still works */ }
   setAppMode('metal');
@@ -2447,8 +2452,9 @@ async function renderMetal() {
   host.innerHTML = '';
   updateMetalNavActive();
   // The + (add transaction) button only makes sense on the Gold/Silver ledgers.
-  $('#metalAddBtn').classList.toggle('hidden', _metalTab === 'sgb');
+  $('#metalAddBtn').classList.toggle('hidden', _metalTab === 'sgb' || _metalTab === 'overview');
   if (_metalTab === 'sgb') return renderMetalSgb(host);
+  if (_metalTab === 'overview') return renderMetalOverview(host);
   return renderMetalLedger(host, _metalTab);
 }
 
@@ -2487,6 +2493,23 @@ async function renderMetalLedger(host, metal) {
     el('button', { class: 'btn ghost small', type: 'button', text: 'Set price', onclick: () => openMetalPrice() }),
   ]));
 
+  // By-source composition (Aura / Sify / Interest …) — only when there's a mix.
+  if (s.realized) {
+    host.appendChild(el('p', { class: 'hint', style: 'margin:0 2px 8px', text: `Realized from sells: ${(s.realized >= 0 ? '+' : '') + fmtCur(s.realized, 'INR')}` }));
+  }
+  const sources = mod.sourceBreakdown(txns || [], metal);
+  if (sources.length > 1) {
+    const scard = el('div', { class: 'chart-card' }, [el('h3', { text: 'By source' })]);
+    sources.forEach((src) => {
+      scard.appendChild(el('div', { class: 'div-year-row' }, [
+        el('span', { class: 'div-year-k', text: src.source }),
+        el('span', { class: 'div-year-v', text: (Math.round(src.grams * 10000) / 10000) + ' g' }),
+        el('span', { class: 'div-year-sub', text: src.bought > 0 ? 'bought ' + fmtCur(src.bought, 'INR') : 'free' }),
+      ]));
+    });
+    host.appendChild(scard);
+  }
+
   if (!txns || !txns.length) {
     host.appendChild(el('div', { class: 'empty' }, [
       el('div', { class: 'e-icon', text: metal === 'gold' ? '🥇' : '🥈' }),
@@ -2518,6 +2541,85 @@ function _metalTxnCard(t) {
     ]),
     t.note ? el('div', { class: 'meta-line', text: t.note }) : document.createTextNode(''),
   ]);
+}
+
+// ---- Overview tab: gold vs silver split (excl. SGB, which is listed separately) ----
+async function renderMetalOverview(host) {
+  const mod = await import('./metal.js');
+  const [txns, pricesMeta, stocks] = await Promise.all([
+    DB.all('metals').catch(() => []),
+    DB.get('meta', 'metalPrices').catch(() => null),
+    DB.all('stocks').catch(() => []),
+  ]);
+  const prices = (pricesMeta && pricesMeta.value) || {};
+  const g = mod.summary(txns, 'gold', Number(prices.gold) || 0);
+  const s = mod.summary(txns, 'silver', Number(prices.silver) || 0);
+  const totInv = g.invested + s.invested;
+  const totVal = g.value + s.value;
+  const totPl = totVal - totInv;
+  const totPlPct = totInv > 0 ? (totPl / totInv) * 100 : null;
+  const realized = (g.realized || 0) + (s.realized || 0);
+
+  host.appendChild(el('section', { class: 'summary' }, [
+    el('div', { class: 'row-between' }, [
+      el('span', { class: 'label', text: 'Gold + Silver (excl. SGB)' }),
+      totPlPct != null
+        ? el('span', { class: 'badge ' + (totPl >= 0 ? 'good' : 'bad'), text: fmtPct(totPlPct) })
+        : el('span', { class: 'badge muted', text: 'set price' }),
+    ]),
+    el('div', { class: 'big', text: totVal > 0 ? fmtCur(totVal, 'INR') : '-' }),
+    el('div', { class: 'grid' }, [
+      _mfCell('Invested', fmtCur(totInv, 'INR')),
+      _mfCell('Value', fmtCur(totVal, 'INR')),
+      _mfCell('Profit / Loss', (totPl >= 0 ? '+' : '') + fmtCur(totPl, 'INR'), totPl >= 0 ? 'pos' : 'neg'),
+      _mfCell('Realized', (realized >= 0 ? '+' : '') + fmtCur(realized, 'INR'), realized >= 0 ? 'pos' : 'neg'),
+    ]),
+  ]));
+
+  // Allocation bars (by value, and by invested).
+  const allocCard = (title, gv, sv) => {
+    const tot = gv + sv;
+    const card = el('div', { class: 'chart-card' }, [el('h3', { text: title })]);
+    [['🥇 Gold', gv], ['🥈 Silver', sv]].forEach(([label, val]) => {
+      const pct = tot > 0 ? (val / tot) * 100 : 0;
+      card.appendChild(el('div', { class: 'bar-row' }, [
+        el('span', { class: 'bl', text: label }),
+        el('div', { class: 'bar-track' }, [el('div', { class: 'bar-fill', style: 'width:' + pct.toFixed(1) + '%' })]),
+        el('span', { class: 'bn', text: pct.toFixed(1) + '%' }),
+      ]));
+    });
+    return card;
+  };
+  host.appendChild(allocCard('Allocation by value', g.value, s.value));
+  host.appendChild(allocCard('Allocation by invested', g.invested, s.invested));
+
+  // Per-metal comparison table.
+  const rowFor = (name, x) => el('div', { class: 'div-trow' }, [
+    el('span', { class: 'div-tyear', text: name }),
+    el('span', { text: (Math.round(x.grams * 10000) / 10000) + ' g' }),
+    el('span', { text: fmtCur(x.value, 'INR') }),
+    el('span', { class: 'div-yoy ' + (x.pl >= 0 ? 'pos' : 'neg'), text: x.plPct != null ? fmtPct(x.plPct) : '—' }),
+  ]);
+  host.appendChild(el('div', { class: 'chart-card' }, [
+    el('h3', { text: 'Gold vs Silver' }),
+    el('div', { class: 'div-table' }, [
+      el('div', { class: 'div-trow div-thead' }, [el('span', { text: 'Metal' }), el('span', { text: 'Grams' }), el('span', { text: 'Value' }), el('span', { text: 'P/L' })]),
+      rowFor('Gold', g),
+      rowFor('Silver', s),
+    ]),
+  ]));
+
+  // SGB reference — kept separate from the split above.
+  const sgbs = stocks.filter((x) => /sgb/i.test(x.name || ''));
+  if (sgbs.length) {
+    let sgGrams = 0, sgInv = 0, sgVal = 0;
+    sgbs.forEach((x) => { const u = Number(x.units) || 0; sgGrams += u; sgInv += u * (Number(x.buyPrice) || 0); sgVal += u * (Number(x.currentPrice) || 0); });
+    host.appendChild(el('div', { class: 'chart-card' }, [
+      el('h3', { text: 'SGB (tracked in Stocks)' }),
+      el('div', { class: 'mf-goal-meta', text: `${Math.round(sgGrams * 10000) / 10000} g gold · invested ${fmtCur(sgInv, 'INR')} · value ${fmtCur(sgVal, 'INR')}` }),
+      el('p', { class: 'hint', text: 'Kept separate from the split above. Gold + Silver + SGB combined value ' + fmtCur(totVal + sgVal, 'INR') + '.' }),
+    ]));
+  }
 }
 
 // ---- SGB tab: read-only list pulled from the Stocks store (name matches /sgb/i) ----
@@ -2572,11 +2674,8 @@ async function openMetalTxn(existing) {
   const hint = el('p', { class: 'hint' });
   const amountField = field('₹ amount', amount);
   const updHint = () => {
-    const iv = type.value === 'interest';
-    amount.disabled = iv;
-    amountField.style.opacity = iv ? '0.5' : '';
-    hint.textContent = type.value === 'sell' ? 'Sell: grams leave your holding; ₹ is the sale proceeds (stored as negative).'
-      : iv ? 'Interest / bonus: free grams added; ₹ is not counted as invested.'
+    hint.textContent = type.value === 'sell' ? 'Sell: grams leave your holding (cost basis removed automatically); ₹ is the sale proceeds.'
+      : type.value === 'interest' ? 'Interest / bonus: free grams added; ₹ is the value of those grams — not counted as invested.'
       : 'Buy: grams added; ₹ is what you invested.';
   };
   type.addEventListener('change', updHint); updHint();
@@ -2585,11 +2684,12 @@ async function openMetalTxn(existing) {
     const g = num(grams.value), a = num(amount.value);
     if (!(g > 0)) { toast('Enter grams'); return; }
     const isSell = type.value === 'sell';
+    // amount always stored positive; meaning comes from `type` (rollup handles it).
     const rec = {
       metal: metal.value,
       date: date.value || todayISO(),
       grams: isSell ? -Math.abs(g) : Math.abs(g),
-      amount: type.value === 'interest' ? 0 : (isSell ? -Math.abs(a || 0) : Math.abs(a || 0)),
+      amount: Math.abs(a || 0),
       via: via.value.trim(),
       type: type.value,
       note: note.value.trim(),
