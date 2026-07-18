@@ -2141,7 +2141,7 @@ function _homeCard(icon, title, sub, onclick) {
 // Two stacked bullion bars (gold + silver) — the Metals launcher icon. Static
 // markup, no user data, so innerHTML is safe here.
 function _metalBarIcon() {
-  return el('img', { src: '/mynote/icons/gold-bars.png', class: 'metal-bar-ico', alt: 'Gold bars' });
+  return el('img', { src: 'icons/gold-bars.png', class: 'metal-bar-ico', alt: 'Gold bars' });
 }
 
 // Combined metals portfolio: digital gold + SGB (from Stocks, valued at the gold
