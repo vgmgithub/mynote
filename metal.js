@@ -73,9 +73,13 @@ export function sourceBreakdown(txns, metal) {
 
 // Best-effort live price ESTIMATE in ₹/gram for gold & silver.
 // Source is international spot (USD/troy-ounce) via api.gold-api.com, converted
-// with a keyless FX rate. This runs ~25-30% BELOW Indian retail (duty + GST +
-// premium), so it's only a starting estimate the user adjusts. Throws on any
-// failure (offline / CORS / bad shape) so the caller falls back to manual entry.
+// with a keyless FX rate (api.frankfurter.dev - the API rebranded from .app to
+// .dev; the old .app domain 301-redirects but the redirect response itself has
+// no CORS header, so fetch() blocks it as cross-origin even though curl follows
+// it fine - hit the .dev domain directly). This runs ~25-30% BELOW Indian retail
+// (duty + GST + premium), so it's only a starting estimate the user adjusts.
+// Throws on any failure (offline / CORS / bad shape) so the caller falls back to
+// manual entry.
 export async function fetchSpotEstimate(signal) {
   const j = async (url) => {
     const r = await fetch(url, { signal });
@@ -85,7 +89,7 @@ export async function fetchSpotEstimate(signal) {
   const [xau, xag, fx] = await Promise.all([
     j('https://api.gold-api.com/price/XAU'),
     j('https://api.gold-api.com/price/XAG'),
-    j('https://api.frankfurter.app/latest?from=USD&to=INR'),
+    j('https://api.frankfurter.dev/v1/latest?from=USD&to=INR'),
   ]);
   const usdInr = fx && fx.rates && Number(fx.rates.INR);
   const goldUsdOz = Number(xau && xau.price);
