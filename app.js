@@ -47,6 +47,10 @@ let _divTab = 'stocks';      // 'stocks' | 'overview' | 'calendar' (bottom nav)
 let _divMarket = 'in';       // 'in' | 'us' (Me-India / Me-US)
 // Metals view state (only used inside the Metals surface).
 let _metalTab = 'overview';  // 'overview' | 'gold' | 'silver' | 'sgb' (bottom nav)
+// Bonds view state (only used inside the Bonds surface).
+let _bondTab = 'holdings';   // 'holdings' | 'overview' (bottom nav)
+let _bondFilter = 'active';  // 'active' | 'matured' | 'withdrawn' | 'all'
+let _bondSort = 'maturity';  // 'maturity' | 'amount' | 'rate'
 const MF_TYPES = ['Multi Cap', 'Flexi Cap', 'Large Cap', 'Mid Cap', 'Small Cap', 'Tax Saver', 'Technology', 'Pharma', 'Energy', 'International', 'Index', 'Debt', 'Hybrid'];
 const MF_STATUS = ['Investing', 'Investing On/Off', 'Investing Variable', 'Stopped', 'Sold'];
 
@@ -1424,34 +1428,38 @@ async function render() {
 const STOCK_SURFACE = ['#summary', '#toolbar', '#stockList', '#monthlyView', '#heatmapView', '#trendView', '#feedView', '#addBtn', '#ocrBtn'];
 function setAppMode(mode) {
   state.appMode = mode;
-  const isHome = mode === 'home', isStocks = mode === 'stocks', isMF = mode === 'mf', isFD = mode === 'fd', isDiv = mode === 'div', isMetal = mode === 'metal';
+  const isHome = mode === 'home', isStocks = mode === 'stocks', isMF = mode === 'mf', isFD = mode === 'fd', isDiv = mode === 'div', isMetal = mode === 'metal', isBond = mode === 'bond';
   $('#homeView').classList.toggle('hidden', !isHome);
   $('#mfView').classList.toggle('hidden', !isMF);
   $('#fdView').classList.toggle('hidden', !isFD);
   $('#divView').classList.toggle('hidden', !isDiv);
   $('#metalView').classList.toggle('hidden', !isMetal);
+  $('#bondView').classList.toggle('hidden', !isBond);
   $('#portfolioTabs').classList.toggle('hidden', !isStocks);
   $('#bottomNav').classList.toggle('hidden', !isStocks);
   $('#mfBottomNav').classList.toggle('hidden', !isMF);
   $('#fdBottomNav').classList.toggle('hidden', !isFD);
   $('#divBottomNav').classList.toggle('hidden', !isDiv);
   $('#metalBottomNav').classList.toggle('hidden', !isMetal);
+  $('#bondBottomNav').classList.toggle('hidden', !isBond);
   $('#mfAddBtn').classList.toggle('hidden', !isMF);
   $('#mfFetchBtn').classList.toggle('hidden', !isMF);
   $('#fdAddBtn').classList.toggle('hidden', !isFD);
+  $('#bondAddBtn').classList.toggle('hidden', !isBond);
   if (!isMetal) $('#metalAddBtn').classList.add('hidden'); // renderMetal shows it on Gold/Silver only
   $('#backBtn').classList.toggle('hidden', isHome);
-  $('#appTitle').innerHTML = isHome ? '' : (isMF ? 'Mutual&nbsp;Funds' : isFD ? 'Fixed&nbsp;Deposits' : isDiv ? 'Dividends' : isMetal ? 'Metals' : 'MyNote&nbsp;Stocks');
+  $('#appTitle').innerHTML = isHome ? '' : (isMF ? 'Mutual&nbsp;Funds' : isFD ? 'Fixed&nbsp;Deposits' : isDiv ? 'Dividends' : isMetal ? 'Metals' : isBond ? 'Bonds' : 'MyNote&nbsp;Stocks');
   if (isStocks) {
     render();
   } else {
-    // Nothing from the stock surface should show on Home/MF/FD/Dividends/Metals.
+    // Nothing from the stock surface should show on Home/MF/FD/Dividends/Metals/Bonds.
     STOCK_SURFACE.forEach((sel) => $(sel).classList.add('hidden'));
     if (isHome) renderHome();
     if (isMF) { buildMfBottomNav(); renderMF(); }
     if (isFD) { buildFdBottomNav(); renderFD(); }
     if (isDiv) { buildDivBottomNav(); renderDividend(); }
     if (isMetal) { buildMetalBottomNav(); renderMetal(); }
+    if (isBond) { buildBondBottomNav(); renderBond(); }
   }
 }
 
@@ -1520,6 +1528,24 @@ function buildMetalBottomNav() {
 }
 function updateMetalNavActive() {
   $('#metalBottomNav').querySelectorAll('button').forEach((x) => x.classList.toggle('active', x.getAttribute('data-view') === _metalTab));
+}
+
+// ---------- Bonds surface (Bonds | Overview) ----------
+// Mirrors the FD surface: a fixed bottom nav (built once), lazy-loaded pure
+// logic in bonds.js, app.js does the `bonds`-store CRUD. No Ladder/Chain tab —
+// bonds here don't ladder/merge the way the user's FDs do.
+function buildBondBottomNav() {
+  const nav = $('#bondBottomNav');
+  if (nav.childElementCount) { updateBondNavActive(); return; }
+  nav.innerHTML = '';
+  [['holdings', '🧾', 'Bonds'], ['overview', '📊', 'Overview']].forEach(([v, ico, label]) => {
+    nav.appendChild(el('button', { 'data-view': v, onclick: () => { if (_bondTab === v) return; _bondTab = v; renderBond(); } },
+      [el('span', { class: 'bn-ico', text: ico }), label]));
+  });
+  updateBondNavActive();
+}
+function updateBondNavActive() {
+  $('#bondBottomNav').querySelectorAll('button').forEach((x) => x.classList.toggle('active', x.getAttribute('data-view') === _bondTab));
 }
 
 const _FD_MONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -2036,6 +2062,18 @@ async function renderHome() {
     const metalData = await metalPortfolio();
     totalInvested += (metalData.gold.invested || 0) + (metalData.silver.invested || 0);
     totalValue += (metalData.gold.value || 0) + (metalData.silver.value || 0);
+    // Bonds — MATURED or WITHDRAWN only (active capital is still locked, tracked
+    // in the Bonds surface's own Overview) - same rationale as Fixed Deposits above.
+    const bonds = (await DB.byIndex('bonds', 'owner', 'me')) || [];
+    if (bonds.length) {
+      const bondMod = await import('./bonds.js');
+      const nowB = Date.now();
+      bonds.forEach((bRec) => {
+        const c = bondMod.computeBond(bRec, nowB);
+        if (c.effectiveStatus === 'matured') { totalInvested += c.principal; totalValue += c.currentValue; }
+        else if (c.effectiveStatus === 'withdrawn') { totalInvested += c.principal; totalValue += c.withdrawAmount; }
+      });
+    }
   } catch (_) {}
 
   // Earned is derived from the exact same (filtered) invested/value totals above -
@@ -2059,7 +2097,8 @@ async function renderHome() {
   const fdCard = _homeCard('🏦', 'Fixed Deposits', 'FD ladder · maturity · interest', () => setAppMode('fd'));
   const divCard = _homeCard('💰', 'Dividends', 'per-stock · yearly · YoY', () => openDividend());
   const metalCard = _homeCard(_metalBarIcon(), 'Metals', 'gold · silver · SGB', () => openMetal());
-  host.appendChild(el('div', { class: 'home-cards' }, [stockCard, mfCard, metalCard, fdCard, divCard]));
+  const bondCard = _homeCard('🧾', 'Bonds', 'coupon · maturity · vs bank', () => openBond());
+  host.appendChild(el('div', { class: 'home-cards' }, [stockCard, mfCard, metalCard, fdCard, divCard, bondCard]));
   host.appendChild(el('p', { class: 'hint home-foot', text: 'Backup covers everything - open the ⋮ menu → Backup & Restore.' }));
 
   // Live stats for Stock and MF cards
@@ -2119,6 +2158,17 @@ async function renderHome() {
       const inv = mp.gold.invested + mp.silver.invested;
       const metalSub = metalCard.querySelector('.home-card-sub');
       if (metalSub) metalSub.textContent = `Gold ${_gramsShort(mp.gold.grams)}g · Silver ${_gramsShort(mp.silver.grams)}g · ${fmtIntCur(inv)} invested`;
+    }
+    // Bonds — subtext shows the active count + active invested, matching the FD
+    // card's exact phrasing pattern.
+    const bondList = (await DB.byIndex('bonds', 'owner', 'me')) || [];
+    if (bondList.length) {
+      const bondMod = await import('./bonds.js');
+      const nowBnd = Date.now();
+      const activeBonds = bondList.map((x) => bondMod.computeBond(x, nowBnd)).filter((c) => c.effectiveStatus === 'active');
+      const invested = activeBonds.reduce((s, c) => s + (Number(c.principal) || 0), 0);
+      const bondSub = bondCard.querySelector('.home-card-sub');
+      if (bondSub) bondSub.textContent = `${activeBonds.length} active · ${fmtIntCur(invested)} invested`;
     }
   } catch (_) {}
 }
@@ -2774,6 +2824,275 @@ async function openMetalPrice() {
       el('button', { class: 'btn primary', text: 'Save', onclick: save }),
       el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }),
     ]),
+  ]));
+}
+
+// ---------- Bonds surface ----------
+// Lazy-loaded: bonds.js only loads when the user opens Bonds. First open seeds
+// the 3 real bonds from the X-MyNotes BOND sheet (bonds.js SEED_BONDS), guarded
+// by `meta.bondsSeeded` — only seeds an empty store, never overwrites real data.
+async function openBond() {
+  try {
+    const seeded = await DB.get('meta', 'bondsSeeded').catch(() => null);
+    if (!seeded || !seeded.value) {
+      const mod = await import('./bonds.js');
+      const existing = (await DB.all('bonds')) || [];
+      if (existing.length === 0) {
+        const nowIso = new Date().toISOString();
+        for (const bnd of mod.SEED_BONDS) {
+          await DB.put('bonds', Object.assign({ owner: 'me' }, bnd, { createdAt: nowIso, updatedAt: nowIso }));
+        }
+      }
+      await DB.put('meta', { key: 'bondsSeeded', value: true });
+    }
+  } catch (_) { /* best-effort seed — empty surface still works */ }
+  setAppMode('bond');
+}
+
+async function renderBond() {
+  const host = $('#bondView');
+  host.innerHTML = '';
+  updateBondNavActive();
+  const mod = await import('./bonds.js');
+  const all = (await DB.byIndex('bonds', 'owner', 'me')) || [];
+  const now = Date.now();
+  const rows = all.map((b2) => ({ b: b2, c: mod.computeBond(b2, now) }));
+
+  if (!rows.length) {
+    host.appendChild(el('section', { class: 'summary' }, [
+      el('div', { class: 'label', text: 'Total invested value' }),
+      el('div', { class: 'big', text: fmtCur(0, 'INR') }),
+    ]));
+    host.appendChild(el('div', { class: 'empty' }, [
+      el('div', { class: 'e-icon', text: '🧾' }),
+      el('p', { text: 'No bonds yet.' }),
+      el('p', { class: 'hint', text: 'Tap + to add your first bond — name, rating, amount, rate, start & maturity dates.' }),
+    ]));
+    return;
+  }
+
+  const activeRows = rows.filter(({ c }) => c.effectiveStatus === 'active');
+  const maturedRows = rows.filter(({ c }) => c.effectiveStatus === 'matured');
+  const withdrawnRows = rows.filter(({ c }) => c.effectiveStatus === 'withdrawn');
+  let list = _bondFilter === 'active' ? activeRows.slice()
+    : _bondFilter === 'matured' ? maturedRows.slice()
+    : _bondFilter === 'withdrawn' ? withdrawnRows.slice()
+    : rows.slice();
+
+  // Totals over active bonds (still-live capital) - mirrors FD's "locked capital,
+  // tracked in this surface's own totals" rationale.
+  let totInv = 0, totInterest = 0, totVsBank = 0, vsBankCount = 0;
+  activeRows.forEach(({ c }) => { totInv += c.principal; totInterest += c.totalInterest; });
+  const returnPct = totInv > 0 ? (totInterest / totInv) * 100 : 0;
+  // Realized interest from matured + withdrawn bonds (done, banked).
+  let interestRealized = 0;
+  maturedRows.forEach(({ c }) => { interestRealized += c.accruedInterest; });
+  withdrawnRows.forEach(({ c }) => { interestRealized += c.realizedInterest || 0; });
+  rows.forEach(({ c }) => { if (c.vsBank != null) { totVsBank += c.vsBank; vsBankCount++; } });
+
+  const holdContent = el('div', { class: 'tab-content' + (_bondTab === 'holdings' ? '' : ' hidden') });
+  const ovrvContent = el('div', { class: 'tab-content' + (_bondTab === 'overview' ? '' : ' hidden') });
+
+  const summarySec = el('section', { class: 'summary' }, [
+    el('div', { class: 'row-between summary-top' }, [
+      el('div', {}, [
+        el('div', { class: 'label', text: 'Active invested' }),
+        el('div', { class: 'big', text: fmtCur(totInv, 'INR') }),
+      ]),
+      el('div', { class: 'summary-earned' }, [
+        el('div', { class: 'label', text: 'Interest to earn' }),
+        el('div', { class: 'v pos', text: fmtIntCur(totInterest) }),
+      ]),
+    ]),
+    el('div', { class: 'grid' }, [
+      _mfCell('Interest realized', fmtIntCur(interestRealized), 'pos'),
+      _mfCell('Return %', returnPct ? fmtIntRate(returnPct) : '—'),
+      _mfCell('vs Bank', vsBankCount ? (totVsBank >= 0 ? '+' : '') + fmtIntCur(totVsBank) : '—', totVsBank >= 0 ? 'pos' : 'neg'),
+      _mfCell('Active bonds', String(activeRows.length)),
+    ]),
+  ]);
+
+  // ---- Holdings tab: filter + sort + card list ----
+  const filterSeg = el('div', { class: 'seg' }, [
+    ['active', `Active (${activeRows.length})`],
+    ['matured', `Matured (${maturedRows.length})`],
+    ['withdrawn', `Withdrawn (${withdrawnRows.length})`],
+    ['all', `All (${rows.length})`],
+  ].map(([v, l]) => el('button', { class: (_bondFilter === v ? 'active' : ''), type: 'button', text: l, onclick: () => { _bondFilter = v; renderBond(); } })));
+  const sortbar = el('div', { class: 'sortbar mf-sortbar' }, [['maturity', 'Maturity'], ['amount', 'Amount'], ['rate', 'Rate']].map(([v, l]) =>
+    el('button', { class: 'sort-btn' + (_bondSort === v ? ' active' : ''), type: 'button', text: l, onclick: () => { _bondSort = v; renderBond(); } })));
+  holdContent.appendChild(el('div', { class: 'toolbar mf-toolbar-top' }, [filterSeg, sortbar]));
+
+  if (!list.length) {
+    holdContent.appendChild(el('div', { class: 'empty' }, [el('div', { class: 'e-icon', text: '🧾' }), el('p', { text: 'Nothing here.' })]));
+  } else {
+    list.sort((a, b2) => {
+      if (_bondSort === 'amount') return b2.c.principal - a.c.principal;
+      if (_bondSort === 'rate') return b2.c.rate - a.c.rate;
+      const am = a.c.maturity ? Date.parse(a.c.maturity) : Infinity;
+      const bm = b2.c.maturity ? Date.parse(b2.c.maturity) : Infinity;
+      return am - bm;
+    });
+    const wrap = el('section', { class: 'stock-list' });
+    list.forEach(({ b: b2, c }) => wrap.appendChild(_bondCard(b2, c)));
+    holdContent.appendChild(wrap);
+  }
+  holdContent.appendChild(el('p', { class: 'hint mf-foot', text: 'Cumulative bonds compound annually; payout bonds pay coupon interest out (simple interest). Not financial advice.' }));
+
+  // ---- Overview tab: allocation by rating + next maturity ----
+  const byRating = {};
+  activeRows.forEach(({ b: b2, c }) => { const k = b2.rating || 'Unrated'; byRating[k] = (byRating[k] || 0) + c.principal; });
+  const ratings = Object.keys(byRating).sort((a, b2) => byRating[b2] - byRating[a]);
+  if (ratings.length && totInv > 0) {
+    const alloc = el('div', { class: 'chart-card' }, [el('h3', { text: 'Allocation by rating' })]);
+    ratings.forEach((rk) => {
+      const pct = (byRating[rk] / totInv) * 100;
+      alloc.appendChild(el('div', { class: 'bar-row' }, [
+        el('span', { class: 'bl', text: rk }),
+        el('span', { class: 'bar-track' }, [el('span', { class: 'bar-fill', style: `width:${Math.max(2, pct).toFixed(1)}%` })]),
+        el('span', { class: 'bn', text: pct.toFixed(2) + '%' }),
+      ]));
+    });
+    ovrvContent.appendChild(alloc);
+  }
+  const upcoming = activeRows.filter(({ c }) => c.daysToMaturity != null).sort((a, b2) => a.c.daysToMaturity - b2.c.daysToMaturity)[0];
+  if (upcoming) {
+    ovrvContent.appendChild(el('div', { class: 'chart-card' }, [
+      el('h3', { text: 'Next maturity' }),
+      el('div', { class: 'mf-goal-meta', text: `${upcoming.b.name || 'Bond'} — ${fmtCur(upcoming.c.maturityValue, 'INR')} on ${upcoming.c.maturity} (${upcoming.c.daysToMaturity} days)` }),
+    ]));
+  }
+  if (!activeRows.length) {
+    ovrvContent.appendChild(el('p', { class: 'hint', text: 'No active bonds to allocate or project.' }));
+  }
+
+  host.appendChild(summarySec);
+  host.appendChild(holdContent);
+  host.appendChild(ovrvContent);
+}
+
+function _bondCard(b2, c) {
+  const statusBadge = c.effectiveStatus === 'active'
+    ? el('span', { class: 'badge good mf-beat', text: 'active' })
+    : c.effectiveStatus === 'withdrawn'
+      ? el('span', { class: 'badge muted mf-beat', text: 'withdrawn' })
+      : el('span', { class: 'badge muted mf-beat', text: 'matured' });
+  const catLine = el('div', { class: 'cat mf-catline' }, [`${b2.rating || 'Unrated'} · ${fmtIntRate(c.rate)}` + (c.payout === 'cumulative' ? ' · cumulative' : ' · payout')]);
+  catLine.appendChild(statusBadge);
+  const matTxt = c.maturity
+    ? (c.effectiveStatus === 'active'
+        ? (c.daysToMaturity >= 0 ? `Matures ${c.maturity} · ${c.daysToMaturity}d` : `Due ${c.maturity}`)
+        : `Matured ${c.maturity}`)
+    : 'No maturity date';
+  const interestNow = c.effectiveStatus === 'withdrawn' ? (c.realizedInterest || 0) : c.totalInterest;
+  return el('div', { class: 'card', onclick: () => openBondForm(b2) }, [
+    el('div', { class: 'top' }, [
+      el('div', { class: 'card-left' }, [
+        el('div', { class: 'name', text: b2.name || 'Bond' }),
+        catLine,
+      ]),
+      el('div', { class: 'card-right' }, [
+        el('div', { class: (interestNow >= 0 ? 'pct pos' : 'pct neg'), text: (interestNow >= 0 ? '+' : '') + fmtIntCur(interestNow) }),
+        el('div', { class: 'meta-line', text: c.effectiveStatus === 'withdrawn' ? 'realized' : 'interest' }),
+      ]),
+    ]),
+    el('div', { class: 'sub mf-sub2' }, [
+      el('span', {}, [
+        el('div', {}, ['Invested ', b(fmtIntCur(c.principal))]),
+        el('div', { class: 'mf-meta-mini', text: matTxt }),
+      ]),
+      el('span', { class: 'value-emphasis' }, ['Maturity ', _mfValueCard(c.maturityValue, c.principal, false, fmtIntCur)]),
+    ]),
+    c.vsBank != null ? el('div', { class: 'meta-line ' + (c.vsBank >= 0 ? 'pos' : 'neg'), text: `${c.vsBank >= 0 ? '+' : ''}${fmtIntCur(c.vsBank)} vs bank` }) : document.createTextNode(''),
+  ]);
+}
+
+async function openBondForm(existing) {
+  const isEdit = !!(existing && existing.id != null);
+  const mod = await import('./bonds.js');
+  const b2 = Object.assign({ owner: 'me', payout: 'payout' }, existing || {});
+
+  const ratingList = el('datalist', { id: 'bondratinglist' }, mod.BOND_RATINGS.map((x) => el('option', { value: x })));
+  const name = el('input', { type: 'text', value: b2.name || '', placeholder: 'Bond / issuer name' });
+  const rating = el('input', { type: 'text', value: b2.rating || '', list: 'bondratinglist', placeholder: 'Rating (e.g. A+)' });
+  const numInput = (v, ph) => el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: v != null && v !== '' ? v : '', placeholder: ph });
+  const investAmount = numInput(b2.investAmount, '₹ invested');
+  const rate = numInput(b2.rate, 'Coupon rate % p.a.');
+  const bankRate = numInput(b2.bankRate, 'Bank rate % (optional, for comparison)');
+  const startDate = el('input', { type: 'date', value: b2.startDate || todayISO() });
+  const maturityDate = el('input', { type: 'date', value: b2.maturityDate || '' });
+  const tenure = numInput('', 'Months');
+  const payout = el('select', {}, [['cumulative', 'Cumulative (reinvest)'], ['payout', 'Payout (coupon out)']].map(([v, l]) => { const o = el('option', { value: v, text: l }); if (v === b2.payout) o.selected = true; return o; }));
+  const withdrawAmount = numInput(b2.withdrawAmount, '₹ received (leave blank while active)');
+  const withdrawDate = el('input', { type: 'date', value: b2.withdrawDate || '' });
+  const notes = el('textarea', { placeholder: 'Your notes' });
+  notes.value = b2.notes || '';
+
+  const buildRec = () => ({
+    owner: 'me',
+    name: name.value.trim(),
+    rating: rating.value.trim(),
+    investAmount: num(investAmount.value) || 0,
+    rate: num(rate.value) || 0,
+    bankRate: bankRate.value !== '' ? num(bankRate.value) : null,
+    startDate: startDate.value || null,
+    maturityDate: maturityDate.value || null,
+    payout: payout.value,
+    withdrawAmount: withdrawAmount.value !== '' ? num(withdrawAmount.value) : null,
+    withdrawDate: withdrawDate.value || null,
+    notes: notes.value.trim(),
+    createdAt: b2.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+
+  const readout = el('div', { class: 'mf-bench-readout' });
+  const refresh = () => {
+    readout.innerHTML = '';
+    const c = mod.computeBond(buildRec(), Date.now());
+    readout.appendChild(el('div', { class: 'mf-bench-now' }, [
+      el('span', {}, ['Tenure ', b(c.tenureYears ? c.tenureYears.toFixed(2) + ' yr' : '—')]),
+      el('span', {}, ['Maturity ', b(c.maturity ? fmtCur(c.maturityValue, 'INR') : '—')]),
+      el('span', {}, ['Interest ', b(c.maturity ? fmtIntCur(c.totalInterest) : '—')]),
+    ]));
+  };
+  tenure.addEventListener('input', () => {
+    const m = num(tenure.value);
+    if (m != null && startDate.value) maturityDate.value = mod.addMonths(startDate.value, m);
+    refresh();
+  });
+  [investAmount, rate, bankRate, payout, startDate, maturityDate, withdrawAmount].forEach((inp) => inp.addEventListener('input', refresh));
+  refresh();
+
+  const del = async () => {
+    if (!window.confirm('Delete this bond? This cannot be undone.')) return;
+    await DB.del('bonds', b2.id); closeModal(); toast('Bond deleted'); renderBond();
+  };
+  const save = async () => {
+    if (!name.value.trim()) { toast('Enter the bond name'); return; }
+    if (!(num(investAmount.value) > 0)) { toast('Enter the invested amount'); return; }
+    const rec = buildRec();
+    if (isEdit) rec.id = b2.id;
+    await DB.put('bonds', rec); closeModal(); toast(isEdit ? 'Bond updated' : 'Bond added'); renderBond();
+  };
+
+  const btns = [el('button', { class: 'btn primary', text: 'Save', onclick: save })];
+  if (isEdit) btns.push(el('button', { class: 'btn danger', text: 'Delete', onclick: del }));
+  btns.push(el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }));
+  openModal(el('div', { class: 'sheet has-fixed-footer' }, [
+    el('div', { class: 'sheet-scroll' }, [
+      el('h2', { text: isEdit ? (b2.name || 'Edit bond') : 'Add bond' }),
+      ratingList,
+      field('Name', name),
+      el('div', { class: 'field-row' }, [field('Rating', rating), field('Coupon rate % p.a.', rate)]),
+      el('div', { class: 'field-row' }, [field('₹ invested', investAmount), field('Bank rate % (optional)', bankRate)]),
+      el('div', { class: 'field-row' }, [field('Start date', startDate), field('Maturity date', maturityDate)]),
+      field('Tenure (months) → fills maturity date', tenure),
+      field('Type', payout),
+      el('div', { class: 'field-row' }, [field('Withdrawn amount (₹, if redeemed)', withdrawAmount), field('Withdrawn date', withdrawDate)]),
+      field('Notes', notes),
+      readout,
+    ]),
+    el('div', { class: 'sheet-footer' }, [el('div', { class: 'btn-row', style: 'flex-wrap:wrap' }, btns)]),
   ]));
 }
 
@@ -5146,6 +5465,7 @@ function bind() {
   $('#mfFetchBtn').addEventListener('click', () => fetchMfNavs());
   $('#fdAddBtn').addEventListener('click', () => openFdForm(null));
   $('#metalAddBtn').addEventListener('click', () => openMetalTxn(null));
+  $('#bondAddBtn').addEventListener('click', () => openBondForm(null));
   $('#backBtn').addEventListener('click', () => setAppMode('home'));
   $('#menuBtn').addEventListener('click', openMenu);
   const onSearch = debounce(renderList, 120);

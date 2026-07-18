@@ -1,7 +1,7 @@
 // IndexedDB data layer. All data lives on this device only.
 export const DB = (function () {
   const NAME = 'mynote-stocks';
-  const VERSION = 7;
+  const VERSION = 8;
   let dbp = null;
 
   function open() {
@@ -64,6 +64,13 @@ export const DB = (function () {
           const s = db.createObjectStore('metals', { keyPath: 'id', autoIncrement: true });
           s.createIndex('metal', 'metal', { unique: false });
         }
+        // Bonds ledger. One row per bond, indexed by `owner`. Holds issuer/rating/
+        // invested amount/coupon rate/dates — see bonds.js for the record shape and
+        // the maturity/interest calculations. Added in v8.
+        if (!db.objectStoreNames.contains('bonds')) {
+          const s = db.createObjectStore('bonds', { keyPath: 'id', autoIncrement: true });
+          s.createIndex('owner', 'owner', { unique: false });
+        }
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
@@ -116,7 +123,7 @@ export const DB = (function () {
       // `feed` is best-effort: very old backups (v2 export) won't have it, and
       // the store may not exist if the user is mid-upgrade. Don't fail the
       // whole export over a missing store.
-      const [stocks, snapshots, monthly, meta, feed, funds, fds, dividends, metals] = await Promise.all([
+      const [stocks, snapshots, monthly, meta, feed, funds, fds, dividends, metals, bonds] = await Promise.all([
         this.all('stocks'),
         this.all('snapshots'),
         this.all('monthly'),
@@ -126,6 +133,7 @@ export const DB = (function () {
         this.all('fds').catch(() => []),
         this.all('dividends').catch(() => []),
         this.all('metals').catch(() => []),
+        this.all('bonds').catch(() => []),
       ]);
       return {
         app: 'mynote-stocks',
@@ -140,6 +148,7 @@ export const DB = (function () {
         fds,
         dividends,
         metals,
+        bonds,
       };
     },
     // Replace all data with the contents of a previously exported object.
@@ -157,6 +166,7 @@ export const DB = (function () {
         this.clear('fds').catch(() => {}),
         this.clear('dividends').catch(() => {}),
         this.clear('metals').catch(() => {}),
+        this.clear('bonds').catch(() => {}),
       ]);
       const tasks = [];
       (data.stocks || []).forEach((s) => tasks.push(this.put('stocks', s)));
@@ -169,6 +179,7 @@ export const DB = (function () {
       (data.fds || []).forEach((f) => tasks.push(this.put('fds', f).catch(() => {})));
       (data.dividends || []).forEach((d) => tasks.push(this.put('dividends', d).catch(() => {})));
       (data.metals || []).forEach((m) => tasks.push(this.put('metals', m).catch(() => {})));
+      (data.bonds || []).forEach((b) => tasks.push(this.put('bonds', b).catch(() => {})));
       await Promise.all(tasks);
     },
   };
