@@ -2058,7 +2058,7 @@ async function renderHome() {
   const mfCard = _homeCard('📊', 'Mutual Funds', 'SIPs · XIRR · 2030 goal', () => openMF());
   const fdCard = _homeCard('🏦', 'Fixed Deposits', 'FD ladder · maturity · interest', () => setAppMode('fd'));
   const divCard = _homeCard('💰', 'Dividends', 'per-stock · yearly · YoY', () => openDividend());
-  const metalCard = _homeCard(_metalBarIcon(), 'Metals', 'gold · silver · SGB', () => openMetal());
+  const metalCard = _homeCard('🪙', 'Metals', 'gold · silver · SGB', () => openMetal());
   host.appendChild(el('div', { class: 'home-cards' }, [stockCard, mfCard, fdCard, divCard, metalCard]));
   host.appendChild(el('p', { class: 'hint home-foot', text: 'Backup covers everything - open the ⋮ menu → Backup & Restore.' }));
 
