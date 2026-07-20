@@ -8,10 +8,13 @@
 //     rate,                                               // annual coupon %
 //     bankRate,                                            // comparable bank/FD rate % (optional — blank skips the vs-Bank comparison)
 //     startDate:'YYYY-MM-DD', maturityDate:'YYYY-MM-DD',
-//     payout:'cumulative'|'payout',                       // reinvest (compounds annually) vs coupon paid out (simple interest) — no compounding-frequency picker like FD's: retail bonds don't offer quarterly/monthly compounding
-//     withdrawAmount, withdrawDate,                        // set when redeemed (early exit or at maturity) — actual realized amount, overrides projected accrual
-//     notes, createdAt, updatedAt }
-// Status is derived: withdrawn (withdrawAmount set) > matured (past maturity) > active.
+//     payout:'cumulative'|'payout',                       // reinvest (compounds annually, value grows in place) vs coupon paid out (deposit value stays flat at principal; the coupon is real cash tracked below) — no compounding-frequency picker like FD's: retail bonds don't offer quarterly/monthly compounding
+//     maturityAmount,                                      // optional ₹ — the actual/promised amount you'll receive at maturity (from the bond's term sheet). Overrides the rate-based projection when set; leave blank to project from `rate` instead
+//     payouts: [{ date:'YYYY-MM-DD', amount }],            // dated log of interest/coupon actually received — the real "interest earned" figure once any entry exists, overriding the projection
+//     createdAt, updatedAt }
+// Status is derived purely from the date: active before maturity, matured on/after
+// it (same as fd.js — no separate "withdrawn" state; if a bond is exited early,
+// just log its final payout(s) and stop adding more, or delete it).
 // No reinvestment-chain concept here (unlike fd.js's parentFdIds) — bonds in this
 // app don't ladder/merge the way the user's FDs do.
 
@@ -30,8 +33,8 @@ function yearsBetween(aISO, bISO) {
   return (b - a) / (365.25 * DAY);
 }
 
-// Value of principal P after `years` at simple annual `rate`% (payout bonds pay
-// the coupon out rather than compounding it back in).
+// Simple annual interest — the norm for retail coupon bonds (each period's
+// coupon is paid out, not compounded back in).
 function simpleValueAt(P, rate, years) {
   if (!(P > 0) || years <= 0) return P || 0;
   return P * (1 + (rate * years) / 100);
@@ -49,55 +52,85 @@ export function computeBond(bond, nowMs) {
   const P = Number(bond.investAmount) || 0;
   const rate = Number(bond.rate) || 0;
   const bankRate = bond.bankRate !== '' && bond.bankRate != null ? Number(bond.bankRate) : null;
-  const cumulative = bond.payout === 'cumulative';
+  const isCumulative = bond.payout === 'cumulative';
   const start = bond.startDate || null;
   const maturity = bond.maturityDate || null;
-  const valueAt = cumulative ? compoundValueAt : simpleValueAt;
 
   const tenureYears = start && maturity ? Math.max(0, yearsBetween(start, maturity)) : 0;
   const tenureMonths = tenureYears * 12;
 
-  const maturityValue = valueAt(P, rate, tenureYears);
-  const totalInterest = maturityValue - P;
+  // Projected maturity value: an entered maturityAmount (from the bond's own term
+  // sheet) always wins over the formula — it's real data, the formula is a guess.
+  // Absent that, project via the coupon rate: payout bonds use simple interest
+  // (each coupon paid out, not reinvested); cumulative bonds compound annually.
+  const maturityOverride = (bond.maturityAmount !== '' && bond.maturityAmount != null) ? Number(bond.maturityAmount) : null;
+  const computedMaturityValue = isCumulative ? compoundValueAt(P, rate, tenureYears) : simpleValueAt(P, rate, tenureYears);
+  const maturityValue = maturityOverride != null ? maturityOverride : computedMaturityValue;
+  const totalInterest = maturityValue - P;   // projected total interest over the full tenure
 
   const elapsedRaw = start ? Math.max(0, yearsBetween(start, todayISO)) : 0;
   const elapsedYears = tenureYears > 0 ? Math.min(elapsedRaw, tenureYears) : elapsedRaw;
-  const currentValue = valueAt(P, rate, elapsedYears);
-  const accruedInterest = currentValue - P;
+  // Projected interest accrued as of today — a straight-line pro-rata share of
+  // totalInterest by elapsed/tenure. Works the same whether totalInterest came
+  // from the coupon-rate formula or a directly-entered maturityAmount.
+  const projectedAccrued = tenureYears > 0 ? totalInterest * (elapsedYears / tenureYears) : 0;
+
+  // A payout bond's DEPOSIT value stays flat at principal — the coupon is paid
+  // out as real cash (tracked in the payouts ledger below), not reinvested into
+  // the bond itself. A cumulative bond's value grows in place instead.
+  const currentValue = isCumulative ? P + projectedAccrued : P;
 
   const maturityT = maturity ? Date.parse(maturity) : null;
   const daysToMaturity = maturityT != null ? Math.ceil((maturityT - now) / DAY) : null;
   const pastMaturity = maturityT != null && now >= maturityT;
+  const effectiveStatus = pastMaturity ? 'matured' : 'active';
 
-  const withdrawAmount = bond.withdrawAmount !== '' && bond.withdrawAmount != null ? Number(bond.withdrawAmount) : null;
-  const withdrawn = withdrawAmount != null;
-  const effectiveStatus = withdrawn ? 'withdrawn' : (pastMaturity ? 'matured' : 'active');
-  const realizedInterest = withdrawn ? withdrawAmount - P : null;
+  // Real interest actually received, from the dated payout ledger (the bond
+  // form's "Payouts" tab) — this is the authoritative figure once it has any
+  // entries, since real money beats a formula.
+  const payouts = Array.isArray(bond.payouts) ? bond.payouts : [];
+  const payoutsTotal = payouts.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+  const lastPayoutDate = payouts.reduce((max, p) => (p.date && p.date > (max || '')) ? p.date : max, null);
+  const hasPayouts = payouts.length > 0;
+
+  // Interest earned — the headline figure. Once ANY payout is logged, actuals
+  // take over completely; otherwise fall back to the projection (the full
+  // total once matured, the pro-rated accrual while still active) so a
+  // freshly-added bond still shows a sensible number before any real data exists.
+  const interestEarned = hasPayouts ? payoutsTotal : (effectiveStatus === 'matured' ? totalInterest : projectedAccrued);
 
   // Bank-equivalent comparison: what the same principal would have earned at
-  // bankRate (simple interest) over the same elapsed/held period.
+  // bankRate (simple interest) over the same elapsed period.
   const bankEquivalent = bankRate != null ? simpleValueAt(P, bankRate, elapsedYears) : null;
   const bankInterest = bankEquivalent != null ? bankEquivalent - P : null;
-  const effectiveInterest = withdrawn ? realizedInterest : accruedInterest;
-  const vsBank = bankInterest != null ? effectiveInterest - bankInterest : null;
+  const vsBank = bankInterest != null ? interestEarned - bankInterest : null;
 
   const monthlyIncome = tenureMonths > 0 ? totalInterest / tenureMonths : 0;
+
+  // Human-readable explanation of what basis produced totalInterest/maturityValue
+  // — surfaced directly in the UI so "how is this calculated" is never a mystery.
+  const basis = maturityOverride != null
+    ? `entered maturity amount (₹${Math.round(maturityOverride).toLocaleString('en-IN')})`
+    : isCumulative
+      ? `compounds annually at ${rate}%`
+      : `simple interest at ${rate}% p.a.`;
 
   return {
     principal: P, rate, bankRate, payout: bond.payout, start, maturity,
     tenureYears, tenureMonths,
-    maturityValue, totalInterest,
-    currentValue, accruedInterest,
-    daysToMaturity, pastMaturity,
-    effectiveStatus, withdrawAmount, realizedInterest,
+    maturityValue, totalInterest, maturityOverride, basis,
+    currentValue, projectedAccrued,
+    daysToMaturity, pastMaturity, effectiveStatus,
+    payoutsTotal, hasPayouts, lastPayoutDate, interestEarned,
     bankEquivalent, bankInterest, vsBank,
     monthlyIncome,
   };
 }
 
 // Add `months` to a YYYY-MM-DD date → YYYY-MM-DD (UTC math, no tz drift). Used
-// by the form's "tenure → maturity date" convenience (same helper as fd.js;
-// duplicated here since pure logic modules don't cross-import in this app).
+// by the form's "tenure → maturity date" convenience, and to default a new
+// payout row's date to one month after the last one logged (same helper as
+// fd.js; duplicated here since pure logic modules don't cross-import in this app).
 export function addMonths(iso, months) {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
   if (!m) return '';
@@ -108,25 +141,23 @@ export function addMonths(iso, months) {
 // One-time seed: the 3 real bonds from the user's X-MyNotes sheet (BOND tab).
 // Start dates are approximate (sheet only gives month+year, e.g. "Aug 25") —
 // defaulted to the 1st of the stated month; user can correct exact dates via
-// Edit. U FRO-2 Aug'25 is seeded WITHOUT a withdrawAmount even though the sheet
-// shows a "Withdraw: 6000" figure — it doesn't reconcile cleanly against the
-// sheet's own "Int Amount: 6321.3" and the exact exit date isn't recorded, so
-// guessing would risk wrong data; it seeds as matured (interest still computing)
-// and the user can fill in the real exit figures.
+// Edit. No payouts are seeded — the sheet's own payout-schedule sub-table mixes
+// "promised" and "actual" figures ambiguously, so real entries are left for the
+// user to log via the Payouts tab.
 export const SEED_BONDS = [
   {
     name: "U FRO-2 Aug'25", rating: 'A+', investAmount: 5961, rate: 11.50, bankRate: 5.80,
     startDate: '2025-08-01', maturityDate: '2026-03-01', payout: 'payout',
-    withdrawAmount: null, withdrawDate: null, notes: 'Seeded from X-MyNotes BOND sheet.',
+    maturityAmount: null, payouts: [],
   },
   {
     name: 'Wint Capital', rating: 'BBB-', investAmount: 10044.49, rate: 11.75, bankRate: 6.60,
     startDate: '2026-04-01', maturityDate: '2027-11-01', payout: 'payout',
-    withdrawAmount: null, withdrawDate: null, notes: 'Seeded from X-MyNotes BOND sheet.',
+    maturityAmount: null, payouts: [],
   },
   {
     name: 'Moothoot', rating: 'BBB', investAmount: 5978, rate: 10.50, bankRate: 6.00,
     startDate: '2026-05-01', maturityDate: '2027-02-01', payout: 'payout',
-    withdrawAmount: null, withdrawDate: null, notes: 'Seeded from X-MyNotes BOND sheet.',
+    maturityAmount: null, payouts: [],
   },
 ];

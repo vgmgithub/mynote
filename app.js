@@ -2062,16 +2062,17 @@ async function renderHome() {
     const metalData = await metalPortfolio();
     totalInvested += (metalData.gold.invested || 0) + (metalData.silver.invested || 0);
     totalValue += (metalData.gold.value || 0) + (metalData.silver.value || 0);
-    // Bonds — MATURED or WITHDRAWN only (active capital is still locked, tracked
-    // in the Bonds surface's own Overview) - same rationale as Fixed Deposits above.
+    // Bonds — MATURED only (active capital is still locked, tracked in the
+    // Bonds surface's own Overview) - same rationale as Fixed Deposits above.
+    // Value uses the real interest-earned figure (logged payouts once any
+    // exist, else the coupon-rate projection) - see computeBond.
     const bonds = (await DB.byIndex('bonds', 'owner', 'me')) || [];
     if (bonds.length) {
       const bondMod = await import('./bonds.js');
       const nowB = Date.now();
       bonds.forEach((bRec) => {
         const c = bondMod.computeBond(bRec, nowB);
-        if (c.effectiveStatus === 'matured') { totalInvested += c.principal; totalValue += c.currentValue; }
-        else if (c.effectiveStatus === 'withdrawn') { totalInvested += c.principal; totalValue += c.withdrawAmount; }
+        if (c.effectiveStatus === 'matured') { totalInvested += c.principal; totalValue += c.principal + c.interestEarned; }
       });
     }
   } catch (_) {}
@@ -2860,7 +2861,7 @@ async function renderBond() {
 
   if (!rows.length) {
     host.appendChild(el('section', { class: 'summary' }, [
-      el('div', { class: 'label', text: 'Total invested value' }),
+      el('div', { class: 'label', text: 'Active invested' }),
       el('div', { class: 'big', text: fmtCur(0, 'INR') }),
     ]));
     host.appendChild(el('div', { class: 'empty' }, [
@@ -2873,22 +2874,19 @@ async function renderBond() {
 
   const activeRows = rows.filter(({ c }) => c.effectiveStatus === 'active');
   const maturedRows = rows.filter(({ c }) => c.effectiveStatus === 'matured');
-  const withdrawnRows = rows.filter(({ c }) => c.effectiveStatus === 'withdrawn');
-  let list = _bondFilter === 'active' ? activeRows.slice()
-    : _bondFilter === 'matured' ? maturedRows.slice()
-    : _bondFilter === 'withdrawn' ? withdrawnRows.slice()
-    : rows.slice();
+  let list = _bondFilter === 'active' ? activeRows.slice() : _bondFilter === 'matured' ? maturedRows.slice() : rows.slice();
 
   // Totals over active bonds (still-live capital) - mirrors FD's "locked capital,
   // tracked in this surface's own totals" rationale.
-  let totInv = 0, totInterest = 0, totVsBank = 0, vsBankCount = 0;
+  let totInv = 0, totInterest = 0, totVsBank = 0, vsBankCount = 0, receivedToDate = 0;
   activeRows.forEach(({ c }) => { totInv += c.principal; totInterest += c.totalInterest; });
   const returnPct = totInv > 0 ? (totInterest / totInv) * 100 : 0;
-  // Realized interest from matured + withdrawn bonds (done, banked).
-  let interestRealized = 0;
-  maturedRows.forEach(({ c }) => { interestRealized += c.accruedInterest; });
-  withdrawnRows.forEach(({ c }) => { interestRealized += c.realizedInterest || 0; });
-  rows.forEach(({ c }) => { if (c.vsBank != null) { totVsBank += c.vsBank; vsBankCount++; } });
+  // Interest earned from matured bonds - real (logged payouts) once any exist,
+  // else the coupon-rate projection. Received-to-date sums actual payouts logged
+  // across EVERY bond (active + matured) - the real cash banked so far.
+  let interestEarnedTotal = 0;
+  maturedRows.forEach(({ c }) => { interestEarnedTotal += c.interestEarned; });
+  rows.forEach(({ c }) => { if (c.vsBank != null) { totVsBank += c.vsBank; vsBankCount++; } receivedToDate += c.payoutsTotal; });
 
   const holdContent = el('div', { class: 'tab-content' + (_bondTab === 'holdings' ? '' : ' hidden') });
   const ovrvContent = el('div', { class: 'tab-content' + (_bondTab === 'overview' ? '' : ' hidden') });
@@ -2905,10 +2903,10 @@ async function renderBond() {
       ]),
     ]),
     el('div', { class: 'grid' }, [
-      _mfCell('Interest realized', fmtIntCur(interestRealized), 'pos'),
+      _mfCell('Interest earned', fmtIntCur(interestEarnedTotal), 'pos'),
+      _mfCell('Received to date', fmtIntCur(receivedToDate), 'pos'),
       _mfCell('Return %', returnPct ? fmtIntRate(returnPct) : '—'),
       _mfCell('vs Bank', vsBankCount ? (totVsBank >= 0 ? '+' : '') + fmtIntCur(totVsBank) : '—', totVsBank >= 0 ? 'pos' : 'neg'),
-      _mfCell('Active bonds', String(activeRows.length)),
     ]),
   ]);
 
@@ -2916,7 +2914,6 @@ async function renderBond() {
   const filterSeg = el('div', { class: 'seg' }, [
     ['active', `Active (${activeRows.length})`],
     ['matured', `Matured (${maturedRows.length})`],
-    ['withdrawn', `Withdrawn (${withdrawnRows.length})`],
     ['all', `All (${rows.length})`],
   ].map(([v, l]) => el('button', { class: (_bondFilter === v ? 'active' : ''), type: 'button', text: l, onclick: () => { _bondFilter = v; renderBond(); } })));
   const sortbar = el('div', { class: 'sortbar mf-sortbar' }, [['maturity', 'Maturity'], ['amount', 'Amount'], ['rate', 'Rate']].map(([v, l]) =>
@@ -2937,7 +2934,7 @@ async function renderBond() {
     list.forEach(({ b: b2, c }) => wrap.appendChild(_bondCard(b2, c)));
     holdContent.appendChild(wrap);
   }
-  holdContent.appendChild(el('p', { class: 'hint mf-foot', text: 'Cumulative bonds compound annually; payout bonds pay coupon interest out (simple interest). Not financial advice.' }));
+  holdContent.appendChild(el('p', { class: 'hint mf-foot', text: 'Log each interest/coupon payment you actually receive on a bond\'s Payouts tab — once logged, it replaces the projected estimate as the real interest-earned figure. Not financial advice.' }));
 
   // ---- Overview tab: allocation by rating + next maturity ----
   const byRating = {};
@@ -2974,9 +2971,7 @@ async function renderBond() {
 function _bondCard(b2, c) {
   const statusBadge = c.effectiveStatus === 'active'
     ? el('span', { class: 'badge good mf-beat', text: 'active' })
-    : c.effectiveStatus === 'withdrawn'
-      ? el('span', { class: 'badge muted mf-beat', text: 'withdrawn' })
-      : el('span', { class: 'badge muted mf-beat', text: 'matured' });
+    : el('span', { class: 'badge muted mf-beat', text: 'matured' });
   const catLine = el('div', { class: 'cat mf-catline' }, [`${b2.rating || 'Unrated'} · ${fmtIntRate(c.rate)}` + (c.payout === 'cumulative' ? ' · cumulative' : ' · payout')]);
   catLine.appendChild(statusBadge);
   const matTxt = c.maturity
@@ -2984,17 +2979,26 @@ function _bondCard(b2, c) {
         ? (c.daysToMaturity >= 0 ? `Matures ${c.maturity} · ${c.daysToMaturity}d` : `Due ${c.maturity}`)
         : `Matured ${c.maturity}`)
     : 'No maturity date';
-  const interestNow = c.effectiveStatus === 'withdrawn' ? (c.realizedInterest || 0) : c.totalInterest;
+  // Matured: show both the projected total interest AND the real earned figure
+  // (real once any payout is logged, else the same projection - see computeBond).
+  // Active: one projected/accrued figure, clearly marked as an estimate.
+  const rightCol = c.effectiveStatus === 'matured'
+    ? [
+        el('div', { class: 'pct pos', text: '+' + fmtIntCur(c.totalInterest) }),
+        el('div', { class: 'meta-line', text: 'interest' }),
+        el('div', { class: 'meta-line pos', text: '+' + fmtIntCur(c.interestEarned) + ' earned' }),
+      ]
+    : [
+        el('div', { class: 'pct pos', text: '+' + fmtIntCur(c.projectedAccrued) }),
+        el('div', { class: 'meta-line', text: 'accrued (est.)' }),
+      ];
   return el('div', { class: 'card', onclick: () => openBondForm(b2) }, [
     el('div', { class: 'top' }, [
       el('div', { class: 'card-left' }, [
         el('div', { class: 'name', text: b2.name || 'Bond' }),
         catLine,
       ]),
-      el('div', { class: 'card-right' }, [
-        el('div', { class: (interestNow >= 0 ? 'pct pos' : 'pct neg'), text: (interestNow >= 0 ? '+' : '') + fmtIntCur(interestNow) }),
-        el('div', { class: 'meta-line', text: c.effectiveStatus === 'withdrawn' ? 'realized' : 'interest' }),
-      ]),
+      el('div', { class: 'card-right' }, rightCol),
     ]),
     el('div', { class: 'sub mf-sub2' }, [
       el('span', {}, [
@@ -3003,8 +3007,76 @@ function _bondCard(b2, c) {
       ]),
       el('span', { class: 'value-emphasis' }, ['Maturity ', _mfValueCard(c.maturityValue, c.principal, false, fmtIntCur)]),
     ]),
+    el('div', { class: 'mf-meta-mini', text: 'Basis: ' + c.basis }),
+    c.hasPayouts ? el('div', { class: 'meta-line pos', text: `${fmtIntCur(c.payoutsTotal)} received · ${(b2.payouts || []).length} payout${(b2.payouts || []).length === 1 ? '' : 's'}` }) : document.createTextNode(''),
     c.vsBank != null ? el('div', { class: 'meta-line ' + (c.vsBank >= 0 ? 'pos' : 'neg'), text: `${c.vsBank >= 0 ? '+' : ''}${fmtIntCur(c.vsBank)} vs bank` }) : document.createTextNode(''),
   ]);
+}
+
+// Simple dated ledger editor for a bond's Payouts tab - one row per interest/
+// coupon payment actually received (date + ₹ amount). Mirrors buildContribEditor's
+// add/remove/summary shape (MF's Buy/Sell log), simplified to a single list (no
+// buy/sell split, no derived third field - just two numbers per row).
+function buildPayoutEditor(payouts, addMonthsFn, onChange) {
+  const rowsWrap = el('div', { class: 'hist-rows mf-txn-rows' });
+  const summary = el('div', { class: 'mf-txn-summary' });
+  const emptyEl = el('div', { class: 'mf-txn-empty', text: 'No payouts logged yet.' });
+  const refs = [];
+
+  const refreshSummary = () => {
+    const rows = refs.filter((r) => !r.removed);
+    const has = rows.length > 0;
+    rowsWrap.classList.toggle('hidden', !has);
+    summary.classList.toggle('hidden', !has);
+    emptyEl.classList.toggle('hidden', has);
+    if (has) {
+      const total = rows.reduce((s, r) => s + (num(r.amt.value) || 0), 0);
+      summary.innerHTML = '';
+      summary.appendChild(el('span', { text: rows.length + (rows.length === 1 ? ' payout' : ' payouts') }));
+      summary.appendChild(el('span', { text: 'Received ' + fmtCur(total, 'INR') }));
+    }
+    // Deferred (same reasoning as buildContribEditor): this can fire while the
+    // caller's own `refresh` const is still being declared - a macrotask tick
+    // guarantees the caller's synchronous setup has finished first.
+    if (typeof onChange === 'function') setTimeout(onChange, 0);
+  };
+
+  const addRow = (date, amount) => {
+    const d = el('input', { class: 'txn-date', type: 'date', value: date || todayISO() });
+    const amt = el('input', { class: 'txn-amt', type: 'number', inputmode: 'decimal', step: 'any', value: amount != null ? amount : '', placeholder: 'Interest received ₹' });
+    const del = el('button', { class: 'icon-btn', type: 'button', text: '×' });
+    const ref = { d, amt, removed: false };
+    amt.addEventListener('blur', refreshSummary);
+    d.addEventListener('change', refreshSummary);
+    const row = el('div', { class: 'mf-txn-row' }, [el('div', { class: 'txn-line' }, [d, amt, del])]);
+    del.addEventListener('click', () => { row.remove(); ref.removed = true; refreshSummary(); });
+    refs.push(ref);
+    rowsWrap.appendChild(row);
+    refreshSummary();
+  };
+  (payouts || []).slice().sort((a, b2) => (b2.date || '').localeCompare(a.date || '')).forEach((p) => addRow(p.date, p.amount));
+  refreshSummary();
+
+  const lastDate = () => refs.reduce((max, r) => (!r.removed && r.d.value && r.d.value > (max || '')) ? r.d.value : max, null);
+  const addBtn = el('button', {
+    class: 'icon-btn', type: 'button', text: '+', title: 'Add payout',
+    // Default the new row's date to one month after the latest one logged (most
+    // adds are "log this month's payout"), not today.
+    onclick: () => addRow(addMonthsFn(lastDate() || todayISO(), lastDate() ? 1 : 0), null),
+  });
+
+  const node = el('div', {}, [summary, emptyEl, rowsWrap, el('div', { class: 'mf-txn-btn-row' }, [addBtn])]);
+  const collect = () => {
+    const out = [];
+    for (const r of refs) {
+      if (r.removed) continue;
+      const dv = r.d.value, av = num(r.amt.value);
+      if (!dv || av == null) continue;
+      out.push({ date: dv, amount: Math.round(av * 100) / 100 });
+    }
+    return out.sort((a, b2) => (a.date || '').localeCompare(b2.date || ''));
+  };
+  return { node, collect };
 }
 
 async function openBondForm(existing) {
@@ -3023,10 +3095,12 @@ async function openBondForm(existing) {
   const maturityDate = el('input', { type: 'date', value: b2.maturityDate || '' });
   const tenure = numInput('', 'Months');
   const payout = el('select', {}, [['cumulative', 'Cumulative (reinvest)'], ['payout', 'Payout (coupon out)']].map(([v, l]) => { const o = el('option', { value: v, text: l }); if (v === b2.payout) o.selected = true; return o; }));
-  const withdrawAmount = numInput(b2.withdrawAmount, '₹ received (leave blank while active)');
-  const withdrawDate = el('input', { type: 'date', value: b2.withdrawDate || '' });
-  const notes = el('textarea', { placeholder: 'Your notes' });
-  notes.value = b2.notes || '';
+  const maturityAmount = numInput(b2.maturityAmount, '₹ maturity amount (optional — overrides the projection)');
+
+  // Payouts tab - built before buildRec/refresh so buildRec can call
+  // payoutEditor.collect(); its onChange fires deferred (see buildPayoutEditor),
+  // so referencing `refresh` before it's declared below is safe.
+  const payoutEditor = buildPayoutEditor(b2.payouts, mod.addMonths, () => refresh());
 
   const buildRec = () => ({
     owner: 'me',
@@ -3038,9 +3112,8 @@ async function openBondForm(existing) {
     startDate: startDate.value || null,
     maturityDate: maturityDate.value || null,
     payout: payout.value,
-    withdrawAmount: withdrawAmount.value !== '' ? num(withdrawAmount.value) : null,
-    withdrawDate: withdrawDate.value || null,
-    notes: notes.value.trim(),
+    maturityAmount: maturityAmount.value !== '' ? num(maturityAmount.value) : null,
+    payouts: payoutEditor.collect(),
     createdAt: b2.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   });
@@ -3048,19 +3121,24 @@ async function openBondForm(existing) {
   const readout = el('div', { class: 'mf-bench-readout' });
   const refresh = () => {
     readout.innerHTML = '';
-    const c = mod.computeBond(buildRec(), Date.now());
+    const rec = buildRec();
+    const c = mod.computeBond(rec, Date.now());
     readout.appendChild(el('div', { class: 'mf-bench-now' }, [
       el('span', {}, ['Tenure ', b(c.tenureYears ? c.tenureYears.toFixed(2) + ' yr' : '—')]),
       el('span', {}, ['Maturity ', b(c.maturity ? fmtCur(c.maturityValue, 'INR') : '—')]),
       el('span', {}, ['Interest ', b(c.maturity ? fmtIntCur(c.totalInterest) : '—')]),
     ]));
+    const basisTxt = 'Basis: ' + c.basis + (c.hasPayouts
+      ? ` · ${rec.payouts.length} payout${rec.payouts.length === 1 ? '' : 's'} logged, ${fmtIntCur(c.payoutsTotal)} received to date`
+      : ' · no payouts logged yet, showing the projection');
+    readout.appendChild(el('p', { class: 'hint', style: 'margin-top:6px', text: basisTxt }));
   };
   tenure.addEventListener('input', () => {
     const m = num(tenure.value);
     if (m != null && startDate.value) maturityDate.value = mod.addMonths(startDate.value, m);
     refresh();
   });
-  [investAmount, rate, bankRate, payout, startDate, maturityDate, withdrawAmount].forEach((inp) => inp.addEventListener('input', refresh));
+  [investAmount, rate, bankRate, payout, startDate, maturityDate, maturityAmount].forEach((inp) => inp.addEventListener('input', refresh));
   refresh();
 
   const del = async () => {
@@ -3075,22 +3153,40 @@ async function openBondForm(existing) {
     await DB.put('bonds', rec); closeModal(); toast(isEdit ? 'Bond updated' : 'Bond added'); renderBond();
   };
 
+  // ---- Details tab ----
+  const detailsContent = el('div', {}, [
+    field('Name', name),
+    el('div', { class: 'field-row' }, [field('Rating', rating), field('Coupon rate % p.a.', rate)]),
+    el('div', { class: 'field-row' }, [field('₹ invested', investAmount), field('Bank rate % (optional)', bankRate)]),
+    el('div', { class: 'field-row' }, [field('Start date', startDate), field('Maturity date', maturityDate)]),
+    field('Tenure (months) → fills maturity date', tenure),
+    el('div', { class: 'field-row' }, [field('Type', payout), field('Maturity amount (optional override)', maturityAmount)]),
+    readout,
+  ]);
+
+  // ---- Payouts tab ----
+  const payoutsContent = el('div', { class: 'hidden' }, [
+    el('p', { class: 'hint', text: 'Log each interest/coupon payment you actually receive, dated — this becomes the real "interest earned" figure once logged, overriding the projected estimate above.' }),
+    payoutEditor.node,
+  ]);
+
+  const detailsTabBtn = el('button', { class: 'active', type: 'button', text: 'Details' });
+  const payoutsTabBtn = el('button', { type: 'button', text: 'Payouts' });
+  const tabs = [{ btn: detailsTabBtn, content: detailsContent }, { btn: payoutsTabBtn, content: payoutsContent }];
+  const showTab = (which) => tabs.forEach((t) => { const on = t === which; t.btn.classList.toggle('active', on); t.content.classList.toggle('hidden', !on); });
+  detailsTabBtn.addEventListener('click', () => showTab(tabs[0]));
+  payoutsTabBtn.addEventListener('click', () => { showTab(tabs[1]); refresh(); });
+
   const btns = [el('button', { class: 'btn primary', text: 'Save', onclick: save })];
   if (isEdit) btns.push(el('button', { class: 'btn danger', text: 'Delete', onclick: del }));
   btns.push(el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }));
   openModal(el('div', { class: 'sheet has-fixed-footer' }, [
     el('div', { class: 'sheet-scroll' }, [
       el('h2', { text: isEdit ? (b2.name || 'Edit bond') : 'Add bond' }),
+      el('div', { class: 'seg' }, [detailsTabBtn, payoutsTabBtn]),
       ratingList,
-      field('Name', name),
-      el('div', { class: 'field-row' }, [field('Rating', rating), field('Coupon rate % p.a.', rate)]),
-      el('div', { class: 'field-row' }, [field('₹ invested', investAmount), field('Bank rate % (optional)', bankRate)]),
-      el('div', { class: 'field-row' }, [field('Start date', startDate), field('Maturity date', maturityDate)]),
-      field('Tenure (months) → fills maturity date', tenure),
-      field('Type', payout),
-      el('div', { class: 'field-row' }, [field('Withdrawn amount (₹, if redeemed)', withdrawAmount), field('Withdrawn date', withdrawDate)]),
-      field('Notes', notes),
-      readout,
+      detailsContent,
+      payoutsContent,
     ]),
     el('div', { class: 'sheet-footer' }, [el('div', { class: 'btn-row', style: 'flex-wrap:wrap' }, btns)]),
   ]));

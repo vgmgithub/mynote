@@ -131,11 +131,12 @@ See [feed.md](feed.md) for the full design. Summary:
 See [bonds.md](bonds.md) for the full design. Summary:
 
 - **🧾 Bonds** card on Home, after Dividends.
-- Tracks retail bonds (name, rating, coupon rate, start/maturity dates, optional bank-rate comparison).
-- Bonds | Overview tabs (bottom nav). Filter Active/Matured/Withdrawn/All, sort by Maturity/Amount/Rate.
-- Each card shows interest earned, invested, maturity value, and a "vs Bank" delta when a comparison rate is set.
-- Seeded once from the user's X-MyNotes BOND sheet (3 real bonds), editable afterward.
-- Home's Total Invested/Earned includes only matured/withdrawn bonds — active bonds are locked capital, tracked in the Bonds surface's own Overview (same rationale as Fixed Deposits).
+- Tracks retail bonds (name, rating, coupon rate, start/maturity dates, optional bank-rate comparison, optional maturity-amount override).
+- Bonds | Overview tabs (bottom nav). Filter Active/Matured/All, sort by Maturity/Amount/Rate.
+- **Payouts tab** (per bond, in the edit form) — log each interest/coupon payment actually received, dated. Once any payout is logged, it becomes the real "interest earned" figure, overriding the coupon-rate projection.
+- Each card shows a **"Basis: …"** line explaining exactly how the projected interest was calculated (coupon rate, or an entered maturity amount).
+- Seeded once from the user's X-MyNotes BOND sheet (3 real bonds), editable afterward — no payouts pre-seeded, logged by the user.
+- Home's Total Invested/Earned includes only matured bonds — active bonds are locked capital, tracked in the Bonds surface's own Overview (same rationale as Fixed Deposits).
 
 ## App lock
 
