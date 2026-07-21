@@ -31,6 +31,6 @@ The app is **served by Apache**, not a Node dev server. There's no preview serve
 
 ## SW version cadence
 
-Every code change bumps `CACHE = 'mynote-stocks-vNN'` in `service-worker.js`. Current version after adding the Bonds surface (see [features.md](features.md)): **v193**. The next change should be v194.
+Every code change bumps `CACHE = 'mynote-stocks-vNN'` in `service-worker.js`. Current version after adding the Dividends Overview "FY total" column (see [features.md](features.md)): **v196**. The next change should be v197.
 
 **Updates are user-triggered (v44+).** New versions are detected in the background but only applied when the user taps **Menu → "Check for updates"**. No more cache flushes, no more surprise reloads. See [gotchas.md → Service worker updates](gotchas.md#service-worker-updates--user-triggered-v44).

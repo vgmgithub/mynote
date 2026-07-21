@@ -2344,9 +2344,9 @@ function renderDivOverview(host, all, mod) {
       el('h3', { text: (market === 'in' ? '🇮🇳 India (₹)' : '🇺🇸 US ($)') + ' · Annual analysis' }),
     ]);
     if (!rows.length) { card.appendChild(el('p', { class: 'hint', text: 'No dividends recorded yet — add per-year figures on the Stocks tab.' })); return card; }
-    const table = el('div', { class: 'div-table' });
+    const table = el('div', { class: 'div-table div-annual' });
     table.appendChild(el('div', { class: 'div-trow div-thead' }, [
-      el('span', { text: 'Year' }), el('span', { text: 'Total' }), el('span', { text: 'Per mo' }), el('span', { text: 'YoY' }),
+      el('span', { text: 'Year' }), el('span', { text: 'Total' }), el('span', { text: 'Per mo' }), el('span', { text: 'FY total' }), el('span', { text: 'YoY' }),
     ]));
     rows.forEach((r) => {
       const incTxt = r.incrementPct == null ? '—' : fmtPct(r.incrementPct);
@@ -2355,6 +2355,10 @@ function renderDivOverview(host, all, mod) {
         el('span', { class: 'div-tyear', text: String(r.year) }),
         el('span', { text: mod.fmtDiv(r.total, cur) }),
         el('span', { text: mod.fmtDiv(r.monthly, cur) }),
+        el('span', {}, [
+          el('div', { text: mod.fmtDiv(r.fyTotal, cur) }),
+          el('div', { class: 'div-fy-sub', text: 'FY ' + r.fyLabel }),
+        ]),
         el('span', { class: 'div-yoy ' + (r.incrementPct == null ? '' : pctClass(r.incrementPct)) }, [
           el('div', { text: incTxt }),
           profitTxt ? el('div', { class: 'div-profit', text: profitTxt }) : el('span'),
@@ -2362,6 +2366,7 @@ function renderDivOverview(host, all, mod) {
       ]));
     });
     card.appendChild(table);
+    card.appendChild(el('p', { class: 'hint', style: 'margin-top:8px', text: 'FY total = financial year (Apr–Mar), e.g. FY 25-26 = Apr 2025 – Mar 2026. Each calendar year is split across its payout months to fill the Apr–Mar buckets.' }));
     return card;
   };
   host.appendChild(build('in'));

@@ -90,11 +90,41 @@ export function latestYearTotal(rec) {
   return ys.length ? { year: ys[0], total: 0 } : { year: null, total: 0 };
 }
 
+// What fraction of a record's payout months fall in Apr–Dec vs Jan–Mar — used
+// to split a per-calendar-year total across the Apr–Mar financial-year boundary.
+// A record with no payout months listed is treated as paying entirely in the
+// Apr–Dec portion (so its whole calendar-year total lands in the FY starting
+// that April) — there's no month info to place it more precisely.
+function monthFractions(rec) {
+  const ixs = parseMonths(rec.months).map((m) => _MON_IX[m.toLowerCase()]);
+  if (!ixs.length) return { aprDec: 1, janMar: 0 };
+  const janMar = ixs.filter((i) => i <= 2).length;   // Jan(0), Feb(1), Mar(2)
+  return { aprDec: (ixs.length - janMar) / ixs.length, janMar: janMar / ixs.length };
+}
+
+// Total dividend for the financial year starting April `fyStartYear`
+// (Apr fyStartYear – Mar fyStartYear+1). Data is stored per CALENDAR year with
+// only a payout-months list (no per-month amounts), so each calendar year's
+// total is split across the Apr boundary by its payout-month fractions
+// (monthFractions): the Apr–Dec share of calendar year `fyStartYear` plus the
+// Jan–Mar share of calendar year `fyStartYear+1`. Exact when a stock pays equal
+// amounts in each payout month; approximate otherwise.
+export function financialYearTotal(records, fyStartYear) {
+  return records.reduce((s, rec) => {
+    const f = monthFractions(rec);
+    return s + yearTotal(rec, fyStartYear) * f.aprDec + yearTotal(rec, fyStartYear + 1) * f.janMar;
+  }, 0);
+}
+
+// Two-digit financial-year label for the FY starting April `y`, e.g. 2025 → "25-26".
+export const fyLabelOf = (y) => `${String(y).slice(-2)}-${String(y + 1).slice(-2)}`;
+
 // Year-wise analysis for a set of records (all the SAME market/currency).
 // Returns rows sorted NEWEST first:
-//   { year, total, monthly, profit, incrementPct }
+//   { year, total, monthly, fyTotal, fyLabel, profit, incrementPct }
 // profit  = total − previousYearTotal (immediately preceding year present in data)
 // monthly = total / 12
+// fyTotal = financial-year total for FY Apr(year)–Mar(year+1) (see financialYearTotal)
 // incrementPct = prevTotal>0 ? profit/prevTotal*100 : null (null = no base to compare)
 export function annualAnalysis(records) {
   const years = new Set();
@@ -106,7 +136,7 @@ export function annualAnalysis(records) {
     const prev = i > 0 ? totalFor(asc[i - 1]) : null;
     const profit = prev == null ? null : total - prev;
     const incrementPct = prev != null && prev > 0 ? (profit / prev) * 100 : null;
-    return { year, total, monthly: total / 12, profit, incrementPct };
+    return { year, total, monthly: total / 12, fyTotal: financialYearTotal(records, year), fyLabel: fyLabelOf(year), profit, incrementPct };
   });
   return rows.reverse(); // newest first
 }

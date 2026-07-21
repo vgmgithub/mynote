@@ -217,6 +217,11 @@ main { padding: 14px; }
 .div-tyear { font-weight: 700; }
 .div-yoy { text-align: right; font-weight: 600; }
 .div-profit { font-size: 0.64rem; opacity: 0.85; font-weight: 500; }
+/* Dividend annual-analysis table carries an extra FY-total column (5 cols). The
+   shared .div-trow is 4-col (also used by the Metals overview), so widen only
+   here. */
+.div-annual .div-trow { grid-template-columns: 2.4rem 1fr 1fr 1.15fr 1fr; font-size: 0.72rem; gap: 4px; }
+.div-fy-sub { font-size: 0.62rem; opacity: 0.8; }
 /* Calendar: current-month highlight */
 .div-month { }
 .div-month-cur { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
