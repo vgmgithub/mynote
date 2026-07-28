@@ -1,6 +1,7 @@
-// Metals-tracker logic (gold + silver). Pure except for the one best-effort
-// price-fetch helper. Lazy-loaded from app.js (openMetal / renderMetal) so the
-// rest of the app never pays for it until the user opens the Metals surface.
+// Metals-tracker logic (gold + silver) — pure, no DOM/storage/network. Prices
+// are entered manually (see app.js openMetalPrice). Lazy-loaded from app.js
+// (openMetal / renderMetal) so the rest of the app never pays for it until the
+// user opens the Metals surface.
 //
 // One row per transaction (store: 'metals'):
 //   { id, metal:'gold'|'silver', date:'YYYY-MM-DD',
@@ -14,7 +15,6 @@
 // are only *listed* on the Metals SGB tab / referenced on the Overview tab.
 
 export const METALS = ['gold', 'silver'];
-export const GRAMS_PER_OZ = 31.1035;          // troy ounce → grams
 export const TXN_TYPES = ['buy', 'sell', 'interest'];
 
 // Net position for one metal, computed chronologically with average-cost basis:
@@ -69,52 +69,6 @@ export function sourceBreakdown(txns, metal) {
     map.set(src, e);
   });
   return [...map.values()].filter((e) => Math.abs(e.grams) > 1e-9).sort((a, b) => b.grams - a.grams);
-}
-
-// Default India premium (%) applied over international spot to approximate
-// Indian retail/digital-platform rates: import duty (~6%) + GST (3%) + the
-// dealer/platform premium seen on Aura-style digital gold (making charges,
-// spread). Empirically ~25-30% for gold, somewhat less for silver (no import
-// duty differential story). Kept as a starting default — the caller can pass
-// an override (persisted in `meta.metalPrices.premium`) once the user tunes it
-// to match what they actually see on their platform.
-export const DEFAULT_PREMIUM = { gold: 24, silver: 16 }; // % over intl spot
-
-// Best-effort live price ESTIMATE in ₹/gram for gold & silver.
-// Source is international spot (USD/troy-ounce) via api.gold-api.com, converted
-// with a keyless FX rate (api.frankfurter.dev - the API rebranded from .app to
-// .dev; the old .app domain 301-redirects but the redirect response itself has
-// no CORS header, so fetch() blocks it as cross-origin even though curl follows
-// it fine - hit the .dev domain directly), then bumped by an India premium %
-// (see DEFAULT_PREMIUM) to land close to Indian retail instead of raw global
-// spot. Still just a starting estimate — the caller can pass `premium` (from a
-// user-tuned value) to close the gap further, and manual entry always wins.
-// Throws on any failure (offline / CORS / bad shape) so the caller falls back to
-// manual entry.
-export async function fetchSpotEstimate(signal, premium) {
-  const j = async (url) => {
-    const r = await fetch(url, { signal });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    return r.json();
-  };
-  const [xau, xag, fx] = await Promise.all([
-    j('https://api.gold-api.com/price/XAU'),
-    j('https://api.gold-api.com/price/XAG'),
-    j('https://api.frankfurter.dev/v1/latest?from=USD&to=INR'),
-  ]);
-  const usdInr = fx && fx.rates && Number(fx.rates.INR);
-  const goldUsdOz = Number(xau && xau.price);
-  const silverUsdOz = Number(xag && xag.price);
-  if (!(usdInr > 0) || !(goldUsdOz > 0) || !(silverUsdOz > 0)) throw new Error('bad price data');
-  const pGold = (premium && Number(premium.gold)) || DEFAULT_PREMIUM.gold;
-  const pSilver = (premium && Number(premium.silver)) || DEFAULT_PREMIUM.silver;
-  const perGram = (usdOz, pct) => ((usdOz * usdInr) / GRAMS_PER_OZ) * (1 + pct / 100);
-  return {
-    gold: Math.round(perGram(goldUsdOz, pGold) * 100) / 100,
-    silver: Math.round(perGram(silverUsdOz, pSilver) * 100) / 100,
-    premium: { gold: pGold, silver: pSilver },
-    source: 'intl-spot+premium',
-  };
 }
 
 // One-time seed: the real non-SGB transactions from the user's "Metal" sheet

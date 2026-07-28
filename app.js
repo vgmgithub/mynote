@@ -2792,50 +2792,29 @@ async function openMetalTxn(existing) {
   ]));
 }
 
-// ---- Set gold/silver ₹/gram prices (manual, with optional spot estimate) ----
+// ---- Set gold/silver ₹/gram prices (manual entry only) ----
 async function openMetalPrice() {
-  const mod = await import('./metal.js');
   const pricesMeta = await DB.get('meta', 'metalPrices').catch(() => null);
   const prices = (pricesMeta && pricesMeta.value) || {};
   const numInput = (val, ph) => el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: val != null && val !== '' ? val : '', placeholder: ph });
   const gold = numInput(prices.gold, '₹ / gram');
   const silver = numInput(prices.silver, '₹ / gram');
-  const premium = Object.assign({}, mod.DEFAULT_PREMIUM, prices.premium);
-  const goldPct = numInput(premium.gold, '%');
-  const silverPct = numInput(premium.silver, '%');
-  const status = el('p', { class: 'hint', text: 'Enter the ₹/gram you see (e.g. on Aura) — this values your holdings.' });
-
-  const fetchBtn = el('button', { class: 'btn ghost small', type: 'button', text: 'Fetch spot estimate' });
-  fetchBtn.addEventListener('click', async () => {
-    fetchBtn.disabled = true; status.textContent = 'Fetching international spot…';
-    try {
-      const est = await mod.fetchSpotEstimate(undefined, { gold: num(goldPct.value), silver: num(silverPct.value) });
-      gold.value = est.gold; silver.value = est.silver;
-      status.textContent = `Filled spot + India premium (gold +${est.premium.gold}%, silver +${est.premium.silver}%) — nudge the % below if it still drifts from your rate.`;
-    } catch (e) {
-      status.textContent = 'Could not fetch (offline or blocked) — enter the price manually.';
-    } finally { fetchBtn.disabled = false; }
-  });
 
   const save = async () => {
     const g = num(gold.value), s = num(silver.value);
     const value = Object.assign({}, prices, {
       gold: g || 0, silver: s || 0,
-      premium: { gold: num(goldPct.value) || mod.DEFAULT_PREMIUM.gold, silver: num(silverPct.value) || mod.DEFAULT_PREMIUM.silver },
       source: 'manual', updatedAt: new Date().toISOString(),
     });
+    delete value.premium;
     await DB.put('meta', { key: 'metalPrices', value });
     closeModal(); toast('Prices saved'); renderMetal();
   };
   openModal(el('div', { class: 'sheet' }, [
     el('h2', { text: 'Set metal prices' }),
+    el('p', { class: 'hint', text: 'Enter the ₹/gram you see (e.g. on Aura) — this values your holdings.' }),
     field('Gold (₹/gram)', gold),
     field('Silver (₹/gram)', silver),
-    el('div', { class: 'btn-row', style: 'flex-wrap:wrap' }, [fetchBtn]),
-    status,
-    el('p', { class: 'hint', text: 'India premium used by "Fetch spot estimate" (% over international spot — tune if your rate drifts):' }),
-    field('Gold premium (%)', goldPct),
-    field('Silver premium (%)', silverPct),
     el('div', { class: 'btn-row' }, [
       el('button', { class: 'btn primary', text: 'Save', onclick: save }),
       el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }),
