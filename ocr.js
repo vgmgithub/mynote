@@ -158,14 +158,22 @@ function parseUSStyleLegacy(text) {
 // line is not rejected for containing "$"/"%" (the name shares its row with
 // "Avg. $X"); instead the numeric fragments are stripped and whatever text
 // remains is the name.
-const US2_QTY_RE = /\bQty\b\s*[:\s]?\s*([\d.,]+)/i;
-const US2_AVG_RE = /Avg\.?:?\s*\$?\s*([\d,]+(?:\.\d+)?)/i;
+// The two anchor words are spelled tolerantly: on a real phone screenshot
+// Tesseract regularly swaps Q↔O and y↔v ("Oty", "Qtv") and g↔q ("Avq"). A
+// strict /\bQty\b/ turns one bad glyph into ZERO parsed rows, so accept the
+// common confusions.
+const US2_QTY_WORD = '[QO0]t[yv]';
+const US2_AVG_WORD = 'Av[gq9]';
+const US2_QTY_RE = new RegExp('\\b' + US2_QTY_WORD + '\\b\\s*[:\\s]?\\s*([\\d.,]+)', 'i');
+const US2_AVG_RE = new RegExp('\\b' + US2_AVG_WORD + '\\b\\.?:?\\s*\\$?\\s*([\\d,]+(?:\\.\\d+)?)', 'i');
 // Between the $price and the trailing "<pct>%" sits a daily-change arrow glyph
 // (▲/▼) that Tesseract frequently misreads as a stray letter/digit rather than
 // dropping cleanly — so allow a few arbitrary characters there instead of
 // matching a fixed arrow-character class.
 const US2_LTP_RE = /\$\s*([\d,]+(?:\.\d+)?)[^\n$%]{0,6}?[\d.]+\s*%/;
-const US2_LABEL_RE = /^(invested value|current value|total\b|qty\b|avg\b)/i;
+const US2_LABEL_RE = new RegExp('^(invested value|current value|total\\b|' + US2_QTY_WORD + '\\b|' + US2_AVG_WORD + '\\b)', 'i');
+const US2_MONEY_RE = /[₹$€£]\s*[\d,]+(?:\.\d+)?/g;
+const US2_PCT_RE = /[\d.]+\s*%/g;
 
 // Remove every price/percent/label fragment that can share a line with the
 // company name, leaving just the name text ("Broadcom Inc. Avg. $350.07" →
@@ -173,11 +181,11 @@ const US2_LABEL_RE = /^(invested value|current value|total\b|qty\b|avg\b)/i;
 function stripUSNoise(s) {
   return String(s || '')
     .replace(US2_AVG_RE, ' ')
-    .replace(/\bAvg\.?\b/gi, ' ')
-    .replace(/\bQty\b\s*[:\s]?\s*[\d.,]+/gi, ' ')
-    .replace(/\bQty\b/gi, ' ')
-    .replace(/[\d.]+\s*%/g, ' ')
-    .replace(/[₹$€£]\s*[\d,]+(?:\.\d+)?/g, ' ')
+    .replace(new RegExp('\\b' + US2_AVG_WORD + '\\b\\.?', 'gi'), ' ')
+    .replace(new RegExp('\\b' + US2_QTY_WORD + '\\b\\s*[:\\s]?\\s*[\\d.,]+', 'gi'), ' ')
+    .replace(new RegExp('\\b' + US2_QTY_WORD + '\\b', 'gi'), ' ')
+    .replace(US2_PCT_RE, ' ')
+    .replace(US2_MONEY_RE, ' ')
     .replace(/[▲▼△▽↑↓]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -238,11 +246,63 @@ function parseUSStyleCards(text) {
   return rows;
 }
 
-// Try the current card layout first; fall back to the older row layout in
-// case an old screenshot (or a different INDmoney build) is uploaded.
+// Last-resort pass for when the Qty word is mangled past recognition and the
+// primary pass finds nothing. Anchors on the "Avg. $X" line instead and takes
+// the units from the nearest BARE decimal — one that is neither a $ amount nor
+// a percentage. Fractional-share quantities (0.022853) carry 3+ decimal places,
+// which is a distinctive enough signature to not collide with the price/value
+// figures on the card. Whole-share quantities are intentionally NOT matched
+// here: a bare integer is far too common to guess from safely.
+const US2_BARE_UNITS_RE = /(?:^|\s)(\d+\.\d{3,})(?:\s|$)/;
+function parseUSStyleCardsLoose(text) {
+  const lines = (text || '').split(/\r?\n/).map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const rows = [];
+  for (let i = 0; i < lines.length; i++) {
+    const am = lines[i].match(US2_AVG_RE);
+    if (!am) continue;
+    const avg = n(am[1]);
+
+    let units = null;
+    for (const j of nearbyIndices(i, lines.length, 2, 2)) {
+      const bare = lines[j]
+        .replace(US2_AVG_RE, ' ')
+        .replace(US2_MONEY_RE, ' ')
+        .replace(US2_PCT_RE, ' ');
+      const bm = bare.match(US2_BARE_UNITS_RE);
+      if (bm) { units = parseFloat(bm[1]); break; }
+    }
+    if (!(units > 0)) continue;
+
+    let ltp = null;
+    for (const j of nearbyIndices(i, lines.length, 2, 2)) {
+      const lm = lines[j].match(US2_LTP_RE);
+      if (lm) { ltp = n(lm[1]); break; }
+    }
+
+    // Start at the Avg line itself — in the row-major ordering the name is
+    // glued to it ("Broadcom Inc. Avg. $350.07").
+    let name = '';
+    for (let j = i; j >= Math.max(0, i - 6); j--) {
+      const c = lines[j];
+      if (!c || US2_LABEL_RE.test(c) || US2_LTP_RE.test(c)) continue;
+      const stripped = cleanName(stripUSNoise(c));
+      if (!stripped || !NAME_WORD.test(stripped)) continue;
+      name = stripped;
+      break;
+    }
+    if (name) rows.push({ name, units, avg, ltp });
+  }
+  return rows;
+}
+
+// Current card layout first, then the Avg-anchored loose pass, then the older
+// pre-redesign row layout (in case an old screenshot is uploaded).
 function parseUSStyle(text) {
-  const rows = parseUSStyleCards(text);
-  return rows.length ? rows : parseUSStyleLegacy(text);
+  const cards = parseUSStyleCards(text);
+  if (cards.length) return cards;
+  const loose = parseUSStyleCardsLoose(text);
+  if (loose.length) return loose;
+  return parseUSStyleLegacy(text);
 }
 
 // Layout B — "Groww · Market Price" view: row = "<Name> <Price>" then
