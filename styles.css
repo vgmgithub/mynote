@@ -986,7 +986,9 @@ body.locked { overflow: hidden; }
 .brk-note { font-size: 0.7rem; color: var(--muted); margin-top: 3px; line-height: 1.35; }
 .brk-nums { text-align: right; flex: 0 0 auto; }
 .brk-inv { font-size: 0.95rem; font-weight: 700; }
-.brk-earn { font-size: 0.72rem; margin-top: 2px; }
+.brk-earn { font-size: 0.72rem; margin-top: 2px; display: flex; align-items: center; justify-content: flex-end; gap: 4px; white-space: nowrap; }
+.brk-pct { font-weight: 700; }
+.brk-pct.muted { color: var(--muted); font-weight: 400; }
 .brk-total { border-top: 2px solid var(--line); margin-top: 2px; padding-top: 12px; }
 .brk-total .brk-name { font-size: 1rem; }
 .brk-total .brk-inv { font-size: 1.1rem; }
