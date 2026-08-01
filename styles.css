@@ -960,7 +960,36 @@ body.locked { overflow: hidden; }
 .home-tag { margin: 4px 0 0; color: var(--muted); font-size: 0.82rem; }
 .home-summary { display: flex; gap: 12px; margin-top: 16px; }
 .summary-stat { flex: 1; background: linear-gradient(135deg, var(--card), var(--card-2)); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 12px; display: flex; flex-direction: column; gap: 4px; }
-.stat-label { color: var(--muted); font-size: 0.75rem; }
+.stat-label { color: var(--muted); font-size: 0.75rem; display: flex; align-items: center; gap: 6px; }
+/* Small circled "i" next to a headline figure — opens a sheet explaining what
+   the number is made of. Sized off the label so it never dominates it. */
+.info-btn {
+  flex: 0 0 auto; width: 15px; height: 15px; padding: 0; line-height: 1;
+  border-radius: 50%; border: 1px solid var(--line);
+  background: var(--card-2); color: var(--muted);
+  font-size: 0.62rem; font-weight: 700; font-style: italic; font-family: Georgia, serif;
+  cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+}
+.info-btn:hover { color: var(--text); border-color: var(--muted); }
+
+/* "What makes up Total Invested" sheet */
+.brk-head { display: flex; justify-content: space-between; color: var(--muted); font-size: 0.68rem;
+  text-transform: uppercase; letter-spacing: 0.5px; padding: 0 0 6px; border-bottom: 1px solid var(--line); }
+.brk-list { display: flex; flex-direction: column; }
+.brk-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+  padding: 10px 0; border-bottom: 1px solid var(--line); }
+.brk-row:last-child { border-bottom: none; }
+.brk-main { min-width: 0; }
+.brk-name { font-size: 0.92rem; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.brk-count { font-size: 0.62rem; font-weight: 700; color: var(--muted);
+  background: var(--card-2); border: 1px solid var(--line); border-radius: 999px; padding: 1px 6px; }
+.brk-note { font-size: 0.7rem; color: var(--muted); margin-top: 3px; line-height: 1.35; }
+.brk-nums { text-align: right; flex: 0 0 auto; }
+.brk-inv { font-size: 0.95rem; font-weight: 700; }
+.brk-earn { font-size: 0.72rem; margin-top: 2px; }
+.brk-total { border-top: 2px solid var(--line); margin-top: 2px; padding-top: 12px; }
+.brk-total .brk-name { font-size: 1rem; }
+.brk-total .brk-inv { font-size: 1.1rem; }
 .stat-value { font-size: 1.15rem; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 6px; }
 .summary-badge { font-size: 0.82rem; padding: 4px 8px; border-radius: 6px; font-weight: 600; color: #fff; }
 .summary-badge.pos { background: linear-gradient(135deg, #10b981, #34d399); }

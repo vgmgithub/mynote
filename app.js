@@ -2008,38 +2008,57 @@ async function openFdForm(existing) {
   ]));
 }
 
-async function renderHome() {
-  const host = $('#homeView');
-  host.innerHTML = '';
-  host.appendChild(el('div', { class: 'home-hero' }, [
-    el('h2', { class: 'home-title', text: 'MyNotes' }),
-    el('p', { class: 'home-tag', text: 'Private tracker - everything stays on this device.' }),
-  ]));
-
-  // Calculate total invested and earned across Stocks, Mutual Funds, Fixed Deposits, and Metals
+// What the Home "Total Invested" / "Total Earned" headline is actually made of.
+// Returns one entry per contributing bucket, so the headline figures and the
+// ⓘ breakdown sheet are always computed from the same pass and can't drift.
+//
+// Each exclusion below is deliberate:
+//   • Stocks — only the Me · India portfolio. Wife · India and Me · US are
+//     separate books and don't roll into this personal total.
+//   • Stocks — SGB gold bonds are skipped here and counted under Metals
+//     instead (they're gold), so the same money isn't counted twice.
+//   • Sold stocks and redeemed funds — that capital is no longer at work.
+//   • FDs and Bonds — MATURED only. Money still locked in a running deposit
+//     hasn't come back yet, so it isn't treated as invested capital here; the
+//     FD and Bond surfaces track the active ladder themselves.
+//   • FDs — a matured deposit that was renewed into another matured deposit is
+//     superseded by its child, so one principal isn't counted along the chain.
+async function homeInvestedBreakdown() {
+  const parts = [];
   let totalInvested = 0, totalValue = 0;
+  const add = (label, note, invested, value, count) => {
+    parts.push({ label, note, invested: invested || 0, value: value || 0, count: count || 0 });
+    totalInvested += invested || 0;
+    totalValue += value || 0;
+  };
   try {
     // Stocks — Me-India only (holdings, not sold). SGB gold bonds excluded here -
     // they're tracked under Metals surface.
     const meInStocks = (await DB.byPortfolio('stocks', 'me-in')) || [];
+    let sInv = 0, sVal = 0, sN = 0, sgbSkipped = 0;
     for (const s of meInStocks) {
-      if (s.status === 'holding' && !/sgb/i.test(s.name || '')) {
-        totalInvested += Number(s.units || 0) * Number(s.buyPrice || 0);
-        totalValue += Number(s.units || 0) * Number(s.currentPrice || 0);
-      }
+      if (s.status !== 'holding') continue;
+      if (/sgb/i.test(s.name || '')) { sgbSkipped++; continue; }
+      sInv += Number(s.units || 0) * Number(s.buyPrice || 0);
+      sVal += Number(s.units || 0) * Number(s.currentPrice || 0);
+      sN++;
     }
+    add('Stocks', 'Me · India holdings only' + (sgbSkipped ? ' · ' + sgbSkipped + ' SGB moved to Metals' : '') +
+      ' · excludes Wife · India, Me · US and sold', sInv, sVal, sN);
+
     // Mutual Funds — Investing only (exclude Sold)
     const funds = await DB.byIndex('funds', 'owner', 'me') || [];
+    let fInv = 0, fVal = 0, fN = 0;
     for (const f of funds) {
       if (f.status === 'Sold' || f.soldDate) continue;
       const c = await import('./mf.js').then(mod => mod.computeFund(f, Date.now())).catch(() => null);
-      if (c) {
-        totalInvested += c.invested || 0;
-        totalValue += c.value || 0;
-      }
+      if (c) { fInv += c.invested || 0; fVal += c.value || 0; fN++; }
     }
+    add('Mutual Funds', 'Active SIPs and lumpsums · excludes sold funds', fInv, fVal, fN);
+
     // Fixed Deposits — MATURED, but NOT superseded by a matured child
     const fds = (await DB.byIndex('fds', 'owner', 'me')) || [];
+    let dInv = 0, dVal = 0, dN = 0, dSkipped = 0;
     if (fds.length) {
       const fdMod = await import('./fd.js');
       const nowT = Date.now();
@@ -2052,30 +2071,96 @@ async function renderHome() {
       });
       for (const fdRec of fds) {
         const c = fdComp.get(fdRec.id);
-        if (c.effectiveStatus !== 'matured') continue;
-        if (supersededIds.has(fdRec.id)) continue;
-        totalInvested += c.principal;
-        totalValue += c.maturityValue;
+        if (c.effectiveStatus !== 'matured') { dSkipped++; continue; }
+        if (supersededIds.has(fdRec.id)) { dSkipped++; continue; }
+        dInv += c.principal; dVal += c.maturityValue; dN++;
       }
     }
+    add('Fixed Deposits', 'Matured only' + (dSkipped ? ' · ' + dSkipped + ' still running or renewed, not counted' : ''), dInv, dVal, dN);
+
     // Metals — gold + silver (at current market prices)
     const metalData = await metalPortfolio();
-    totalInvested += (metalData.gold.invested || 0) + (metalData.silver.invested || 0);
-    totalValue += (metalData.gold.value || 0) + (metalData.silver.value || 0);
+    const mInv = (metalData.gold.invested || 0) + (metalData.silver.invested || 0);
+    const mVal = (metalData.gold.value || 0) + (metalData.silver.value || 0);
+    add('Metals', 'Digital gold + silver' + (metalData.gold.sgbCount ? ' + ' + metalData.gold.sgbCount + ' SGB (valued as gold)' : '') +
+      ' · at your saved ₹/gram', mInv, mVal, 0);
+
     // Bonds — MATURED only (active capital is still locked, tracked in the
     // Bonds surface's own Overview) - same rationale as Fixed Deposits above.
     // Value uses the real interest-earned figure (logged payouts once any
     // exist, else the coupon-rate projection) - see computeBond.
     const bonds = (await DB.byIndex('bonds', 'owner', 'me')) || [];
+    let bInv = 0, bVal = 0, bN = 0, bSkipped = 0;
     if (bonds.length) {
       const bondMod = await import('./bonds.js');
       const nowB = Date.now();
       bonds.forEach((bRec) => {
         const c = bondMod.computeBond(bRec, nowB);
-        if (c.effectiveStatus === 'matured') { totalInvested += c.principal; totalValue += c.principal + c.interestEarned; }
+        if (c.effectiveStatus === 'matured') { bInv += c.principal; bVal += c.principal + c.interestEarned; bN++; }
+        else bSkipped++;
       });
     }
+    add('Bonds', 'Matured only' + (bSkipped ? ' · ' + bSkipped + ' still active, not counted' : ''), bInv, bVal, bN);
   } catch (_) {}
+  return { parts, totalInvested, totalValue };
+}
+
+// ⓘ sheet behind the Home headline — shows exactly which buckets make up the
+// Total Invested figure, and what is deliberately left out of it.
+function openInvestedBreakdown(bd) {
+  const rows = bd.parts.map((p) => {
+    const earned = p.value - p.invested;
+    return el('div', { class: 'brk-row' }, [
+      el('div', { class: 'brk-main' }, [
+        el('div', { class: 'brk-name' }, [
+          p.label,
+          p.count ? el('span', { class: 'brk-count', text: String(p.count) }) : null,
+        ].filter(Boolean)),
+        el('div', { class: 'brk-note', text: p.note }),
+      ]),
+      el('div', { class: 'brk-nums' }, [
+        el('div', { class: 'brk-inv', text: fmtIntCur(p.invested) }),
+        el('div', { class: 'brk-earn ' + pctClass(earned), text: (earned >= 0 ? '+' : '') + fmtIntCur(earned) }),
+      ]),
+    ]);
+  });
+  const totalEarned = bd.totalValue - bd.totalInvested;
+  openModal(el('div', { class: 'sheet' }, [
+    el('h2', { text: 'What makes up Total Invested' }),
+    el('div', { class: 'brk-head' }, [
+      el('span', { text: 'Source' }),
+      el('span', { text: 'Invested · Earned' }),
+    ]),
+    el('div', { class: 'brk-list' }, rows),
+    el('div', { class: 'brk-row brk-total' }, [
+      el('div', { class: 'brk-main' }, [el('div', { class: 'brk-name', text: 'Total' })]),
+      el('div', { class: 'brk-nums' }, [
+        el('div', { class: 'brk-inv', text: fmtIntCur(bd.totalInvested) }),
+        el('div', { class: 'brk-earn ' + pctClass(totalEarned), text: (totalEarned >= 0 ? '+' : '') + fmtIntCur(totalEarned) }),
+      ]),
+    ]),
+    el('p', { class: 'hint', text:
+      'Not counted: Wife · India and Me · US stocks (separate books), sold stocks and redeemed funds, ' +
+      'and any FD or bond still running - that money is still locked in, so it is not treated as ' +
+      'invested capital here. SGB bonds are counted once, under Metals.' }),
+    el('div', { class: 'btn-row' }, [
+      el('button', { class: 'btn primary', text: 'Close', onclick: closeModal }),
+    ]),
+  ]));
+}
+
+async function renderHome() {
+  const host = $('#homeView');
+  host.innerHTML = '';
+  host.appendChild(el('div', { class: 'home-hero' }, [
+    el('h2', { class: 'home-title', text: 'MyNotes' }),
+    el('p', { class: 'home-tag', text: 'Private tracker - everything stays on this device.' }),
+  ]));
+
+  // Calculate total invested and earned across Stocks, Mutual Funds, Fixed Deposits, and Metals
+  const breakdown = await homeInvestedBreakdown();
+  const totalInvested = breakdown.totalInvested;
+  const totalValue = breakdown.totalValue;
 
   // Earned is derived from the exact same (filtered) invested/value totals above -
   // same stocks + funds included, nothing computed on a separate dataset.
@@ -2083,7 +2168,14 @@ async function renderHome() {
   const totalEarnedPct = totalInvested > 0 ? (totalEarned / totalInvested) * 100 : 0;
   const summaryCard = el('div', { class: 'home-summary' }, [
     el('div', { class: 'summary-stat' }, [
-      el('div', { class: 'stat-label', text: 'Total Invested' }),
+      el('div', { class: 'stat-label' }, [
+        'Total Invested',
+        el('button', {
+          class: 'info-btn', type: 'button', 'aria-label': 'What makes up Total Invested',
+          title: 'What makes up this figure', text: 'i',
+          onclick: (e) => { e.stopPropagation(); openInvestedBreakdown(breakdown); },
+        }),
+      ]),
       el('div', { class: 'stat-value', text: fmtIntCur(totalInvested) }),
     ]),
     el('div', { class: 'summary-stat' }, [
