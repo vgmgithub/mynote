@@ -5227,16 +5227,87 @@ function openOcrReview(rows, aliases, rawText) {
     refresh();
   };
 
+  // ---- Live "what the portfolio will look like after Apply" preview ----
+  // Replaces the old wall of instructions. The point is a single number the
+  // user can eyeball against the total their broker app shows: if the overall
+  // return % lines up, every parsed row is almost certainly right.
+  //
+  // It spans the WHOLE portfolio, not just the uploaded rows - the rows being
+  // updated contribute their NEW values and every stock left out of this
+  // upload contributes its saved values, which is what makes the total
+  // comparable to the broker's. Mirrors apply()'s field-by-field rules exactly
+  // (blank input keeps the saved value; buyPrice only when allowAvg) so the
+  // preview can't promise something Apply won't do.
+  const previewHost = el('div', { class: 'summary ocr-preview' });
+  const cur = curOf(state.portfolio);
+  const projectStocks = () => {
+    const replaced = new Map();
+    const added = [];
+    for (const r of refs) {
+      if (!r.cb.checked || !r.match) continue;
+      const nU = num(r.unitsI.value), nA = num(r.avgI.value), nL = num(r.ltpI.value);
+      if (r.match.addNew) {
+        added.push({
+          status: 'holding', units: nU,
+          buyPrice: r.allowAvg && nA != null ? nA : null,
+          currentPrice: nL, history: [],
+        });
+        continue;
+      }
+      const proj = Object.assign({}, r.match.stock);
+      if (nU != null) proj.units = nU;
+      if (r.allowAvg && nA != null) proj.buyPrice = nA;
+      if (nL != null) proj.currentPrice = nL;
+      replaced.set(r.match.stock.id, proj);
+    }
+    const list = state.stocks.map((s) => replaced.get(s.id) || s).concat(added);
+    return { list, touched: replaced.size + added.length };
+  };
+
+  const renderPreview = () => {
+    const { list, touched } = projectStocks();
+    const after = summarize(list);
+    const before = summarize(state.stocks);
+    const untouched = Math.max(0, after.holdings - touched);
+    previewHost.innerHTML = '';
+    previewHost.appendChild(el('div', { class: 'row-between' }, [
+      el('span', { class: 'label', text: 'After apply · whole portfolio' }),
+      after.hasVal
+        ? el('span', { class: 'badge ' + (after.pl >= 0 ? 'good' : 'bad'), text: fmtPct(after.plPct) })
+        : el('span', { class: 'badge muted', text: 'no prices yet' }),
+    ]));
+    previewHost.appendChild(el('div', { class: 'big', text: after.hasVal ? fmtCur(after.value, cur) : '-' }));
+    const grid = el('div', { class: 'grid' });
+    const deltaPct = after.hasVal && before.hasVal ? after.plPct - before.plPct : null;
+    [
+      ['Invested', after.hasVal ? fmtCur(after.invested, cur) : '-', ''],
+      ['Profit / Loss', after.hasVal ? (after.pl >= 0 ? '+' : '') + fmtCur(after.pl, cur) : '-', after.hasVal ? pctClass(after.pl) : ''],
+      ['From this upload', touched + ' of ' + rows.length, ''],
+      ['Not in upload', String(untouched), ''],
+      ['Was', before.hasVal ? fmtPct(before.plPct) : '-', ''],
+      ['Change', deltaPct != null ? fmtPct(deltaPct) : '-', deltaPct != null ? pctClass(deltaPct) : ''],
+    ].forEach(([k, v, cls]) => grid.appendChild(el('div', { class: 'cell' }, [
+      el('div', { class: 'k', text: k }), el('div', { class: 'v ' + (cls || ''), text: v }),
+    ])));
+    previewHost.appendChild(grid);
+  };
+
+  // Recompute on every edit. These listeners are registered after the per-row
+  // ones above, so ref.match / ref.allowAvg are already updated when they fire.
+  // The dropdown's own handler finishes asynchronously (it awaits the alias
+  // save before re-running checkAvgVisibility), so that one also re-renders on
+  // a short delay to pick up the settled allowAvg.
+  refs.forEach((r) => {
+    [r.unitsI, r.avgI, r.ltpI].forEach((inp) => inp && inp.addEventListener('input', renderPreview));
+    r.cb.addEventListener('change', renderPreview);
+    const sel = r.row.querySelector('.ocr-match-sel');
+    if (sel) sel.addEventListener('change', () => { renderPreview(); setTimeout(renderPreview, 80); });
+  });
+  renderPreview();
+
   openModal(el('div', { class: 'sheet ocr-sheet' }, [
     el('h2', { text: 'Update from screenshot' }),
-    el('p', { class: 'note', text:
-      matchedCount + ' of ' + rows.length + ' rows auto-matched to your ' + state.portfolio.replace('-', ' · ') + ' holdings. ' +
-      'Use the dropdown under each row to override the match, choose "+ Add as new stock" to create a fresh holding from that row, or "Skip" to drop it. Manual matches are remembered - next OCR will auto-pick the same stock. ' +
-      (noAvg
-        ? 'Groww screenshots update units and current price - the average is kept as you saved it (Groww doesn\'t show it in this view). If a row\'s units have changed (you bought or sold), an "Avg" input appears for that row so you can enter the new average buy price. Untick anything wrong before Apply. '
-        : 'Edit values if needed, untick anything wrong, then Apply. Blank fields keep the existing value. ') +
-      'Heads-up: prices highlighted orange look suspect - either Tesseract misread the ₹ as a "3", or the value jumped > 30% from saved. Verify against the screenshot.'
-    }),
+    previewHost,
     head,
     el('div', { class: 'ocr-list' }, refs.map((r) => r.row)),
     el('div', { class: 'btn-row' }, [

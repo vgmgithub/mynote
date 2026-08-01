@@ -327,6 +327,14 @@ main { padding: 14px; }
 
 /* OCR review */
 .ocr-sheet { max-width: 720px; }
+/* Projected whole-portfolio totals after Apply — sits where the instruction
+   blurb used to be, so the overall % can be eyeballed against the broker app.
+   Borrows .summary's look; 3 columns keeps the six cells compact in the modal. */
+.ocr-preview { margin-bottom: 12px; }
+.ocr-preview .big { font-size: 1.5rem; }
+.ocr-preview .grid { grid-template-columns: repeat(3, 1fr); gap: 8px 10px; margin-top: 10px; }
+.ocr-preview .cell .v { font-size: 0.92rem; }
+@media (max-width: 520px) { .ocr-preview .grid { grid-template-columns: 1fr 1fr; } }
 .ocr-head, .ocr-row { display: grid; grid-template-columns: 20px 1fr 64px 76px 76px; gap: 8px; align-items: center; }
 /* Groww/wife-in: Avg is hidden (Groww's Market Price view doesn't show it).
    Units + price are shown and editable. */
