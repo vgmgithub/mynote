@@ -141,27 +141,64 @@ function parseUSStyleLegacy(text) {
   return rows;
 }
 
-// Layout C2 — current INDmoney US Stocks card view. Each holding is a card:
-//   <Name>                                    (own line)
-//   🌙 $<LTP> ▲/▼ <chg%>        Avg. $<Avg>    (same row, two columns)
-//                               Qty <units>    (same row as above, two columns)
-//   Invested Value  Current Value  Total (▲/▼ <pct>%)
-//   $<inv>          $<cur>         +/-$<pl>
-// "Avg." now uses a period (not the old "Avg:"), and "Qty" is a label BEFORE
-// the number instead of a suffix after it — the legacy US_QTY_RE/US_AVG_RE
-// above no longer match either of those, which is why OCR stopped finding
-// rows after the app's UI redesign. Tesseract's line order for a 2-column
-// layout is unpredictable (row-by-row vs column-by-column), so anchor on the
-// unambiguous "Qty <number>" line and search a small window around it for
-// avg/ltp/name rather than assuming a fixed line sequence.
+// Layout C2 — current INDmoney US Stocks card view. Each holding is a card of
+// two columns; visually:
+//   [icon] <Name>                     Avg. $<Avg>
+//          🌙 $<LTP> ▼<chg%>          Qty <units>
+//   Invested Value   Current Value    Total (▲/▼ <pct>%)
+//   $<inv>           $<cur>           +/-$<pl>
+// Two things broke the old parser when the app was redesigned: "Avg." now uses
+// a period (not "Avg:"), and "Qty" is a label BEFORE the number instead of a
+// suffix after it — so neither legacy regex above matches any more.
+//
+// Tesseract's line order for a two-column layout is not predictable: it may
+// join each visual row into one line ("Broadcom Inc. Avg. $350.07") or emit the
+// columns separately. So anchor on the unambiguous "Qty <number>" line and
+// search outward BY PROXIMITY for avg/ltp/name. Crucially, a candidate name
+// line is not rejected for containing "$"/"%" (the name shares its row with
+// "Avg. $X"); instead the numeric fragments are stripped and whatever text
+// remains is the name.
 const US2_QTY_RE = /\bQty\b\s*[:\s]?\s*([\d.,]+)/i;
 const US2_AVG_RE = /Avg\.?:?\s*\$?\s*([\d,]+(?:\.\d+)?)/i;
 // Between the $price and the trailing "<pct>%" sits a daily-change arrow glyph
 // (▲/▼) that Tesseract frequently misreads as a stray letter/digit rather than
-// dropping cleanly — so allow up to a few arbitrary characters there instead
-// of matching a fixed arrow-character class.
+// dropping cleanly — so allow a few arbitrary characters there instead of
+// matching a fixed arrow-character class.
 const US2_LTP_RE = /\$\s*([\d,]+(?:\.\d+)?)[^\n$%]{0,6}?[\d.]+\s*%/;
 const US2_LABEL_RE = /^(invested value|current value|total\b|qty\b|avg\b)/i;
+
+// Remove every price/percent/label fragment that can share a line with the
+// company name, leaving just the name text ("Broadcom Inc. Avg. $350.07" →
+// "Broadcom Inc."; a pure price line collapses to "" and is skipped).
+function stripUSNoise(s) {
+  return String(s || '')
+    .replace(US2_AVG_RE, ' ')
+    .replace(/\bAvg\.?\b/gi, ' ')
+    .replace(/\bQty\b\s*[:\s]?\s*[\d.,]+/gi, ' ')
+    .replace(/\bQty\b/gi, ' ')
+    .replace(/[\d.]+\s*%/g, ' ')
+    .replace(/[₹$€£]\s*[\d,]+(?:\.\d+)?/g, ' ')
+    .replace(/[▲▼△▽↑↓]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Line indices ordered by distance from `i` (i, i-1, i+1, i-2, …) so the
+// nearest match wins regardless of which way Tesseract ordered the columns.
+function nearbyIndices(i, len, back, fwd) {
+  const out = i >= 0 && i < len ? [i] : [];
+  for (let d = 1; d <= Math.max(back, fwd); d++) {
+    if (d <= back && i - d >= 0) out.push(i - d);
+    if (d <= fwd && i + d < len) out.push(i + d);
+  }
+  return out;
+}
+
+// A real company name always has at least one run of 2+ letters. Stray glyphs
+// left over from a stripped price line (the moon icon and the ▼ arrow can OCR
+// as "D" and "v", leaving "D v") are isolated single letters, so they fail this.
+const NAME_WORD = /\p{L}{2,}/u;
+
 function parseUSStyleCards(text) {
   const lines = (text || '').split(/\r?\n/).map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
   const rows = [];
@@ -172,31 +209,31 @@ function parseUSStyleCards(text) {
     if (!isFinite(units) || units <= 0) continue;
 
     let avg = null;
-    for (let j = Math.max(0, i - 3); j <= Math.min(lines.length - 1, i + 1); j++) {
+    for (const j of nearbyIndices(i, lines.length, 3, 1)) {
       const am = lines[j].match(US2_AVG_RE);
       if (am) { avg = n(am[1]); break; }
     }
 
     let ltp = null;
-    for (let j = Math.max(0, i - 4); j <= Math.min(lines.length - 1, i + 1); j++) {
+    for (const j of nearbyIndices(i, lines.length, 4, 1)) {
       const lm = lines[j].match(US2_LTP_RE);
       if (lm) { ltp = n(lm[1]); break; }
     }
 
-    // Name is the nearest preceding line that's plain text — no $ / % (those
-    // belong to the price/avg/value lines, never a company name) and not a
-    // known label.
+    // Nearest preceding line that still has a real word once the numbers are
+    // stripped. The "$<price> ▼<pct>%" line is skipped outright — when the
+    // columns come through separately it sits between the name and the Qty
+    // anchor, and its leftover glyphs would otherwise win.
     let name = '';
     for (let j = i - 1; j >= Math.max(0, i - 8); j--) {
       const c = lines[j];
-      if (!c || US2_LABEL_RE.test(c) || NUMERIC_ONLY.test(c) || US2_QTY_RE.test(c)) continue;
-      if (c.includes('$') || c.includes('%')) continue;
-      if (!/\p{L}/u.test(c)) continue;
-      name = c;
+      if (!c || US2_LABEL_RE.test(c) || US2_LTP_RE.test(c)) continue;
+      const stripped = cleanName(stripUSNoise(c));
+      if (!stripped || !NAME_WORD.test(stripped)) continue;
+      name = stripped;
       break;
     }
-    const cleaned = cleanName(name);
-    if (cleaned) rows.push({ name: cleaned, units, avg, ltp });
+    if (name) rows.push({ name, units, avg, ltp });
   }
   return rows;
 }

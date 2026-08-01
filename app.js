@@ -4957,9 +4957,10 @@ async function openOcrFlow() {
       hideLoader();
       // Note: the image Files go only to Tesseract for recognition. We never
       // persist them - only the parsed numbers reach the review screen.
-      if (!allRows.length) { openOcrDebug(texts.join('\n\n----- next image -----\n\n')); return; }
+      const rawText = texts.join('\n\n----- next image -----\n\n');
+      if (!allRows.length) { openOcrDebug(rawText); return; }
       const aliases = await _loadOcrAliases();
-      openOcrReview(allRows, aliases);
+      openOcrReview(allRows, aliases, rawText);
     } catch (e) {
       hideLoader();
       alert('OCR failed: ' + e.message);
@@ -4968,12 +4969,15 @@ async function openOcrFlow() {
   input.click();
 }
 
-function openOcrDebug(text) {
+// `title`/`note` are overridden when this is opened from the review screen's
+// "Raw text" button — there the parser DID find rows, the user just wants to
+// see what was actually read so a mis-parse can be diagnosed.
+function openOcrDebug(text, title, note) {
   const ta = el('textarea', { readonly: 'true', style: 'width:100%;min-height:240px;font-family:monospace;font-size:0.72rem;' });
   ta.value = text || '(empty)';
   openModal(el('div', { class: 'sheet' }, [
-    el('h2', { text: 'No holding rows detected' }),
-    el('p', { class: 'note', text: 'OCR ran but the parser couldn\'t pick out any "units × avg / LTP:" pattern. The raw text below is what was read - share it so the parser can be tuned. Try cropping to just the holdings rows, or use a higher-resolution screenshot.' }),
+    el('h2', { text: title || 'No holding rows detected' }),
+    el('p', { class: 'note', text: note || 'OCR ran but the parser couldn\'t pick out any "units × avg / LTP:" pattern. The raw text below is what was read - share it so the parser can be tuned. Try cropping to just the holdings rows, or use a higher-resolution screenshot.' }),
     ta,
     el('div', { class: 'btn-row' }, [
       el('button', { class: 'btn ghost', text: 'Copy text', onclick: () => { ta.select(); document.execCommand && document.execCommand('copy'); toast('Copied'); } }),
@@ -4982,7 +4986,7 @@ function openOcrDebug(text) {
   ]));
 }
 
-function openOcrReview(rows, aliases) {
+function openOcrReview(rows, aliases, rawText) {
   const ym = thisYm();
   const monthLabel = ymToLabel(ym);
   // Groww/wife-in: the "Market Price" view shows units (e.g. "27 shares") and
@@ -5237,6 +5241,15 @@ function openOcrReview(rows, aliases) {
     el('div', { class: 'ocr-list' }, refs.map((r) => r.row)),
     el('div', { class: 'btn-row' }, [
       el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }),
+      // Escape hatch for a mis-parse: the broker app's layout changes now and
+      // then, and seeing what Tesseract actually read is the only way to retune
+      // the parser. Available even when rows WERE found, since a wrong name or
+      // a missing price is exactly the case worth reporting.
+      el('button', {
+        class: 'btn ghost', text: 'Raw text',
+        onclick: () => openOcrDebug(rawText, 'Raw OCR text',
+          'This is exactly what Tesseract read from your screenshot(s). If the rows above came out wrong, copy this and share it so the parser can be fixed.'),
+      }),
       el('button', { class: 'btn primary', text: 'Apply', onclick: apply }),
     ]),
   ]));
