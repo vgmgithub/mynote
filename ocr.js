@@ -115,12 +115,12 @@ function parseZerodhaStyle(text) {
 
 const SHARES_RE = /(\d{1,7})\s+shares?\b/i;
 
-// Layout C — INDmoney US Stocks view: row 1 "<Name> <Qty> Qty",
+// Layout C (legacy) — older INDmoney US Stocks view: row 1 "<Name> <Qty> Qty",
 // row 2 "$<LTP> ▲/▼ <chg%> Avg: $<Avg>". Everything's in one shot.
 const US_QTY_RE = /^(.+?)\s+([\d.,]+)\s*Qty\b/i;
 const US_AVG_RE = /Avg:?\s*\$?\s*([\d,]+(?:\.\d+)?)/i;
 const US_PRICE_RE = /\$\s*([\d,]+(?:\.\d+)?)/;
-function parseUSStyle(text) {
+function parseUSStyleLegacy(text) {
   const lines = (text || '').split(/\r?\n/).map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
   const rows = [];
   for (let i = 0; i < lines.length; i++) {
@@ -139,6 +139,73 @@ function parseUSStyle(text) {
     rows.push({ name, units, avg, ltp });
   }
   return rows;
+}
+
+// Layout C2 — current INDmoney US Stocks card view. Each holding is a card:
+//   <Name>                                    (own line)
+//   🌙 $<LTP> ▲/▼ <chg%>        Avg. $<Avg>    (same row, two columns)
+//                               Qty <units>    (same row as above, two columns)
+//   Invested Value  Current Value  Total (▲/▼ <pct>%)
+//   $<inv>          $<cur>         +/-$<pl>
+// "Avg." now uses a period (not the old "Avg:"), and "Qty" is a label BEFORE
+// the number instead of a suffix after it — the legacy US_QTY_RE/US_AVG_RE
+// above no longer match either of those, which is why OCR stopped finding
+// rows after the app's UI redesign. Tesseract's line order for a 2-column
+// layout is unpredictable (row-by-row vs column-by-column), so anchor on the
+// unambiguous "Qty <number>" line and search a small window around it for
+// avg/ltp/name rather than assuming a fixed line sequence.
+const US2_QTY_RE = /\bQty\b\s*[:\s]?\s*([\d.,]+)/i;
+const US2_AVG_RE = /Avg\.?:?\s*\$?\s*([\d,]+(?:\.\d+)?)/i;
+// Between the $price and the trailing "<pct>%" sits a daily-change arrow glyph
+// (▲/▼) that Tesseract frequently misreads as a stray letter/digit rather than
+// dropping cleanly — so allow up to a few arbitrary characters there instead
+// of matching a fixed arrow-character class.
+const US2_LTP_RE = /\$\s*([\d,]+(?:\.\d+)?)[^\n$%]{0,6}?[\d.]+\s*%/;
+const US2_LABEL_RE = /^(invested value|current value|total\b|qty\b|avg\b)/i;
+function parseUSStyleCards(text) {
+  const lines = (text || '').split(/\r?\n/).map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const rows = [];
+  for (let i = 0; i < lines.length; i++) {
+    const qm = lines[i].match(US2_QTY_RE);
+    if (!qm) continue;
+    const units = parseFloat(String(qm[1]).replace(/,/g, ''));
+    if (!isFinite(units) || units <= 0) continue;
+
+    let avg = null;
+    for (let j = Math.max(0, i - 3); j <= Math.min(lines.length - 1, i + 1); j++) {
+      const am = lines[j].match(US2_AVG_RE);
+      if (am) { avg = n(am[1]); break; }
+    }
+
+    let ltp = null;
+    for (let j = Math.max(0, i - 4); j <= Math.min(lines.length - 1, i + 1); j++) {
+      const lm = lines[j].match(US2_LTP_RE);
+      if (lm) { ltp = n(lm[1]); break; }
+    }
+
+    // Name is the nearest preceding line that's plain text — no $ / % (those
+    // belong to the price/avg/value lines, never a company name) and not a
+    // known label.
+    let name = '';
+    for (let j = i - 1; j >= Math.max(0, i - 8); j--) {
+      const c = lines[j];
+      if (!c || US2_LABEL_RE.test(c) || NUMERIC_ONLY.test(c) || US2_QTY_RE.test(c)) continue;
+      if (c.includes('$') || c.includes('%')) continue;
+      if (!/\p{L}/u.test(c)) continue;
+      name = c;
+      break;
+    }
+    const cleaned = cleanName(name);
+    if (cleaned) rows.push({ name: cleaned, units, avg, ltp });
+  }
+  return rows;
+}
+
+// Try the current card layout first; fall back to the older row layout in
+// case an old screenshot (or a different INDmoney build) is uploaded.
+function parseUSStyle(text) {
+  const rows = parseUSStyleCards(text);
+  return rows.length ? rows : parseUSStyleLegacy(text);
 }
 
 // Layout B — "Groww · Market Price" view: row = "<Name> <Price>" then
