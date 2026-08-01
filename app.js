@@ -2502,6 +2502,11 @@ function renderDivCalendar(host, all, mod) {
 async function openDivForm(rec) {
   const mod = await import('./dividend.js');
   const isUs = rec.market === 'us';
+  // India only: current unit count from the linked stock, so a freshly-added
+  // year row starts pre-filled instead of blank (the units the record already
+  // has saved per past year are untouched - this only seeds NEW rows).
+  const linkedStock = !isUs ? await DB.get('stocks', rec.stockId).catch(() => null) : null;
+  const currentUnits = linkedStock ? (Number(linkedStock.units) || 0) : '';
 
   // Payout-month toggles (Jan–Dec).
   const selMonths = new Set(mod.parseMonths(rec.months));
@@ -2542,8 +2547,11 @@ async function openDivForm(rec) {
   // units/perUnit shape) — show its computed total so the figure isn't lost.
   const usAmountOf = (y) => (y.amount != null ? y.amount : (y.units != null && y.perUnit != null ? (Number(y.units) || 0) * (Number(y.perUnit) || 0) : ''));
   if (sortedYears.length) sortedYears.forEach((y) => addYearRow(y.year, isUs ? usAmountOf(y) : y.units, isUs ? undefined : y.perUnit));
-  else addYearRow(new Date().getFullYear(), '', '');
-  const addYearBtn = el('button', { class: 'btn ghost small', type: 'button', text: '+ Add year', onclick: () => addYearRow(new Date().getFullYear(), '', '') });
+  else addYearRow(new Date().getFullYear(), isUs ? '' : currentUnits, '');
+  const addYearBtn = el('button', {
+    class: 'btn ghost small', type: 'button', text: '+ Add year',
+    onclick: () => addYearRow(new Date().getFullYear(), isUs ? '' : currentUnits, ''),
+  });
 
   const collectYears = () => {
     const map = new Map();
