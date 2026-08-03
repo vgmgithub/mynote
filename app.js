@@ -2034,7 +2034,11 @@ async function homeInvestedBreakdown() {
   const parts = [];
   let totalInvested = 0, totalValue = 0;
   const add = (label, note, invested, value, count, opts) => {
-    parts.push({ label, note, invested: invested || 0, value: value || 0, count: count || 0, noPct: !!(opts && opts.noPct) });
+    // pctBasis overrides what the row's % is computed against - for Bonds,
+    // Invested (active principal) and Earned (closed-bond interest) describe
+    // DIFFERENT bonds, so interest ÷ active-principal isn't a real return; the
+    // matching denominator is the principal that actually earned that interest.
+    parts.push({ label, note, invested: invested || 0, value: value || 0, count: count || 0, pctBasis: (opts && opts.pctBasis != null) ? opts.pctBasis : null });
     totalInvested += invested || 0;
     totalValue += value || 0;
   };
@@ -2099,21 +2103,21 @@ async function homeInvestedBreakdown() {
     // the bonds - it's invested + realised interest, so that value − invested
     // reduces to exactly the realised-interest figure this row is meant to show.
     const bonds = (await DB.byIndex('bonds', 'owner', 'me')) || [];
-    let bInv = 0, bVal = 0, bN = 0;
+    let bInv = 0, bVal = 0, bN = 0, bMaturedPrincipal = 0;
     if (bonds.length) {
       const bondMod = await import('./bonds.js');
       const nowB = Date.now();
       bonds.forEach((bRec) => {
         const c = bondMod.computeBond(bRec, nowB);
         if (c.effectiveStatus === 'active') { bInv += c.principal; bVal += c.principal; bN++; }
-        else { bVal += c.interestEarned; skipped.bond++; }
+        else { bVal += c.interestEarned; bMaturedPrincipal += c.principal; skipped.bond++; }
       });
     }
-    // noPct: this row's Invested (active bonds) and Earned (closed bonds'
-    // interest) describe DIFFERENT bonds, so a ratio between them isn't a real
-    // return - suppress it rather than show a number that looks precise but
-    // isn't meaningful.
-    add('Bonds', 'Active principal + realised interest', bInv, bVal, bN, { noPct: true });
+    // pctBasis: this row's Invested (active bonds) and Earned (closed bonds'
+    // interest) describe DIFFERENT bonds, so interest ÷ active-principal isn't
+    // a real return. The matching denominator is the principal of the closed
+    // bonds that actually earned that interest.
+    add('Bonds', 'Active principal + realised interest', bInv, bVal, bN, { pctBasis: bMaturedPrincipal });
   } catch (_) {}
   return { parts, totalInvested, totalValue, skipped };
 }
@@ -2121,12 +2125,13 @@ async function homeInvestedBreakdown() {
 // ⓘ sheet behind the Home headline — shows exactly which buckets make up the
 // Total Invested figure, and what is deliberately left out of it.
 function openInvestedBreakdown(bd) {
-  // noPct: Bonds' Invested and Earned come from different bonds (active vs
-  // closed) so a ratio between them isn't a real return - show '—' rather
-  // than a confident-looking but meaningless percentage.
-  const pctRow = (invested, earned, noPct) => {
-    if (noPct || !(invested > 0)) return el('span', { class: 'brk-pct muted', text: '—' });
-    const pct = (earned / invested) * 100;
+  // `basis` defaults to the row's own Invested figure, but a row can override
+  // it (pctBasis) with a different denominator - Bonds' Invested is active
+  // principal while Earned is closed-bond interest, so the % has to be
+  // computed against the closed bonds' OWN principal to mean anything.
+  const pctRow = (basis, earned) => {
+    if (!(basis > 0)) return el('span', { class: 'brk-pct muted', text: '—' });
+    const pct = (earned / basis) * 100;
     return el('span', { class: 'brk-pct ' + pctClass(pct), text: fmtPct(pct) });
   };
   const rows = bd.parts.map((p) => {
@@ -2142,7 +2147,7 @@ function openInvestedBreakdown(bd) {
       el('div', { class: 'brk-nums' }, [
         el('div', { class: 'brk-inv', text: fmtIntCur(p.invested) }),
         el('div', { class: 'brk-earn ' + pctClass(earned) }, [
-          (earned >= 0 ? '+' : '') + fmtIntCur(earned) + ' ', pctRow(p.invested, earned, p.noPct),
+          (earned >= 0 ? '+' : '') + fmtIntCur(earned) + ' ', pctRow(p.pctBasis != null ? p.pctBasis : p.invested, earned),
         ]),
       ]),
     ]);

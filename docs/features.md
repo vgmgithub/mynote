@@ -137,7 +137,7 @@ See [bonds.md](bonds.md) for the full design. Summary:
 - **Sold / redeemed early** toggle (Details tab) — records the sale date and total amount received; realised interest is derived (`payoutsBeforeExit + soldGain`), never typed. A sold bond appears in the Matured/Sold bucket alongside bonds that aged to maturity.
 - Each card shows a **"Basis: …"** line explaining exactly how the interest figure was calculated (coupon rate, an entered maturity amount, or the realised sale arithmetic).
 - Seeded once from the user's X-MyNotes BOND sheet (3 real bonds), editable afterward — no payouts pre-seeded, logged by the user.
-- Home's Total Invested/Earned uses a basis **different from Fixed Deposits, on purpose**: invested = active bond principal (still-live capital); earned = realised interest from closed (matured + sold) bonds only, never an active bond's accrued-but-unpaid interest. The row's Return % is suppressed since the two figures describe different bonds.
+- Home's Total Invested/Earned uses a basis **different from Fixed Deposits, on purpose**: invested = active bond principal (still-live capital); earned = realised interest from closed (matured + sold) bonds only, never an active bond's accrued-but-unpaid interest. The row's Return % is computed against the closed bonds' own principal (interest ÷ the principal that earned it), not against Invested.
 
 ## App lock
 
