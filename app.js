@@ -49,7 +49,7 @@ let _divMarket = 'in';       // 'in' | 'us' (Me-India / Me-US)
 let _metalTab = 'overview';  // 'overview' | 'gold' | 'silver' | 'sgb' (bottom nav)
 // Bonds view state (only used inside the Bonds surface).
 let _bondTab = 'holdings';   // 'holdings' | 'overview' (bottom nav)
-let _bondFilter = 'active';  // 'active' | 'matured' | 'withdrawn' | 'all'
+let _bondFilter = 'active';  // 'active' | 'matured' (matured + sold) | 'all'
 let _bondSort = 'maturity';  // 'maturity' | 'amount' | 'rate'
 const MF_TYPES = ['Multi Cap', 'Flexi Cap', 'Large Cap', 'Mid Cap', 'Small Cap', 'Tax Saver', 'Technology', 'Pharma', 'Energy', 'International', 'Index', 'Debt', 'Hybrid'];
 const MF_STATUS = ['Investing', 'Investing On/Off', 'Investing Variable', 'Stopped', 'Sold'];
@@ -2018,16 +2018,23 @@ async function openFdForm(existing) {
 //   • Stocks — SGB gold bonds are skipped here and counted under Metals
 //     instead (they're gold), so the same money isn't counted twice.
 //   • Sold stocks and redeemed funds — that capital is no longer at work.
-//   • FDs and Bonds — MATURED only. Money still locked in a running deposit
-//     hasn't come back yet, so it isn't treated as invested capital here; the
-//     FD and Bond surfaces track the active ladder themselves.
-//   • FDs — a matured deposit that was renewed into another matured deposit is
-//     superseded by its child, so one principal isn't counted along the chain.
+//   • FDs — MATURED only. Money still locked in a running deposit hasn't come
+//     back yet, so it isn't treated as invested capital here; the FD surface
+//     tracks the active ladder itself. A matured deposit that was renewed into
+//     another matured deposit is superseded by its child, so one principal
+//     isn't counted twice along the chain.
+//   • Bonds — deliberately a DIFFERENT basis from FDs: invested = ACTIVE bond
+//     principal (still-live capital), earned = realised interest from bonds
+//     that have closed (matured or sold) only — never an active bond's
+//     accrued-but-unpaid interest. Matured/sold principal has been returned,
+//     so it's no longer "invested" once it's back; an active bond's principal
+//     genuinely still is. See bonds.js computeBond for the realised-interest
+//     math (payoutsBeforeExit + soldGain for a sold bond).
 async function homeInvestedBreakdown() {
   const parts = [];
   let totalInvested = 0, totalValue = 0;
-  const add = (label, note, invested, value, count) => {
-    parts.push({ label, note, invested: invested || 0, value: value || 0, count: count || 0 });
+  const add = (label, note, invested, value, count, opts) => {
+    parts.push({ label, note, invested: invested || 0, value: value || 0, count: count || 0, noPct: !!(opts && opts.noPct) });
     totalInvested += invested || 0;
     totalValue += value || 0;
   };
@@ -2086,10 +2093,11 @@ async function homeInvestedBreakdown() {
     const mVal = (metalData.gold.value || 0) + (metalData.silver.value || 0);
     add('Metals', 'Digital gold & silver' + (metalData.gold.sgbCount ? ' + SGB (as gold)' : ''), mInv, mVal, 0);
 
-    // Bonds — MATURED only (active capital is still locked, tracked in the
-    // Bonds surface's own Overview) - same rationale as Fixed Deposits above.
-    // Value uses the real interest-earned figure (logged payouts once any
-    // exist, else the coupon-rate projection) - see computeBond.
+    // Bonds — active principal as invested; realised interest from closed
+    // (matured + sold) bonds as earned. Opposite basis from FDs above, on
+    // purpose (see the header comment). `bVal` here is NOT "current value" of
+    // the bonds - it's invested + realised interest, so that value − invested
+    // reduces to exactly the realised-interest figure this row is meant to show.
     const bonds = (await DB.byIndex('bonds', 'owner', 'me')) || [];
     let bInv = 0, bVal = 0, bN = 0;
     if (bonds.length) {
@@ -2097,11 +2105,15 @@ async function homeInvestedBreakdown() {
       const nowB = Date.now();
       bonds.forEach((bRec) => {
         const c = bondMod.computeBond(bRec, nowB);
-        if (c.effectiveStatus === 'matured') { bInv += c.principal; bVal += c.principal + c.interestEarned; bN++; }
-        else skipped.bond++;
+        if (c.effectiveStatus === 'active') { bInv += c.principal; bVal += c.principal; bN++; }
+        else { bVal += c.interestEarned; skipped.bond++; }
       });
     }
-    add('Bonds', 'Matured bonds', bInv, bVal, bN);
+    // noPct: this row's Invested (active bonds) and Earned (closed bonds'
+    // interest) describe DIFFERENT bonds, so a ratio between them isn't a real
+    // return - suppress it rather than show a number that looks precise but
+    // isn't meaningful.
+    add('Bonds', 'Active principal + realised interest', bInv, bVal, bN, { noPct: true });
   } catch (_) {}
   return { parts, totalInvested, totalValue, skipped };
 }
@@ -2109,8 +2121,11 @@ async function homeInvestedBreakdown() {
 // ⓘ sheet behind the Home headline — shows exactly which buckets make up the
 // Total Invested figure, and what is deliberately left out of it.
 function openInvestedBreakdown(bd) {
-  const pctRow = (invested, earned) => {
-    if (!(invested > 0)) return el('span', { class: 'brk-pct muted', text: '—' });
+  // noPct: Bonds' Invested and Earned come from different bonds (active vs
+  // closed) so a ratio between them isn't a real return - show '—' rather
+  // than a confident-looking but meaningless percentage.
+  const pctRow = (invested, earned, noPct) => {
+    if (noPct || !(invested > 0)) return el('span', { class: 'brk-pct muted', text: '—' });
     const pct = (earned / invested) * 100;
     return el('span', { class: 'brk-pct ' + pctClass(pct), text: fmtPct(pct) });
   };
@@ -2127,7 +2142,7 @@ function openInvestedBreakdown(bd) {
       el('div', { class: 'brk-nums' }, [
         el('div', { class: 'brk-inv', text: fmtIntCur(p.invested) }),
         el('div', { class: 'brk-earn ' + pctClass(earned) }, [
-          (earned >= 0 ? '+' : '') + fmtIntCur(earned) + ' ', pctRow(p.invested, earned),
+          (earned >= 0 ? '+' : '') + fmtIntCur(earned) + ' ', pctRow(p.invested, earned, p.noPct),
         ]),
       ]),
     ]);
@@ -2139,10 +2154,10 @@ function openInvestedBreakdown(bd) {
   const skipBits = [];
   if (sk.sgb) skipBits.push(sk.sgb + ' SGB' + (sk.sgb > 1 ? 's' : '') + ' (counted under Metals instead)');
   if (sk.fd) skipBits.push(sk.fd + ' FD' + (sk.fd > 1 ? 's' : '') + ' still running or renewed');
-  if (sk.bond) skipBits.push(sk.bond + ' bond' + (sk.bond > 1 ? 's' : '') + ' still active');
+  if (sk.bond) skipBits.push(sk.bond + ' matured/sold bond' + (sk.bond > 1 ? 's' : '') + ' whose principal has been returned');
   const footNote = 'Not counted: Wife · India and Me · US stocks (separate books), sold stocks and redeemed funds' +
     (skipBits.length ? ', ' + skipBits.join(', ') : '') +
-    ' - that money is either tracked elsewhere or still locked in, not yet realised.';
+    ' - that money is either tracked elsewhere, still locked in, or already back in hand.';
   openModal(el('div', { class: 'sheet' }, [
     el('h2', { text: 'What makes up Total Invested' }),
     el('div', { class: 'brk-head' }, [
@@ -2984,19 +2999,28 @@ async function renderBond() {
   }
 
   const activeRows = rows.filter(({ c }) => c.effectiveStatus === 'active');
+  // "Matured" in the UI covers both closed statuses - a bond stops being live
+  // capital whether it aged to maturity or was sold early. Always partition on
+  // effectiveStatus, never pastMaturity (see bonds.js computeBond) - a bond sold
+  // after its own maturity date is pastMaturity===true but effectiveStatus
+  // 'sold', so filtering on pastMaturity here would double-count it into both.
   const maturedRows = rows.filter(({ c }) => c.effectiveStatus === 'matured');
-  let list = _bondFilter === 'active' ? activeRows.slice() : _bondFilter === 'matured' ? maturedRows.slice() : rows.slice();
+  const soldRows = rows.filter(({ c }) => c.effectiveStatus === 'sold');
+  const closedRows = maturedRows.concat(soldRows);
+  let list = _bondFilter === 'active' ? activeRows.slice() : _bondFilter === 'matured' ? closedRows.slice() : rows.slice();
 
   // Totals over active bonds (still-live capital) - mirrors FD's "locked capital,
   // tracked in this surface's own totals" rationale.
   let totInv = 0, totInterest = 0, totVsBank = 0, vsBankCount = 0, receivedToDate = 0;
   activeRows.forEach(({ c }) => { totInv += c.principal; totInterest += c.totalInterest; });
   const returnPct = totInv > 0 ? (totInterest / totInv) * 100 : 0;
-  // Interest earned from matured bonds - real (logged payouts) once any exist,
-  // else the coupon-rate projection. Received-to-date sums actual payouts logged
-  // across EVERY bond (active + matured) - the real cash banked so far.
+  // Interest earned from closed (matured + sold) bonds - real (logged payouts,
+  // or realised sale proceeds) once either exists, else the coupon-rate
+  // projection for a matured bond with no payouts logged. Received-to-date sums
+  // actual COUPON payouts logged across every bond - sale proceeds are a
+  // separate, larger figure shown on the sold card itself, not folded in here.
   let interestEarnedTotal = 0;
-  maturedRows.forEach(({ c }) => { interestEarnedTotal += c.interestEarned; });
+  closedRows.forEach(({ c }) => { interestEarnedTotal += c.interestEarned; });
   rows.forEach(({ c }) => { if (c.vsBank != null) { totVsBank += c.vsBank; vsBankCount++; } receivedToDate += c.payoutsTotal; });
 
   const holdContent = el('div', { class: 'tab-content' + (_bondTab === 'holdings' ? '' : ' hidden') });
@@ -3009,13 +3033,15 @@ async function renderBond() {
         el('div', { class: 'big', text: fmtCur(totInv, 'INR') }),
       ]),
       el('div', { class: 'summary-earned' }, [
-        el('div', { class: 'label', text: 'Interest to earn' }),
+        el('div', { class: 'label', text: 'Interest to earn (full tenure)' }),
         el('div', { class: 'v pos', text: fmtIntCur(totInterest) }),
       ]),
     ]),
     el('div', { class: 'grid' }, [
-      _mfCell('Interest earned', fmtIntCur(interestEarnedTotal), 'pos'),
-      _mfCell('Received to date', fmtIntCur(receivedToDate), 'pos'),
+      // Sign-safe: a bond sold at a loss can make this negative for the first
+      // time (previously bond interest was always >= 0).
+      _mfCell('Interest earned (realised)', (interestEarnedTotal >= 0 ? '+' : '') + fmtIntCur(interestEarnedTotal), interestEarnedTotal >= 0 ? 'pos' : 'neg'),
+      _mfCell('Coupons received', fmtIntCur(receivedToDate), 'pos'),
       _mfCell('Return %', returnPct ? fmtIntRate(returnPct) : '—'),
       _mfCell('vs Bank', vsBankCount ? (totVsBank >= 0 ? '+' : '') + fmtIntCur(totVsBank) : '—', totVsBank >= 0 ? 'pos' : 'neg'),
     ]),
@@ -3024,7 +3050,7 @@ async function renderBond() {
   // ---- Holdings tab: filter + sort + card list ----
   const filterSeg = el('div', { class: 'seg' }, [
     ['active', `Active (${activeRows.length})`],
-    ['matured', `Matured (${maturedRows.length})`],
+    ['matured', `Matured / Sold (${closedRows.length})`],
     ['all', `All (${rows.length})`],
   ].map(([v, l]) => el('button', { class: (_bondFilter === v ? 'active' : ''), type: 'button', text: l, onclick: () => { _bondFilter = v; renderBond(); } })));
   const sortbar = el('div', { class: 'sortbar mf-sortbar' }, [['maturity', 'Maturity'], ['amount', 'Amount'], ['rate', 'Rate']].map(([v, l]) =>
@@ -3034,11 +3060,15 @@ async function renderBond() {
   if (!list.length) {
     holdContent.appendChild(el('div', { class: 'empty' }, [el('div', { class: 'e-icon', text: '🧾' }), el('p', { text: 'Nothing here.' })]));
   } else {
+    // For a sold bond, the date that actually happened is soldDate, not its
+    // (possibly still-future) maturity date - sort by whichever applies so a
+    // 2026 sale doesn't sort after a 2027 maturity in the closed list.
+    const exitOf = (c) => c.soldDate || c.maturity;
     list.sort((a, b2) => {
       if (_bondSort === 'amount') return b2.c.principal - a.c.principal;
       if (_bondSort === 'rate') return b2.c.rate - a.c.rate;
-      const am = a.c.maturity ? Date.parse(a.c.maturity) : Infinity;
-      const bm = b2.c.maturity ? Date.parse(b2.c.maturity) : Infinity;
+      const am = exitOf(a.c) ? Date.parse(exitOf(a.c)) : Infinity;
+      const bm = exitOf(b2.c) ? Date.parse(exitOf(b2.c)) : Infinity;
       return am - bm;
     });
     const wrap = el('section', { class: 'stock-list' });
@@ -3082,27 +3112,52 @@ async function renderBond() {
 function _bondCard(b2, c) {
   const statusBadge = c.effectiveStatus === 'active'
     ? el('span', { class: 'badge good mf-beat', text: 'active' })
-    : el('span', { class: 'badge muted mf-beat', text: 'matured' });
+    : c.effectiveStatus === 'sold'
+      ? el('span', { class: 'badge warn mf-beat', text: 'sold' })
+      : el('span', { class: 'badge muted mf-beat', text: 'matured' });
   const catLine = el('div', { class: 'cat mf-catline' }, [`${b2.rating || 'Unrated'} · ${fmtIntRate(c.rate)}` + (c.payout === 'cumulative' ? ' · cumulative' : ' · payout')]);
   catLine.appendChild(statusBadge);
-  const matTxt = c.maturity
-    ? (c.effectiveStatus === 'active'
-        ? (c.daysToMaturity >= 0 ? `Matures ${c.maturity} · ${c.daysToMaturity}d` : `Due ${c.maturity}`)
-        : `Matured ${c.maturity}`)
-    : 'No maturity date';
+  // Three independent branches (not one three-way ternary) so each is easy to
+  // audit on its own - a fall-through bug here previously meant "sold" landed
+  // in the wrong branch of matTxt OR rightCol without the other noticing.
+  const matTxt = c.effectiveStatus === 'sold'
+    ? `Sold ${c.soldDate}`
+    : c.maturity
+      ? (c.effectiveStatus === 'active'
+          ? (c.daysToMaturity >= 0 ? `Matures ${c.maturity} · ${c.daysToMaturity}d` : `Due ${c.maturity}`)
+          : `Matured ${c.maturity}`)
+      : 'No maturity date';
+  // Sold: the realised figure (payouts before exit + sale gain/loss) - can be
+  // negative, so sign-safe rather than the hardcoded '+' the other branches use
+  // (bond interest could never be negative before sold bonds existed).
   // Matured: show both the projected total interest AND the real earned figure
   // (real once any payout is logged, else the same projection - see computeBond).
   // Active: one projected/accrued figure, clearly marked as an estimate.
-  const rightCol = c.effectiveStatus === 'matured'
+  const rightCol = c.effectiveStatus === 'sold'
     ? [
-        el('div', { class: 'pct pos', text: '+' + fmtIntCur(c.totalInterest) }),
-        el('div', { class: 'meta-line', text: 'interest' }),
-        el('div', { class: 'meta-line pos', text: '+' + fmtIntCur(c.interestEarned) + ' earned' }),
+        el('div', { class: 'pct ' + (c.interestEarned >= 0 ? 'pos' : 'neg'), text: (c.interestEarned >= 0 ? '+' : '') + fmtIntCur(c.interestEarned) }),
+        el('div', { class: 'meta-line', text: 'realised' }),
       ]
-    : [
-        el('div', { class: 'pct pos', text: '+' + fmtIntCur(c.projectedAccrued) }),
-        el('div', { class: 'meta-line', text: 'accrued (est.)' }),
-      ];
+    : c.effectiveStatus === 'matured'
+      ? [
+          el('div', { class: 'pct pos', text: '+' + fmtIntCur(c.totalInterest) }),
+          el('div', { class: 'meta-line', text: 'interest' }),
+          el('div', { class: 'meta-line pos', text: '+' + fmtIntCur(c.interestEarned) + ' earned' }),
+        ]
+      : [
+          el('div', { class: 'pct pos', text: '+' + fmtIntCur(c.projectedAccrued) }),
+          el('div', { class: 'meta-line', text: 'accrued (est.)' }),
+        ];
+  // Sold: "Received" against actual proceeds, not the maturity-value
+  // counterfactual - a bond exited early never reaches c.maturityValue.
+  const valueLine = c.effectiveStatus === 'sold'
+    ? el('span', { class: 'value-emphasis' }, [
+        'Received ',
+        c.soldAmount != null
+          ? _mfValueCard(c.soldAmount, c.principal, false, fmtIntCur)
+          : el('span', { class: 'meta-line warn', text: 'amount not entered' }),
+      ])
+    : el('span', { class: 'value-emphasis' }, ['Maturity ', _mfValueCard(c.maturityValue, c.principal, false, fmtIntCur)]);
   return el('div', { class: 'card', onclick: () => openBondForm(b2) }, [
     el('div', { class: 'top' }, [
       el('div', { class: 'card-left' }, [
@@ -3116,10 +3171,11 @@ function _bondCard(b2, c) {
         el('div', {}, ['Invested ', b(fmtIntCur(c.principal))]),
         el('div', { class: 'mf-meta-mini', text: matTxt }),
       ]),
-      el('span', { class: 'value-emphasis' }, ['Maturity ', _mfValueCard(c.maturityValue, c.principal, false, fmtIntCur)]),
+      valueLine,
     ]),
     el('div', { class: 'mf-meta-mini', text: 'Basis: ' + c.basis }),
     c.hasPayouts ? el('div', { class: 'meta-line pos', text: `${fmtIntCur(c.payoutsTotal)} received · ${(b2.payouts || []).length} payout${(b2.payouts || []).length === 1 ? '' : 's'}` }) : document.createTextNode(''),
+    c.effectiveStatus === 'sold' && c.payoutsAfterExit ? el('div', { class: 'meta-line warn', text: `${fmtIntCur(c.payoutsAfterExit)} of that is dated on/after the sale - counted as part of proceeds, not extra interest` }) : document.createTextNode(''),
     c.vsBank != null ? el('div', { class: 'meta-line ' + (c.vsBank >= 0 ? 'pos' : 'neg'), text: `${c.vsBank >= 0 ? '+' : ''}${fmtIntCur(c.vsBank)} vs bank` }) : document.createTextNode(''),
   ]);
 }
@@ -3208,26 +3264,56 @@ async function openBondForm(existing) {
   const payout = el('select', {}, [['cumulative', 'Cumulative (reinvest)'], ['payout', 'Payout (coupon out)']].map(([v, l]) => { const o = el('option', { value: v, text: l }); if (v === b2.payout) o.selected = true; return o; }));
   const maturityAmount = numInput(b2.maturityAmount, '₹ maturity amount (optional — overrides the projection)');
 
+  // Sold / redeemed early — bonds have no stored status field (status stays
+  // fully date-derived, see bonds.js), so a checkbox is the minimal honest
+  // control here rather than adding a parallel status enum like `funds` has
+  // (which ends up checked in three different places as
+  // `f.status === 'Sold' || f.soldDate`). This is also the right way to close
+  // out a bond that redeemed exactly at maturity, not just an early exit.
+  const isSoldChk = el('input', { type: 'checkbox' });
+  isSoldChk.checked = !!b2.soldDate;
+  const soldSwitch = el('label', { class: 'switch' }, [
+    isSoldChk,
+    el('span', { class: 'switch-track' }, [el('span', { class: 'switch-thumb' })]),
+  ]);
+  const soldDate = el('input', { type: 'date', value: b2.soldDate || todayISO() });
+  // Deliberately explicit: entering the GAIN instead of the total proceeds
+  // under-counts realised interest by exactly the principal.
+  const soldAmount = numInput(b2.soldAmount, '₹ received (total, including principal)');
+  const soldBlock = el('div', { class: 'sold-only' + (isSoldChk.checked ? '' : ' hidden') }, [
+    el('div', { class: 'field-row' }, [field('Amount received (₹) — total, including principal', soldAmount), field('Sold on', soldDate)]),
+  ]);
+  isSoldChk.addEventListener('change', () => { soldBlock.classList.toggle('hidden', !isSoldChk.checked); refresh(); });
+
   // Payouts tab - built before buildRec/refresh so buildRec can call
   // payoutEditor.collect(); its onChange fires deferred (see buildPayoutEditor),
   // so referencing `refresh` before it's declared below is safe.
   const payoutEditor = buildPayoutEditor(b2.payouts, mod.addMonths, () => refresh());
 
-  const buildRec = () => ({
-    owner: 'me',
-    name: name.value.trim(),
-    rating: rating.value.trim(),
-    investAmount: num(investAmount.value) || 0,
-    rate: num(rate.value) || 0,
-    bankRate: bankRate.value !== '' ? num(bankRate.value) : null,
-    startDate: startDate.value || null,
-    maturityDate: maturityDate.value || null,
-    payout: payout.value,
-    maturityAmount: maturityAmount.value !== '' ? num(maturityAmount.value) : null,
-    payouts: payoutEditor.collect(),
-    createdAt: b2.createdAt || new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  });
+  const buildRec = () => {
+    // Gate on the checkbox, not "soldDate.value is non-empty" — soldDate always
+    // has a value (it defaults to today) so unchecking must be what clears both
+    // fields, or unticking "sold" would leave orphaned soldAmount/soldDate data
+    // behind in the record.
+    const isSoldNow = isSoldChk.checked;
+    return {
+      owner: 'me',
+      name: name.value.trim(),
+      rating: rating.value.trim(),
+      investAmount: num(investAmount.value) || 0,
+      rate: num(rate.value) || 0,
+      bankRate: bankRate.value !== '' ? num(bankRate.value) : null,
+      startDate: startDate.value || null,
+      maturityDate: maturityDate.value || null,
+      payout: payout.value,
+      maturityAmount: maturityAmount.value !== '' ? num(maturityAmount.value) : null,
+      payouts: payoutEditor.collect(),
+      soldDate: isSoldNow ? (soldDate.value || todayISO()) : null,
+      soldAmount: isSoldNow ? num(soldAmount.value) : null,
+      createdAt: b2.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  };
 
   const readout = el('div', { class: 'mf-bench-readout' });
   const refresh = () => {
@@ -3236,9 +3322,22 @@ async function openBondForm(existing) {
     const c = mod.computeBond(rec, Date.now());
     readout.appendChild(el('div', { class: 'mf-bench-now' }, [
       el('span', {}, ['Tenure ', b(c.tenureYears ? c.tenureYears.toFixed(2) + ' yr' : '—')]),
-      el('span', {}, ['Maturity ', b(c.maturity ? fmtCur(c.maturityValue, 'INR') : '—')]),
-      el('span', {}, ['Interest ', b(c.maturity ? fmtIntCur(c.totalInterest) : '—')]),
+      el('span', {}, [c.isSold ? 'Received ' : 'Maturity ', b(c.isSold ? (c.soldAmount != null ? fmtCur(c.soldAmount, 'INR') : '—') : (c.maturity ? fmtCur(c.maturityValue, 'INR') : '—'))]),
+      el('span', {}, [c.isSold ? 'Realised ' : 'Interest ', b(c.isSold ? fmtIntCur(c.interestEarned) : (c.maturity ? fmtIntCur(c.totalInterest) : '—'))]),
     ]));
+    // The realised figure is DERIVED, never typed, so the arithmetic behind it
+    // must be visible before saving - a wrong "amount received" entry (e.g. the
+    // gain instead of the total proceeds) is otherwise invisible until later.
+    if (c.isSold && c.soldAmount != null) {
+      readout.appendChild(el('p', { class: 'hint', style: 'margin-top:6px', text:
+        `₹${Math.round(c.soldAmount).toLocaleString('en-IN')} received − ₹${Math.round(c.principal).toLocaleString('en-IN')} invested` +
+        (c.payoutsBeforeExit ? ` + ₹${Math.round(c.payoutsBeforeExit).toLocaleString('en-IN')} coupons already received` : '') +
+        ` = ₹${Math.round(c.interestEarned).toLocaleString('en-IN')} realised` }));
+    }
+    if (c.isSold && c.payoutsAfterExit) {
+      readout.appendChild(el('p', { class: 'hint warn', style: 'margin-top:4px', text:
+        `Heads up: ₹${Math.round(c.payoutsAfterExit).toLocaleString('en-IN')} of the logged payouts is dated on/after the sale — it's being treated as part of "Amount received", not extra interest. Remove that payout row if it's the same money.` }));
+    }
     const basisTxt = 'Basis: ' + c.basis + (c.hasPayouts
       ? ` · ${rec.payouts.length} payout${rec.payouts.length === 1 ? '' : 's'} logged, ${fmtIntCur(c.payoutsTotal)} received to date`
       : ' · no payouts logged yet, showing the projection');
@@ -3249,7 +3348,7 @@ async function openBondForm(existing) {
     if (m != null && startDate.value) maturityDate.value = mod.addMonths(startDate.value, m);
     refresh();
   });
-  [investAmount, rate, bankRate, payout, startDate, maturityDate, maturityAmount].forEach((inp) => inp.addEventListener('input', refresh));
+  [investAmount, rate, bankRate, payout, startDate, maturityDate, maturityAmount, soldDate, soldAmount].forEach((inp) => inp.addEventListener('input', refresh));
   refresh();
 
   const del = async () => {
@@ -3259,6 +3358,7 @@ async function openBondForm(existing) {
   const save = async () => {
     if (!name.value.trim()) { toast('Enter the bond name'); return; }
     if (!(num(investAmount.value) > 0)) { toast('Enter the invested amount'); return; }
+    if (isSoldChk.checked && num(soldAmount.value) == null) { toast('Enter the amount received on sale'); return; }
     const rec = buildRec();
     if (isEdit) rec.id = b2.id;
     await DB.put('bonds', rec); closeModal(); toast(isEdit ? 'Bond updated' : 'Bond added'); renderBond();
@@ -3272,6 +3372,8 @@ async function openBondForm(existing) {
     el('div', { class: 'field-row' }, [field('Start date', startDate), field('Maturity date', maturityDate)]),
     field('Tenure (months) → fills maturity date', tenure),
     el('div', { class: 'field-row' }, [field('Type', payout), field('Maturity amount (optional override)', maturityAmount)]),
+    field('Sold / redeemed early — also use this to close out a bond redeemed at maturity', soldSwitch),
+    soldBlock,
     readout,
   ]);
 

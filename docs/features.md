@@ -131,12 +131,13 @@ See [feed.md](feed.md) for the full design. Summary:
 See [bonds.md](bonds.md) for the full design. Summary:
 
 - **🧾 Bonds** card on Home, after Dividends.
-- Tracks retail bonds (name, rating, coupon rate, start/maturity dates, optional bank-rate comparison, optional maturity-amount override).
-- Bonds | Overview tabs (bottom nav). Filter Active/Matured/All, sort by Maturity/Amount/Rate.
+- Tracks retail bonds (name, rating, coupon rate, start/maturity dates, optional bank-rate comparison, optional maturity-amount override, optional sold/redeemed-early exit).
+- Bonds | Overview tabs (bottom nav). Filter Active/Matured+Sold/All, sort by Maturity/Amount/Rate.
 - **Payouts tab** (per bond, in the edit form) — log each interest/coupon payment actually received, dated. Once any payout is logged, it becomes the real "interest earned" figure, overriding the coupon-rate projection.
-- Each card shows a **"Basis: …"** line explaining exactly how the projected interest was calculated (coupon rate, or an entered maturity amount).
+- **Sold / redeemed early** toggle (Details tab) — records the sale date and total amount received; realised interest is derived (`payoutsBeforeExit + soldGain`), never typed. A sold bond appears in the Matured/Sold bucket alongside bonds that aged to maturity.
+- Each card shows a **"Basis: …"** line explaining exactly how the interest figure was calculated (coupon rate, an entered maturity amount, or the realised sale arithmetic).
 - Seeded once from the user's X-MyNotes BOND sheet (3 real bonds), editable afterward — no payouts pre-seeded, logged by the user.
-- Home's Total Invested/Earned includes only matured bonds — active bonds are locked capital, tracked in the Bonds surface's own Overview (same rationale as Fixed Deposits).
+- Home's Total Invested/Earned uses a basis **different from Fixed Deposits, on purpose**: invested = active bond principal (still-live capital); earned = realised interest from closed (matured + sold) bonds only, never an active bond's accrued-but-unpaid interest. The row's Return % is suppressed since the two figures describe different bonds.
 
 ## App lock
 

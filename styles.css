@@ -186,6 +186,7 @@ main { padding: 14px; }
 .cat-badge { display: inline-block; margin-left: 6px; background: #e0f2fe; border: 1px solid #bae6fd; color: #0c4a6e; border-radius: 999px; padding: 1px 8px; font-size: 0.56rem; vertical-align: middle; }
 .meta-line { color: var(--muted); font-size: 0.74rem; margin-top: 3px; }
 .meta-line b { color: var(--text); font-weight: 600; }
+.meta-line.warn { color: var(--warn); font-weight: 600; }
 /* Per-portfolio "prices updated" line under each Portfolios-card stat */
 .stat-upd { font-size: 0.58rem; color: var(--muted); margin-top: 2px; }
 .stat-upd.warn { color: var(--warn); font-weight: 600; }
@@ -517,6 +518,7 @@ table.heatmap { border-collapse: collapse; font-size: 0.72rem; }
 .menu-list button:active { background: var(--card); }
 .menu-list .desc { color: var(--muted); font-size: 0.76rem; }
 .hint { color: var(--muted); font-size: 0.78rem; line-height: 1.4; }
+.hint.warn { color: var(--warn); font-weight: 600; }
 
 /* !important: some buttons (e.g. .fab.fab-secondary) set display:flex with higher
    specificity (2 classes) and would otherwise win over plain `.hidden` and keep
