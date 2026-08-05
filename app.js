@@ -4518,6 +4518,28 @@ function shortMonth(label) {
   const p = (label || '').split(' ');
   return p.length === 2 ? p[0].slice(0, 3) + " '" + p[1].slice(2) : label;
 }
+
+// Heatmap-only bookmark toggle: comparing month-by-month returns here is the
+// whole point of the tab, so this is where "flag this one for investing"
+// naturally happens. Persists on the stock record itself (`bookmarked`),
+// writes immediately on tap - no Save step, same as starring an email.
+function _heatmapBookmarkBtn(s) {
+  const setState = (btn) => {
+    btn.classList.toggle('active', !!s.bookmarked);
+    const label = s.bookmarked ? 'Bookmarked for investing - tap to remove' : 'Bookmark for investing';
+    btn.title = label;
+    btn.setAttribute('aria-label', label);
+  };
+  const btn = el('button', { type: 'button', class: 'hm-bookmark', text: '🔖' });
+  setState(btn);
+  btn.addEventListener('click', async () => {
+    s.bookmarked = !s.bookmarked;
+    setState(btn);
+    try { await DB.put('stocks', s); } catch (_) {}
+  });
+  return btn;
+}
+
 function renderHeatmap() {
   const host = $('#heatmapView');
   host.innerHTML = '';
@@ -4544,7 +4566,10 @@ function renderHeatmap() {
     let maxYm = null, minYm = null, maxV = -Infinity, minV = Infinity;
     Object.keys(byYm).forEach((ym) => { const v = byYm[ym]; if (typeof v === 'number') { if (v > maxV) { maxV = v; maxYm = ym; } if (v < minV) { minV = v; minYm = ym; } } });
     const tr = el('tr', {}, [el('th', { class: 'rowhead' }, [
-      el('div', { class: 'hm-name', text: s.name || '(unnamed)' }),
+      el('div', { class: 'hm-name-row' }, [
+        _heatmapBookmarkBtn(s),
+        el('div', { class: 'hm-name', text: s.name || '(unnamed)' }),
+      ]),
       s.category ? el('div', { class: 'hm-cat', text: s.category }) : document.createTextNode(''),
     ])]);
     months.forEach((m) => {
