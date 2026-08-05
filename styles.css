@@ -495,12 +495,14 @@ table.heatmap { border-collapse: collapse; font-size: 0.72rem; }
 .heatmap .hm-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .heatmap .hm-cat { display: inline-block; margin-top: 3px; padding: 1px 6px; border-radius: 999px; background: var(--card-2); border: 1px solid var(--line); color: var(--muted); font-size: 0.5rem; }
 .hm-name-row { display: flex; align-items: center; gap: 4px; min-width: 0; }
-/* Bookmark-for-investing toggle - dim/outline until tapped, gold once bookmarked. */
+/* Bookmark-for-investing toggle - outline star until tapped, filled gold once
+   bookmarked. Inline SVG (not emoji) so fill/stroke can be styled precisely. */
 .hm-bookmark {
-  flex: 0 0 auto; background: none; border: none; padding: 0; margin: 0;
-  font-size: 0.85rem; line-height: 1; cursor: pointer; opacity: 0.35; filter: grayscale(1);
+  flex: 0 0 auto; background: none; border: none; padding: 0; margin: 0; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
 }
-.hm-bookmark.active { opacity: 1; filter: none; }
+.hm-bookmark svg { width: 15px; height: 15px; fill: none; stroke: var(--muted); }
+.hm-bookmark.active svg { fill: var(--warn); stroke: var(--warn); }
 .hm-bookmark:active { transform: scale(0.9); }
 .legend-wrap { margin-top: 14px; }
 .legend-wrap h3 { margin: 0 0 8px; font-size: 0.9rem; }

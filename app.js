@@ -4519,6 +4519,9 @@ function shortMonth(label) {
   return p.length === 2 ? p[0].slice(0, 3) + " '" + p[1].slice(2) : label;
 }
 
+const HM_STAR_SVG = '<svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+  + '<path d="M12 17.3l-5.5 3 1-6.1-4.5-4.3 6.2-.9L12 3l2.8 5.6 6.2.9-4.5 4.3 1 6.1z"/></svg>';
+
 // Heatmap-only bookmark toggle: comparing month-by-month returns here is the
 // whole point of the tab, so this is where "flag this one for investing"
 // naturally happens. Persists on the stock record itself (`bookmarked`),
@@ -4530,7 +4533,8 @@ function _heatmapBookmarkBtn(s) {
     btn.title = label;
     btn.setAttribute('aria-label', label);
   };
-  const btn = el('button', { type: 'button', class: 'hm-bookmark', text: '🔖' });
+  const btn = el('button', { type: 'button', class: 'hm-bookmark' });
+  btn.innerHTML = HM_STAR_SVG;
   setState(btn);
   btn.addEventListener('click', async () => {
     s.bookmarked = !s.bookmarked;
