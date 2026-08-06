@@ -105,7 +105,22 @@ export function calc(s) {
     const sp = Number(s.soldPrice) || 0;
     const known = cur > 0 && sp > 0;
     const movedPct = sp ? ((cur - sp) / sp) * 100 : 0;
-    return { sold: true, soldValue: su * sp, movedPct, known, goodSell: known ? cur < sp : null };
+    // Realised needs a buy price, which legacy CSV-imported sells never have
+    // (csv.js writes units/buyPrice as null for sold rows). The hold-on gap needs
+    // only the two prices + qty, so it survives when realised can't be computed -
+    // that's why `hasBasis` and `comparable` are gated separately. A 0/missing
+    // leg means "not entered", same convention as `priced: cur > 0` below.
+    const sized = su > 0 && sp > 0;
+    const comparable = sized && cur > 0;
+    const hasBasis = sized && buy > 0;
+    return {
+      sold: true, soldQty: su, movedPct, known, sized, comparable, hasBasis,
+      goodSell: known ? cur < sp : null,
+      proceeds: sized ? su * sp : null,
+      realised: hasBasis ? su * (sp - buy) : null,
+      valueIfHeld: comparable ? su * cur : null,
+      gap: comparable ? su * (cur - sp) : null,
+    };
   }
   const invested = units * buy;
   const value = units * cur;

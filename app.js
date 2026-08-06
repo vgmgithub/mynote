@@ -84,6 +84,10 @@ function el(tag, props, children) {
   return n;
 }
 const b = (s) => el('b', { text: s });
+// Label + value chip used on stock cards' right column (e.g. "Overall return" /
+// "Booked" / "If held"). Hoisted here since both the holding and sold branches
+// of stockCard() need it.
+const kv = (label, valNode) => el('div', { class: 'kv' }, [el('span', { class: 'kv-label', text: label }), valNode]);
 const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 const benchmarkName = (p) => (p === 'me-us' ? 'Nasdaq' : 'Nifty 50');
 // All months from start..end inclusive as 'YYYY-MM' (used to insert gaps in charts).
@@ -493,10 +497,38 @@ function stockCard(s) {
     const cls = c.goodSell == null ? 'muted' : c.goodSell ? 'good' : 'bad';
     const text = c.goodSell == null ? 'Sold' : c.goodSell ? 'Good exit' : 'Sold early';
     right.appendChild(el('span', { class: 'badge ' + cls, text }));
-    const su = Number(s.soldUnits != null && s.soldUnits !== '' ? s.soldUnits : s.units) || 0;
-    left.appendChild(el('div', { class: 'meta-line' }, ['Sold ', b(String(su)), ' @ ', b(fmtCur(s.soldPrice, cur))]));
+
+    // Four independent cases, not nested ternaries - a partially-filled sold
+    // stock used to render "Sold 0 @ ₹0", which reads like real data.
+    const hasSp = Number(s.soldPrice) > 0;
+    if (hasSp && c.soldQty) left.appendChild(el('div', { class: 'meta-line' }, ['Sold ', b(String(c.soldQty)), ' @ ', b(fmtCur(s.soldPrice, cur))]));
+    else if (hasSp) left.appendChild(el('div', { class: 'meta-line' }, ['Sold @ ', b(fmtCur(s.soldPrice, cur))]));
+    else if (c.soldQty) left.appendChild(el('div', { class: 'meta-line' }, ['Sold ', b(String(c.soldQty)), ' units']));
+
     if (c.known) left.appendChild(el('div', { class: 'meta-line ' + (c.goodSell ? 'pos' : 'neg') }, ['Now ', b(fmtCur(s.currentPrice, cur)), ' (' + fmtPct(c.movedPct) + ')']));
-    else left.appendChild(el('div', { class: 'meta-line flat', text: 'Set current price to judge' }));
+    else left.appendChild(el('div', { class: 'meta-line flat', text: hasSp ? 'Set current price to judge' : 'Add sold price to compare' }));
+
+    // Signed, coloured by exit verdict (not by the number's own sign) - same
+    // inversion the "Now" line above already uses: a price rise after a GOOD
+    // exit is money missed, so it prints red even though the number is "+".
+    if (c.gap != null && Math.round(c.gap) !== 0) {
+      const g = Math.round(c.gap);
+      left.appendChild(el('div', {
+        class: 'meta-line ' + (c.goodSell ? 'pos' : 'neg'),
+        text: (g >= 0 ? '+' : '') + fmtCur(g, cur) + ' vs. exit',
+      }));
+    }
+
+    // Two rows mirroring a holding card (return, then value). With no buy price
+    // (every CSV-imported sell), realised is unknowable, so proceeds fill that
+    // slot instead: "Sold for X / If held Y" still answers "should I have held?".
+    if (c.hasBasis) {
+      const r = Math.round(c.realised);
+      right.appendChild(kv('Booked', el('span', { class: 'kv-val ' + (r > 0 ? 'pos' : r < 0 ? 'neg' : ''), text: (r > 0 ? '+' : '') + fmtCur(r, cur) })));
+    } else if (c.proceeds != null) {
+      right.appendChild(kv('Sold for', el('span', { class: 'kv-val', text: fmtCur(c.proceeds, cur) })));
+    }
+    if (c.valueIfHeld != null) right.appendChild(kv('If held', el('span', { class: 'kv-val', text: fmtCur(c.valueIfHeld, cur) })));
   } else {
     const dpct = displayPct(s, c);
     right.appendChild(el('div', { class: 'pct ' + (dpct != null ? pctClass(dpct) : 'flat'), text: dpct != null ? fmtPct(dpct) : '-' }));
@@ -505,7 +537,6 @@ function stockCard(s) {
       // Per-stock "price updated" indicator was removed - the last-updated time is
       // now shown once per portfolio on the Overview tab's Portfolios card.
       left.appendChild(el('div', { class: 'meta-line' }, ['Current price ', b(fmtCur(s.currentPrice, cur))]));
-      const kv = (label, valNode) => el('div', { class: 'kv' }, [el('span', { class: 'kv-label', text: label }), valNode]);
       right.appendChild(kv('Overall return', el('span', { class: 'kv-val ' + (c.pl >= 0 ? 'pos' : 'neg'), text: (c.pl >= 0 ? '+' : '') + fmtCur(c.pl, cur) })));
       right.appendChild(kv('Current value', el('span', { class: 'kv-val', text: fmtCur(c.value, cur) })));
     } else {
