@@ -119,6 +119,9 @@ export function calc(s) {
       proceeds: sized ? su * sp : null,
       realised: hasBasis ? su * (sp - buy) : null,
       valueIfHeld: comparable ? su * cur : null,
+      // P/L if still holding, vs. the same buy price `realised` uses - so the two
+      // read side by side with no unit mismatch. Needs both legs, hence the double gate.
+      ifHeldPl: (hasBasis && comparable) ? su * (cur - buy) : null,
       gap: comparable ? su * (cur - sp) : null,
     };
   }

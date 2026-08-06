@@ -508,27 +508,28 @@ function stockCard(s) {
     if (c.known) left.appendChild(el('div', { class: 'meta-line ' + (c.goodSell ? 'pos' : 'neg') }, ['Now ', b(fmtCur(s.currentPrice, cur)), ' (' + fmtPct(c.movedPct) + ')']));
     else left.appendChild(el('div', { class: 'meta-line flat', text: hasSp ? 'Set current price to judge' : 'Add sold price to compare' }));
 
-    // Signed, coloured by exit verdict (not by the number's own sign) - same
-    // inversion the "Now" line above already uses: a price rise after a GOOD
-    // exit is money missed, so it prints red even though the number is "+".
-    if (c.gap != null && Math.round(c.gap) !== 0) {
-      const g = Math.round(c.gap);
-      left.appendChild(el('div', {
-        class: 'meta-line ' + (c.goodSell ? 'pos' : 'neg'),
-        text: (g >= 0 ? '+' : '') + fmtCur(g, cur) + ' vs. exit',
-      }));
-    }
-
-    // Two rows mirroring a holding card (return, then value). With no buy price
-    // (every CSV-imported sell), realised is unknowable, so proceeds fill that
-    // slot instead: "Sold for X / If held Y" still answers "should I have held?".
+    // Booked and If held are both P/L vs. the same buy price, so subtracting one
+    // from the other gives the exact difference at a glance. With no buy price
+    // (every CSV-imported sell), neither P/L exists - proceeds and raw value fill
+    // those slots instead: "Sold for X / If held Y" (no comparison claimed).
     if (c.hasBasis) {
       const r = Math.round(c.realised);
       right.appendChild(kv('Booked', el('span', { class: 'kv-val ' + (r > 0 ? 'pos' : r < 0 ? 'neg' : ''), text: (r > 0 ? '+' : '') + fmtCur(r, cur) })));
+      if (c.ifHeldPl != null) {
+        const p = Math.round(c.ifHeldPl);
+        right.appendChild(kv('If held', el('span', { class: 'kv-val ' + (p > 0 ? 'pos' : p < 0 ? 'neg' : ''), text: (p > 0 ? '+' : '') + fmtCur(p, cur) })));
+      }
     } else if (c.proceeds != null) {
       right.appendChild(kv('Sold for', el('span', { class: 'kv-val', text: fmtCur(c.proceeds, cur) })));
+      if (c.valueIfHeld != null) right.appendChild(kv('If held', el('span', { class: 'kv-val', text: fmtCur(c.valueIfHeld, cur) })));
     }
-    if (c.valueIfHeld != null) right.appendChild(kv('If held', el('span', { class: 'kv-val', text: fmtCur(c.valueIfHeld, cur) })));
+    // Signed, coloured by exit verdict (not by the number's own sign) - a price
+    // rise after a GOOD exit is money missed, so it prints red even though the
+    // number is "+". Sits right under "If held" so the two read together.
+    if (c.gap != null && Math.round(c.gap) !== 0) {
+      const g = Math.round(c.gap);
+      right.appendChild(kv('vs. exit', el('span', { class: 'kv-val ' + (c.goodSell ? 'pos' : 'neg'), text: (g >= 0 ? '+' : '') + fmtCur(g, cur) })));
+    }
   } else {
     const dpct = displayPct(s, c);
     right.appendChild(el('div', { class: 'pct ' + (dpct != null ? pctClass(dpct) : 'flat'), text: dpct != null ? fmtPct(dpct) : '-' }));
