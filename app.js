@@ -520,12 +520,13 @@ function stockCard(s) {
         const p = Math.round(c.ifHeldPl);
         right.appendChild(kv('If held', el('span', { class: 'kv-val ' + (p > 0 ? 'pos' : p < 0 ? 'neg' : ''), text: (p > 0 ? '+' : '') + fmtCur(p, cur) })));
       }
-      // Coloured by whether the sale itself was profitable (same signal as
-      // Booked) - a booked loss stays red even if it avoided a bigger one; a
-      // booked profit stays green even if more was left on the table.
+      // Inverted on purpose: a positive gap means the price rose after selling -
+      // money missed, so it's red - a negative gap means it fell, so selling was
+      // the right call, shown green. Opposite of every other figure on this card.
       if (c.gap != null && Math.round(c.gap) !== 0) {
         const g = Math.round(c.gap);
-        right.appendChild(kv('vs. exit', el('span', { class: 'kv-val ' + bookedCls, text: (g >= 0 ? '+' : '') + fmtCur(g, cur) })));
+        const gapCls = g > 0 ? 'neg' : 'pos';
+        right.appendChild(kv('vs. exit', el('span', { class: 'kv-val ' + gapCls, text: (g >= 0 ? '+' : '') + fmtCur(g, cur) })));
       }
     }
   } else {
