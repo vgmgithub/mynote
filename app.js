@@ -508,14 +508,19 @@ function stockCard(s) {
     if (c.known) left.appendChild(el('div', { class: 'meta-line ' + (c.goodSell ? 'pos' : 'neg') }, ['Now ', b(fmtCur(s.currentPrice, cur)), ' (' + fmtPct(c.movedPct) + ')']));
     else left.appendChild(el('div', { class: 'meta-line flat', text: hasSp ? 'Set current price to judge' : 'Add sold price to compare' }));
 
-    // If held (qty x current price) and Booked (qty x sold price) are both raw
-    // values - neither needs a buy price, so both work even for a CSV-imported
-    // sell with no recorded buy price.
-    if (c.valueIfHeld != null) right.appendChild(kv('If held', el('span', { class: 'kv-val', text: fmtCur(c.valueIfHeld, cur) })));
-    if (c.proceeds != null) right.appendChild(kv('Booked', el('span', { class: 'kv-val', text: fmtCur(c.proceeds, cur) })));
-    // If held minus Booked: positive means If held is ahead (you'd have been
-    // better off holding), shown green; negative means Booked is ahead (you did
-    // the right thing selling), shown red.
+    // Booked and If held are both P/L against the avg buy price - without one
+    // (every CSV-imported sell, or a stock with no units recorded), neither is
+    // knowable, so none of the three render.
+    if (c.realised != null) {
+      const r = Math.round(c.realised);
+      right.appendChild(kv('Booked', el('span', { class: 'kv-val ' + (r > 0 ? 'pos' : r < 0 ? 'neg' : ''), text: (r > 0 ? '+' : '') + fmtCur(r, cur) })));
+    }
+    if (c.ifHeldPl != null) {
+      const p = Math.round(c.ifHeldPl);
+      right.appendChild(kv('If held', el('span', { class: 'kv-val ' + (p > 0 ? 'pos' : p < 0 ? 'neg' : ''), text: (p > 0 ? '+' : '') + fmtCur(p, cur) })));
+    }
+    // Booked minus If held, matching the card's top-to-bottom order. Positive
+    // shown green, negative shown red.
     if (c.gap != null && Math.round(c.gap) !== 0) {
       const g = Math.round(c.gap);
       right.appendChild(kv('vs. exit', el('span', { class: 'kv-val ' + (g > 0 ? 'pos' : 'neg'), text: (g >= 0 ? '+' : '') + fmtCur(g, cur) })));

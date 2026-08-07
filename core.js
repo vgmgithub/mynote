@@ -105,18 +105,22 @@ export function calc(s) {
     const sp = Number(s.soldPrice) || 0;
     const known = cur > 0 && sp > 0;
     const movedPct = sp ? ((cur - sp) / sp) * 100 : 0;
-    // Neither figure needs a buy price - proceeds is qty x sold price, value-if-held
-    // is qty x current price - so both work even for a legacy CSV-imported sell with
-    // no recorded buy price. Each is gated only on what its own formula needs. A
-    // 0/missing leg means "not entered", same convention as `priced: cur > 0`.
-    const hasProceeds = su > 0 && sp > 0;
-    const hasHeldValue = su > 0 && cur > 0;
+    // Booked and If held are both P/L against the avg buy price - without one
+    // (every CSV-imported sell, or a stock with no units recorded), neither is
+    // knowable, so both stay null and vs. exit (their difference) follows suit.
+    // A 0/missing leg means "not entered", same convention as `priced: cur > 0`.
+    const hasBasis = su > 0 && buy > 0;
+    const hasProceeds = hasBasis && sp > 0;
+    const hasHeldValue = hasBasis && cur > 0;
     return {
       sold: true, soldQty: su, movedPct, known,
       goodSell: known ? cur < sp : null,
-      proceeds: hasProceeds ? su * sp : null,
-      valueIfHeld: hasHeldValue ? su * cur : null,
-      gap: (hasProceeds && hasHeldValue) ? (su * cur) - (su * sp) : null,
+      realised: hasProceeds ? su * (sp - buy) : null,
+      ifHeldPl: hasHeldValue ? su * (cur - buy) : null,
+      // Booked minus If held, matching the card's top-to-bottom order. The buy
+      // price cancels out algebraically (su*(sp-buy) - su*(cur-buy) = su*sp - su*cur),
+      // so this is the same gap as a raw-value comparison would give.
+      gap: (hasProceeds && hasHeldValue) ? (su * (sp - buy)) - (su * (cur - buy)) : null,
     };
   }
   const invested = units * buy;
