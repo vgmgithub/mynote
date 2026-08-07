@@ -105,22 +105,18 @@ export function calc(s) {
     const sp = Number(s.soldPrice) || 0;
     const known = cur > 0 && sp > 0;
     const movedPct = sp ? ((cur - sp) / sp) * 100 : 0;
-    // Realised and ifHeldPl both need a buy price, which legacy CSV-imported
-    // sells never have (csv.js writes units/buyPrice as null for sold rows) -
-    // without one, neither P/L is knowable, so both stay null rather than
-    // falling back to a gross-proceeds figure that isn't actually a P/L. A
+    // Neither figure needs a buy price - proceeds is qty x sold price, value-if-held
+    // is qty x current price - so both work even for a legacy CSV-imported sell with
+    // no recorded buy price. Each is gated only on what its own formula needs. A
     // 0/missing leg means "not entered", same convention as `priced: cur > 0`.
-    const sized = su > 0 && sp > 0;
-    const comparable = sized && cur > 0;
-    const hasBasis = sized && buy > 0;
+    const hasProceeds = su > 0 && sp > 0;
+    const hasHeldValue = su > 0 && cur > 0;
     return {
-      sold: true, soldQty: su, movedPct, known, sized, comparable, hasBasis,
+      sold: true, soldQty: su, movedPct, known,
       goodSell: known ? cur < sp : null,
-      realised: hasBasis ? su * (sp - buy) : null,
-      // P/L if still holding, vs. the same buy price `realised` uses - so the two
-      // read side by side with no unit mismatch. Needs both legs, hence the double gate.
-      ifHeldPl: (hasBasis && comparable) ? su * (cur - buy) : null,
-      gap: (hasBasis && comparable) ? su * (cur - sp) : null,
+      proceeds: hasProceeds ? su * sp : null,
+      valueIfHeld: hasHeldValue ? su * cur : null,
+      gap: (hasProceeds && hasHeldValue) ? (su * cur) - (su * sp) : null,
     };
   }
   const invested = units * buy;

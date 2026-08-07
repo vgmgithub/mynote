@@ -508,25 +508,17 @@ function stockCard(s) {
     if (c.known) left.appendChild(el('div', { class: 'meta-line ' + (c.goodSell ? 'pos' : 'neg') }, ['Now ', b(fmtCur(s.currentPrice, cur)), ' (' + fmtPct(c.movedPct) + ')']));
     else left.appendChild(el('div', { class: 'meta-line flat', text: hasSp ? 'Set current price to judge' : 'Add sold price to compare' }));
 
-    // Booked, If held and vs. exit all need a buy price - without one (every
-    // CSV-imported sell), there's no cost basis to measure any of them against,
-    // so none render rather than showing a gross-proceeds figure that would
-    // read like a P/L it isn't.
-    if (c.hasBasis) {
-      const r = Math.round(c.realised);
-      const bookedCls = r > 0 ? 'pos' : r < 0 ? 'neg' : '';
-      right.appendChild(kv('Booked', el('span', { class: 'kv-val ' + bookedCls, text: (r > 0 ? '+' : '') + fmtCur(r, cur) })));
-      if (c.ifHeldPl != null) {
-        const p = Math.round(c.ifHeldPl);
-        right.appendChild(kv('If held', el('span', { class: 'kv-val ' + (p > 0 ? 'pos' : p < 0 ? 'neg' : ''), text: (p > 0 ? '+' : '') + fmtCur(p, cur) })));
-      }
-      // If held minus Booked: positive means If held is ahead (you'd have been
-      // better off holding), shown green; negative means Booked is ahead (you did
-      // the right thing selling), shown red.
-      if (c.gap != null && Math.round(c.gap) !== 0) {
-        const g = Math.round(c.gap);
-        right.appendChild(kv('vs. exit', el('span', { class: 'kv-val ' + (g > 0 ? 'pos' : 'neg'), text: (g >= 0 ? '+' : '') + fmtCur(g, cur) })));
-      }
+    // If held (qty x current price) and Booked (qty x sold price) are both raw
+    // values - neither needs a buy price, so both work even for a CSV-imported
+    // sell with no recorded buy price.
+    if (c.valueIfHeld != null) right.appendChild(kv('If held', el('span', { class: 'kv-val', text: fmtCur(c.valueIfHeld, cur) })));
+    if (c.proceeds != null) right.appendChild(kv('Booked', el('span', { class: 'kv-val', text: fmtCur(c.proceeds, cur) })));
+    // If held minus Booked: positive means If held is ahead (you'd have been
+    // better off holding), shown green; negative means Booked is ahead (you did
+    // the right thing selling), shown red.
+    if (c.gap != null && Math.round(c.gap) !== 0) {
+      const g = Math.round(c.gap);
+      right.appendChild(kv('vs. exit', el('span', { class: 'kv-val ' + (g > 0 ? 'pos' : 'neg'), text: (g >= 0 ? '+' : '') + fmtCur(g, cur) })));
     }
   } else {
     const dpct = displayPct(s, c);
