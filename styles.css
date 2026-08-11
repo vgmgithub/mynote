@@ -1117,6 +1117,25 @@ img.metal-bar-ico { width: 30px; height: 30px; object-fit: contain; display: blo
 .mf-txn-btn-row { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; padding-right: 2px; }
 .mf-txn-btn-row .icon-btn { font-size: 1.5rem; padding: 8px 10px; }
 
+/* Bond Schedule tab: read-only projected cash-flow rows (date / interest /
+   principal / balance left). Scrolls internally — a monthly 5-year bond is 60
+   rows and must not push the sheet footer away. */
+.bond-sched { max-height: 46vh; overflow-y: auto; -webkit-overflow-scrolling: touch; margin-top: 8px; }
+.bond-sched-row {
+  display: grid; grid-template-columns: 1.25fr 1fr 1fr 1fr; gap: 6px;
+  padding: 7px 4px; border-bottom: 1px solid var(--line);
+  font-size: 0.76rem; font-variant-numeric: tabular-nums;
+}
+.bond-sched-row span:not(:first-child) { text-align: right; }
+.bond-sched-head {
+  position: sticky; top: 0; background: var(--card);
+  font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.4px;
+  color: var(--muted); font-weight: 700;
+}
+/* Already-passed installments recede so the next one to land reads as the live
+   edge of the schedule. */
+.bond-sched-row.is-past { opacity: 0.5; }
+
 /* Fund Holdings tab: units-held / avg-NAV readout, sits above the Buy/Sell
    sub-tabs and stays live as the log is edited. */
 .mf-units-info {
