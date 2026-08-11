@@ -11,9 +11,10 @@
 //     payout:'cumulative'|'payout',                       // reinvest (compounds annually, value grows in place) vs coupon paid out (deposit value stays flat at principal; the coupon is real cash tracked below) — no compounding-frequency picker like FD's: retail bonds don't offer quarterly/monthly compounding
 //     interestFreq,                                        // optional — when coupons arrive: 'monthly'|'quarterly'|'halfyearly'|'yearly'|'maturity'|'staggered'. Only meaningful for payout bonds; a cumulative bond IS "at maturity" by definition, so the form hides the picker. null/absent = unspecified (every pre-existing bond) → no schedule projected, totals behave exactly as before this field existed
 //     principalFreq,                                       // optional — when principal comes back: same values. Absent/'maturity' = the classic single lump at maturity. Anything else means the bond AMORTIZES, which switches the interest projection onto the declining outstanding balance (see buildSchedule)
+//     principalFirstDate:'YYYY-MM-DD',                     // when principalFreq is periodic (not 'maturity'/'staggered') — the actual first repayment date, asked explicitly rather than assumed to be exactly one period after startDate (a moratorium, or a term sheet that just starts on an odd date, means it often isn't). Subsequent installments run every `principalFreq` months from THIS date, not from startDate. Blank → defaults to startDate + one period, matching the old assumption
 //     schedule: [{ date:'YYYY-MM-DD', principal, interest }], // only for 'staggered' — the term sheet's own uneven installments, typed in by the user. Principal rows drive amortization; interest rows are taken as-given (not recomputed) since a staggered coupon is whatever the issuer says it is
 //     maturityAmount,                                      // optional ₹ — the actual/promised amount you'll receive at maturity (from the bond's term sheet). Overrides the rate-based projection when set; leave blank to project from `rate` instead
-//     payouts: [{ date:'YYYY-MM-DD', amount }],            // dated log of interest/coupon actually received — the real "interest earned" figure once any entry exists, overriding the projection
+//     payouts: [{ date:'YYYY-MM-DD', amount, principal }], // dated log of what was ACTUALLY received — `amount` is interest, `principal` is optional and only meaningful once the bond amortizes. Once any interest amount is logged, it overrides the projected interest; once any principal is logged, it overrides the projected outstanding balance too — real money beats a formula either way
 //     soldDate:'YYYY-MM-DD',                               // set = exited early (or redeemed at/after maturity via this form instead of just letting it age out)
 //     soldAmount,                                          // ₹ TOTAL credited on exit, including principal — never just the gain
 //     createdAt, updatedAt }
@@ -84,6 +85,23 @@ function periodDates(start, maturity, pm) {
   return out;
 }
 
+// Same idea, but anchored to an explicit first-payment date rather than assuming
+// it's exactly one period after `start` — a moratorium (principal-holiday) period,
+// or a term sheet that simply starts on an odd date, means the two often differ.
+// `anchor` itself IS the first installment (k=0), not a reference point one period
+// before it.
+function periodDatesFrom(anchor, maturity, pm) {
+  if (!anchor || !maturity || !(pm > 0) || anchor >= maturity) return [];
+  const out = [];
+  for (let k = 0; k <= 600; k++) {
+    const d = k === 0 ? anchor : addMonths(anchor, k * pm);
+    if (!d || d >= maturity) break;
+    out.push(d);
+  }
+  out.push(maturity);
+  return out;
+}
+
 // Projected cash-flow schedule: one row per date where principal and/or interest
 // changes hands, plus the balance left after it.
 //
@@ -95,7 +113,7 @@ function periodDates(start, maturity, pm) {
 // paying it. The bank comparison rides the same balance so it stays
 // apples-to-apples rather than crediting the bank a full-principal return on money
 // the bond already handed back.
-function buildSchedule(P, rate, bankRate, start, maturity, iFreq, pFreq, custom) {
+function buildSchedule(P, rate, bankRate, start, maturity, iFreq, pFreq, custom, principalAnchor) {
   const events = new Map();
   const bump = (date, key, amt) => {
     if (!date || !(amt > 0)) return;
@@ -111,7 +129,12 @@ function buildSchedule(P, rate, bankRate, start, maturity, iFreq, pFreq, custom)
     rows.forEach((r) => bump(r.date, 'principal', r.principal));
     installments = rows.length;
   } else if (freqMonths(pFreq)) {
-    const ds = periodDates(start, maturity, freqMonths(pFreq));
+    // Anchored to the actual first-repayment date, not assumed to be exactly one
+    // period after `start` (see periodDatesFrom) — falls back to the old
+    // assumption only when no anchor was given.
+    const ds = principalAnchor
+      ? periodDatesFrom(principalAnchor, maturity, freqMonths(pFreq))
+      : periodDates(start, maturity, freqMonths(pFreq));
     if (ds.length) {
       perInstallment = P / ds.length;
       installments = ds.length;
@@ -220,6 +243,13 @@ export function computeBond(bond, nowMs) {
   const interestFreq = bond.interestFreq || null;
   const principalFreq = bond.principalFreq || 'maturity';
   const amortizes = principalFreq !== 'maturity';
+  // The actual first repayment date, asked explicitly rather than assumed — a
+  // moratorium period, or a term sheet that just starts on an odd date, means it
+  // often isn't exactly one period after `start`. Blank falls back to that old
+  // assumption, so a bond saved before this field existed (or left blank) keeps
+  // behaving exactly as it did.
+  const principalFirstDate = (amortizes && principalFreq !== 'staggered' && bond.principalFirstDate) || null;
+  const principalAnchor = principalFirstDate || (start && freqMonths(principalFreq) ? addMonths(start, freqMonths(principalFreq)) : null);
   const customSchedule = (Array.isArray(bond.schedule) ? bond.schedule : [])
     .map((r) => ({ date: r.date || '', principal: Number(r.principal) || 0, interest: Number(r.interest) || 0 }))
     .filter((r) => r.date);
@@ -227,7 +257,7 @@ export function computeBond(bond, nowMs) {
   // always has one, a level bond only if its coupons are periodic.
   const wantsSchedule = !!(start && maturity && P > 0 && (amortizes || (interestFreq && interestFreq !== 'maturity')));
   const sched = wantsSchedule
-    ? buildSchedule(P, rate, bankRate, start, maturity, interestFreq || 'maturity', principalFreq, customSchedule)
+    ? buildSchedule(P, rate, bankRate, start, maturity, interestFreq || 'maturity', principalFreq, customSchedule, principalAnchor)
     : null;
 
   // Projected maturity value: an entered maturityAmount (from the bond's own term
@@ -255,6 +285,20 @@ export function computeBond(bond, nowMs) {
   // what's already been paid). Only meaningful once a schedule exists.
   const asOfSched = sched ? scheduleAsOf(sched, P, rate, bankRate, start, asOf) : null;
 
+  // Real principal actually received, from the payout ledger's optional
+  // `principal` field — checked before `rawOutstanding` is decided, below, since
+  // an actual repayment should override the projected schedule the same way
+  // actual interest already overrides the projected accrual (real money beats a
+  // formula). Excludes anything dated on/after the sale for the same reason
+  // `payoutsBeforeExit` does further down: that cash is part of the exit, not a
+  // routine repayment on top of it.
+  const payouts = Array.isArray(bond.payouts) ? bond.payouts : [];
+  const principalPayoutsTotal = payouts.reduce((s, p) => s + (Number(p.principal) || 0), 0);
+  const principalPayoutsBeforeExit = (isSold && soldDate)
+    ? payouts.reduce((s, p) => s + (p.date && p.date < soldDate ? (Number(p.principal) || 0) : 0), 0)
+    : principalPayoutsTotal;
+  const hasPrincipalPayouts = principalPayoutsBeforeExit > 0;
+
   // Projected interest accrued as of today (or the exit date). An amortizing bond
   // takes it from the schedule replay — coupons already due plus the part-period
   // since the last one — because a straight-line share of the total would
@@ -269,8 +313,12 @@ export function computeBond(bond, nowMs) {
 
   // Principal still working. For an amortizing bond this genuinely shrinks over
   // the tenure; for every other bond it's the whole principal until the bond
-  // closes, then nothing — the capital is back in your pocket either way.
-  const rawOutstanding = (amortizes && asOfSched) ? asOfSched.outstanding : P;
+  // closes, then nothing — the capital is back in your pocket either way. Actual
+  // logged repayments win over the projected schedule once any exist, same as
+  // interestEarned below prefers actuals over the projection.
+  const rawOutstanding = amortizes
+    ? (hasPrincipalPayouts ? Math.max(0, P - principalPayoutsBeforeExit) : (asOfSched ? asOfSched.outstanding : P))
+    : P;
   const principalReturned = Math.max(0, P - rawOutstanding);
   const nextDue = asOfSched ? asOfSched.nextDue : null;
 
@@ -295,8 +343,8 @@ export function computeBond(bond, nowMs) {
 
   // Real interest actually received, from the dated payout ledger (the bond
   // form's "Payouts" tab) — this is the authoritative figure once it has any
-  // entries, since real money beats a formula.
-  const payouts = Array.isArray(bond.payouts) ? bond.payouts : [];
+  // entries, since real money beats a formula. (`payouts` itself was read above,
+  // alongside its principal counterpart.)
   const payoutsTotal = payouts.reduce((s, p) => s + (Number(p.amount) || 0), 0);
   const lastPayoutDate = payouts.reduce((max, p) => (p.date && p.date > (max || '')) ? p.date : max, null);
   const hasPayouts = payouts.length > 0;
@@ -376,13 +424,16 @@ export function computeBond(bond, nowMs) {
     // Schedule / amortization. `outstandingPrincipal` is the live capital figure the
     // Bonds and Home totals count — it drops to 0 once the bond closes, since the
     // money is back either way, and shrinks across the tenure when it amortizes.
-    interestFreq, principalFreq, amortizes,
+    interestFreq, principalFreq, principalFirstDate, amortizes,
     scheduleRows: sched ? sched.rows : [],
     perInstallmentPrincipal: sched ? sched.perInstallment : null,
     installments: sched ? sched.installments : 0,
     principalScheduled: sched ? sched.principalScheduled : 0,
     outstandingPrincipal: effectiveStatus === 'active' ? rawOutstanding : 0,
     principalReturned, nextDue,
+    // `hasPrincipalPayouts` true means outstandingPrincipal/principalReturned above
+    // came from real logged repayments, not the projected schedule.
+    principalPayoutsTotal, hasPrincipalPayouts,
   };
 }
 

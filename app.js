@@ -3227,16 +3227,21 @@ function _bondCard(b2, c) {
       ? el('div', { class: 'mf-meta-mini', text: `${fmtIntCur(c.perInstallmentPrincipal)} principal × ${c.installments} installments` })
       : document.createTextNode(''),
     el('div', { class: 'mf-meta-mini', text: 'Basis: ' + c.basis }),
-    c.hasPayouts ? el('div', { class: 'meta-line pos', text: `${fmtIntCur(c.payoutsTotal)} received · ${(b2.payouts || []).length} payout${(b2.payouts || []).length === 1 ? '' : 's'}` }) : document.createTextNode(''),
+    c.hasPayouts ? el('div', { class: 'meta-line pos', text:
+      `${fmtIntCur(c.payoutsTotal)} interest received` +
+      (c.principalPayoutsTotal ? ` · ${fmtIntCur(c.principalPayoutsTotal)} principal received` : '') +
+      ` · ${(b2.payouts || []).length} payout${(b2.payouts || []).length === 1 ? '' : 's'}` }) : document.createTextNode(''),
     c.effectiveStatus === 'sold' && c.payoutsAfterExit ? el('div', { class: 'meta-line warn', text: `${fmtIntCur(c.payoutsAfterExit)} of that is dated on/after the sale - counted as part of proceeds, not extra interest` }) : document.createTextNode(''),
     c.vsBank != null ? el('div', { class: 'meta-line ' + (c.vsBank >= 0 ? 'pos' : 'neg'), text: `${c.vsBank >= 0 ? '+' : ''}${fmtIntCur(c.vsBank)} vs bank` }) : document.createTextNode(''),
   ]);
 }
 
-// Simple dated ledger editor for a bond's Payouts tab - one row per interest/
-// coupon payment actually received (date + ₹ amount). Mirrors buildContribEditor's
-// add/remove/summary shape (MF's Buy/Sell log), simplified to a single list (no
-// buy/sell split, no derived third field - just two numbers per row).
+// Simple dated ledger editor for a bond's Payouts tab - one row per interest
+// and/or principal payment actually received (date + ₹ interest + optional ₹
+// principal). The principal leg only matters once a bond amortizes, but the row
+// stays a single shape regardless - a repayment that's principal-only (no coupon
+// that period) is just a row with the interest field left blank. Mirrors
+// buildContribEditor's add/remove/summary shape (MF's Buy/Sell log).
 function buildPayoutEditor(payouts, addMonthsFn, onChange) {
   const rowsWrap = el('div', { class: 'hist-rows mf-txn-rows' });
   const summary = el('div', { class: 'mf-txn-summary' });
@@ -3250,10 +3255,14 @@ function buildPayoutEditor(payouts, addMonthsFn, onChange) {
     summary.classList.toggle('hidden', !has);
     emptyEl.classList.toggle('hidden', has);
     if (has) {
-      const total = rows.reduce((s, r) => s + (num(r.amt.value) || 0), 0);
+      const iTotal = rows.reduce((s, r) => s + (num(r.amt.value) || 0), 0);
+      const pTotal = rows.reduce((s, r) => s + (num(r.pri.value) || 0), 0);
       summary.innerHTML = '';
       summary.appendChild(el('span', { text: rows.length + (rows.length === 1 ? ' payout' : ' payouts') }));
-      summary.appendChild(el('span', { text: 'Received ' + fmtCur(total, 'INR') }));
+      summary.appendChild(el('span', { text: 'Interest ' + fmtCur(iTotal, 'INR') }));
+      // Principal only shown once it's actually in use - most bonds never touch
+      // this leg, and a permanent "Principal ₹0" reads as a claim about the bond.
+      if (pTotal > 0) summary.appendChild(el('span', { text: 'Principal ' + fmtCur(pTotal, 'INR') }));
     }
     // Deferred (same reasoning as buildContribEditor): this can fire while the
     // caller's own `refresh` const is still being declared - a macrotask tick
@@ -3261,20 +3270,22 @@ function buildPayoutEditor(payouts, addMonthsFn, onChange) {
     if (typeof onChange === 'function') setTimeout(onChange, 0);
   };
 
-  const addRow = (date, amount) => {
+  const addRow = (date, amount, principal) => {
     const d = el('input', { class: 'txn-date', type: 'date', value: date || todayISO() });
     const amt = el('input', { class: 'txn-amt', type: 'number', inputmode: 'decimal', step: 'any', value: amount != null ? amount : '', placeholder: 'Interest received ₹' });
+    const pri = el('input', { class: 'txn-amt', type: 'number', inputmode: 'decimal', step: 'any', value: principal != null && principal !== 0 ? principal : '', placeholder: 'Principal received ₹ (optional)' });
     const del = el('button', { class: 'icon-btn', type: 'button', text: '×' });
-    const ref = { d, amt, removed: false };
+    const ref = { d, amt, pri, removed: false };
     amt.addEventListener('blur', refreshSummary);
+    pri.addEventListener('blur', refreshSummary);
     d.addEventListener('change', refreshSummary);
-    const row = el('div', { class: 'mf-txn-row' }, [el('div', { class: 'txn-line' }, [d, amt, del])]);
+    const row = el('div', { class: 'mf-txn-row' }, [el('div', { class: 'txn-line' }, [d, amt, pri, del])]);
     del.addEventListener('click', () => { row.remove(); ref.removed = true; refreshSummary(); });
     refs.push(ref);
     rowsWrap.appendChild(row);
     refreshSummary();
   };
-  (payouts || []).slice().sort((a, b2) => (b2.date || '').localeCompare(a.date || '')).forEach((p) => addRow(p.date, p.amount));
+  (payouts || []).slice().sort((a, b2) => (b2.date || '').localeCompare(a.date || '')).forEach((p) => addRow(p.date, p.amount, p.principal));
   refreshSummary();
 
   const lastDate = () => refs.reduce((max, r) => (!r.removed && r.d.value && r.d.value > (max || '')) ? r.d.value : max, null);
@@ -3282,7 +3293,7 @@ function buildPayoutEditor(payouts, addMonthsFn, onChange) {
     class: 'icon-btn', type: 'button', text: '+', title: 'Add payout',
     // Default the new row's date to one month after the latest one logged (most
     // adds are "log this month's payout"), not today.
-    onclick: () => addRow(addMonthsFn(lastDate() || todayISO(), lastDate() ? 1 : 0), null),
+    onclick: () => addRow(addMonthsFn(lastDate() || todayISO(), lastDate() ? 1 : 0), null, null),
   });
 
   const node = el('div', {}, [summary, emptyEl, rowsWrap, el('div', { class: 'mf-txn-btn-row' }, [addBtn])]);
@@ -3290,9 +3301,11 @@ function buildPayoutEditor(payouts, addMonthsFn, onChange) {
     const out = [];
     for (const r of refs) {
       if (r.removed) continue;
-      const dv = r.d.value, av = num(r.amt.value);
-      if (!dv || av == null) continue;
-      out.push({ date: dv, amount: Math.round(av * 100) / 100 });
+      const dv = r.d.value, av = num(r.amt.value), pv = num(r.pri.value);
+      // A row needs a date and at least one non-zero leg - a repayment date can
+      // legitimately carry only principal, or only interest.
+      if (!dv || (!(av > 0) && !(pv > 0))) continue;
+      out.push({ date: dv, amount: Math.round((av || 0) * 100) / 100, principal: Math.round((pv || 0) * 100) / 100 });
     }
     return out.sort((a, b2) => (a.date || '').localeCompare(b2.date || ''));
   };
@@ -3407,13 +3420,31 @@ async function openBondForm(existing) {
     scheduleEditor.node,
   ]);
   const interestFreqField = field('Interest payout', interestFreq);
+  // Asked explicitly rather than assumed: a moratorium period, or a term sheet
+  // that just starts on an odd date, means the first repayment often ISN'T
+  // exactly one period after the start date. Only meaningful for a periodic
+  // principalFreq - 'maturity' has no installments, 'staggered' already gives
+  // exact dates row by row.
+  const FREQ_MONTHS = { monthly: 1, quarterly: 3, halfyearly: 6, yearly: 12 };
+  const principalIsPeriodic = () => !!FREQ_MONTHS[principalFreq.value];
+  const principalFirstDate = el('input', { type: 'date', value: b2.principalFirstDate || '' });
+  const principalFirstDateField = field('First principal repayment on', principalFirstDate);
   const isStaggered = () => interestFreq.value === 'staggered' || principalFreq.value === 'staggered';
   const syncFreqVisibility = () => {
     const cum = payout.value === 'cumulative';
     interestFreqField.classList.toggle('hidden', cum);
+    principalFirstDateField.classList.toggle('hidden', !principalIsPeriodic());
     staggerBlock.classList.toggle('hidden', !isStaggered());
     scheduleTabBtn.classList.toggle('hidden', !(startDate.value && maturityDate.value));
   };
+  // Default the field the moment it becomes relevant, to the old assumption
+  // (start + one period) - a starting point the user can then push out for a
+  // real moratorium, rather than a blank field they must fill from scratch.
+  principalFreq.addEventListener('change', () => {
+    if (principalIsPeriodic() && !principalFirstDate.value && startDate.value) {
+      principalFirstDate.value = mod.addMonths(startDate.value, FREQ_MONTHS[principalFreq.value]);
+    }
+  });
 
   // Sold / redeemed early — bonds have no stored status field (status stays
   // fully date-derived, see bonds.js), so a checkbox is the minimal honest
@@ -3461,6 +3492,9 @@ async function openBondForm(existing) {
       // second, possibly-disagreeing answer for it - null means "ask `payout`".
       interestFreq: payout.value === 'cumulative' ? null : (interestFreq.value || null),
       principalFreq: principalFreq.value || 'maturity',
+      // Only meaningful while principal is periodic; clearing it otherwise stops a
+      // stale date silently anchoring a schedule that no longer uses it.
+      principalFirstDate: principalIsPeriodic() ? (principalFirstDate.value || null) : null,
       // Only meaningful while something is staggered; clearing it otherwise stops
       // orphaned installment rows silently driving a schedule later.
       schedule: isStaggered() ? scheduleEditor.collect() : [],
@@ -3520,6 +3554,15 @@ async function openBondForm(existing) {
             ? 'No principal installments yet — add them on the Schedule tab, or this bond still behaves as a single lump at maturity.'
             : `Principal installments total ${fmtIntCur(c.principalScheduled)} but ${fmtIntCur(c.principal)} was invested — a ${fmtIntCur(Math.abs(c.principalScheduled - c.principal))} ${c.principalScheduled > c.principal ? 'excess' : 'shortfall'}. Fix them on the Schedule tab.` }));
     }
+    // Once any real principal repayment is logged on the Payouts tab, it
+    // overrides the projected schedule for Outstanding/Invested - same as actual
+    // interest already overrides the projected accrual. Said explicitly so a
+    // number that no longer matches the Schedule tab's plan isn't mistaken for a
+    // bug.
+    if (c.hasPrincipalPayouts) {
+      readout.appendChild(el('p', { class: 'hint', style: 'margin-top:4px', text:
+        `Using actual repayments logged on Payouts (${fmtIntCur(c.principalPayoutsTotal)} principal received) for Outstanding, not the projected schedule.` }));
+    }
     const basisTxt = 'Basis: ' + c.basis + (c.hasPayouts
       ? ` · ${rec.payouts.length} payout${rec.payouts.length === 1 ? '' : 's'} logged, ${fmtIntCur(c.payoutsTotal)} received to date`
       : ' · no payouts logged yet, showing the projection');
@@ -3531,7 +3574,7 @@ async function openBondForm(existing) {
     refresh();
   });
   [investAmount, rate, bankRate, payout, startDate, maturityDate, maturityAmount, soldDate, soldAmount,
-    interestFreq, principalFreq].forEach((inp) => inp.addEventListener('input', refresh));
+    interestFreq, principalFreq, principalFirstDate].forEach((inp) => inp.addEventListener('input', refresh));
   // Visibility depends on the pickers themselves, so it has to run on their change
   // as well as once up front - not just inside refresh(), which also fires from the
   // deferred editor callbacks and would fight the user mid-edit.
@@ -3559,6 +3602,7 @@ async function openBondForm(existing) {
     field('Tenure (months) → fills maturity date', tenure),
     el('div', { class: 'field-row' }, [field('Type', payout), field('Maturity amount (optional override)', maturityAmount)]),
     el('div', { class: 'field-row' }, [interestFreqField, field('Principal repaid', principalFreq)]),
+    principalFirstDateField,
     staggerBlock,
     field('Sold / redeemed early — also use this to close out a bond redeemed at maturity', soldSwitch),
     soldBlock,
