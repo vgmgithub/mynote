@@ -9,9 +9,9 @@
 //     bankRate,                                            // comparable bank/FD rate % (optional — blank skips the vs-Bank comparison)
 //     startDate:'YYYY-MM-DD', maturityDate:'YYYY-MM-DD',
 //     payout:'cumulative'|'payout',                       // reinvest (compounds annually, value grows in place) vs coupon paid out (deposit value stays flat at principal; the coupon is real cash tracked below) — no compounding-frequency picker like FD's: retail bonds don't offer quarterly/monthly compounding
-//     interestFreq,                                        // optional — when coupons arrive: 'monthly'|'quarterly'|'halfyearly'|'yearly'|'maturity'|'staggered'. Only meaningful for payout bonds; a cumulative bond IS "at maturity" by definition, so the form hides the picker. null/absent = unspecified (every pre-existing bond) → no schedule projected, totals behave exactly as before this field existed
-//     principalFreq,                                       // optional — when principal comes back: same values. Absent/'maturity' = the classic single lump at maturity. Anything else means the bond AMORTIZES, which switches the interest projection onto the declining outstanding balance (see buildSchedule)
-//     principalFirstDate:'YYYY-MM-DD',                     // when principalFreq is periodic (not 'maturity'/'staggered') — the actual first repayment date, asked explicitly rather than assumed to be exactly one period after startDate (a moratorium, or a term sheet that just starts on an odd date, means it often isn't). Subsequent installments run every `principalFreq` months from THIS date, not from startDate. Blank → defaults to startDate + one period, matching the old assumption
+//     interestFreq,                                        // optional — when coupons arrive: 'monthly'|'quarterly'|'halfyearly'|'yearly'|'maturity'|'staggered'. Only meaningful for payout bonds; a cumulative bond IS "at maturity" by definition, so the form hides the picker. null/absent = unspecified (every pre-existing bond) → no schedule projected, totals behave exactly as before this field existed. Periodic dates count BACKWARD from maturityDate (see periodDates) — a bond maturing on the 26th pays on the 26th of every month, regardless of when a given buyer's startDate happens to fall
+//     principalFreq,                                       // optional — when principal comes back: same values, same maturity-anchored dates. Absent/'maturity' = the classic single lump at maturity. Anything else means the bond AMORTIZES, which switches the interest projection onto the declining outstanding balance (see buildSchedule)
+//     principalFirstDate:'YYYY-MM-DD',                     // OPTIONAL OVERRIDE, only when principalFreq is periodic (not 'maturity'/'staggered') — for the irregular case where the first repayment genuinely isn't on the maturity-anchored date (a moratorium period, or a term sheet with a one-off first installment). Left blank, principal dates fall through to the normal maturity-anchored schedule. Set, every later installment runs every `principalFreq` months from THIS date instead
 //     schedule: [{ date:'YYYY-MM-DD', principal, interest }], // only for 'staggered' — the term sheet's own uneven installments, typed in by the user. Principal rows drive amortization; interest rows are taken as-given (not recomputed) since a staggered coupon is whatever the issuer says it is
 //     maturityAmount,                                      // optional ₹ — the actual/promised amount you'll receive at maturity (from the bond's term sheet). Overrides the rate-based projection when set; leave blank to project from `rate` instead
 //     payouts: [{ date:'YYYY-MM-DD', amount, principal }], // dated log of what was ACTUALLY received — `amount` is interest, `principal` is optional and only meaningful once the bond amortizes. Once any interest amount is logged, it overrides the projected interest; once any principal is logged, it overrides the projected outstanding balance too — real money beats a formula either way
@@ -66,22 +66,24 @@ function compoundValueAt(P, rate, years) {
   return P * Math.pow(1 + rate / 100, years);
 }
 
-// Installment dates for a periodic frequency: every `pm` months from the start
-// date, stopping BEFORE maturity, then maturity itself as the final one.
-// Maturity is always included because principal must be fully returned by then —
-// a tenure that isn't a whole number of periods (e.g. 10 months quarterly) would
-// otherwise leave a stub of principal unaccounted for.
+// Installment dates for a periodic frequency: every `pm` months counting
+// BACKWARD from maturity, stopping once a date would fall on/before start.
+// Anchored on maturity, not start, because the day-of-month a real bond pays on
+// is fixed by its own issue schedule, not by whenever a given buyer happened to
+// buy in - a bond maturing 2027-07-26 pays on the 26th of every month
+// regardless of whether it was bought on the 3rd or the 19th. Maturity itself
+// is always the last row, guaranteed by construction here rather than appended
+// separately, since every walked-back date is by definition before it.
 function periodDates(start, maturity, pm) {
   if (!start || !maturity || !(pm > 0) || maturity <= start) return [];
-  const out = [];
+  const out = [maturity];
   // Hard bound: monthly over a 50-year bond is 600 rows; anything past that is a
   // data-entry error, not a real bond, and must not spin.
   for (let k = 1; k <= 600; k++) {
-    const d = addMonths(start, k * pm);
-    if (!d || d >= maturity) break;
-    out.push(d);
+    const d = addMonths(maturity, -k * pm);
+    if (!d || d <= start) break;
+    out.unshift(d);
   }
-  out.push(maturity);
   return out;
 }
 
@@ -129,9 +131,9 @@ function buildSchedule(P, rate, bankRate, start, maturity, iFreq, pFreq, custom,
     rows.forEach((r) => bump(r.date, 'principal', r.principal));
     installments = rows.length;
   } else if (freqMonths(pFreq)) {
-    // Anchored to the actual first-repayment date, not assumed to be exactly one
-    // period after `start` (see periodDatesFrom) — falls back to the old
-    // assumption only when no anchor was given.
+    // Normally anchored on maturity, same as interest (see periodDates) - an
+    // explicit `principalAnchor` only exists for the irregular case (moratorium,
+    // odd first date) and walks forward from that instead.
     const ds = principalAnchor
       ? periodDatesFrom(principalAnchor, maturity, freqMonths(pFreq))
       : periodDates(start, maturity, freqMonths(pFreq));
@@ -243,13 +245,13 @@ export function computeBond(bond, nowMs) {
   const interestFreq = bond.interestFreq || null;
   const principalFreq = bond.principalFreq || 'maturity';
   const amortizes = principalFreq !== 'maturity';
-  // The actual first repayment date, asked explicitly rather than assumed — a
-  // moratorium period, or a term sheet that just starts on an odd date, means it
-  // often isn't exactly one period after `start`. Blank falls back to that old
-  // assumption, so a bond saved before this field existed (or left blank) keeps
-  // behaving exactly as it did.
+  // Optional OVERRIDE for an irregular first repayment (a moratorium period, or
+  // a term sheet that genuinely starts on an odd date) — left blank, principal
+  // dates fall through to periodDates below, which already anchors on maturity
+  // (the normal case: a bond maturing on the 26th pays on the 26th of every
+  // month, regardless of the buyer's own start date).
   const principalFirstDate = (amortizes && principalFreq !== 'staggered' && bond.principalFirstDate) || null;
-  const principalAnchor = principalFirstDate || (start && freqMonths(principalFreq) ? addMonths(start, freqMonths(principalFreq)) : null);
+  const principalAnchor = principalFirstDate;
   const customSchedule = (Array.isArray(bond.schedule) ? bond.schedule : [])
     .map((r) => ({ date: r.date || '', principal: Number(r.principal) || 0, interest: Number(r.interest) || 0 }))
     .filter((r) => r.date);

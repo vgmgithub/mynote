@@ -3420,15 +3420,18 @@ async function openBondForm(existing) {
     scheduleEditor.node,
   ]);
   const interestFreqField = field('Interest payout', interestFreq);
-  // Asked explicitly rather than assumed: a moratorium period, or a term sheet
-  // that just starts on an odd date, means the first repayment often ISN'T
-  // exactly one period after the start date. Only meaningful for a periodic
-  // principalFreq - 'maturity' has no installments, 'staggered' already gives
-  // exact dates row by row.
-  const FREQ_MONTHS = { monthly: 1, quarterly: 3, halfyearly: 6, yearly: 12 };
-  const principalIsPeriodic = () => !!FREQ_MONTHS[principalFreq.value];
+  // Principal (and interest) dates normally anchor on MATURITY, not start - a
+  // bond maturing on the 26th pays on the 26th of every month, regardless of
+  // when a given buyer's own start date falls (see bonds.js periodDates). This
+  // field is an OPTIONAL OVERRIDE for the irregular case where the real first
+  // repayment genuinely isn't on that maturity-anchored date - a moratorium
+  // period, or a term sheet with a one-off first installment. Left blank, the
+  // correct maturity-anchored schedule applies automatically - no default to
+  // fill in here. Only meaningful for a periodic principalFreq - 'maturity' has
+  // no installments, 'staggered' already gives exact dates row by row.
+  const principalIsPeriodic = () => principalFreq.value !== 'maturity' && principalFreq.value !== 'staggered';
   const principalFirstDate = el('input', { type: 'date', value: b2.principalFirstDate || '' });
-  const principalFirstDateField = field('First principal repayment on', principalFirstDate);
+  const principalFirstDateField = field('First repayment on (optional override, e.g. a moratorium)', principalFirstDate);
   const isStaggered = () => interestFreq.value === 'staggered' || principalFreq.value === 'staggered';
   const syncFreqVisibility = () => {
     const cum = payout.value === 'cumulative';
@@ -3437,14 +3440,6 @@ async function openBondForm(existing) {
     staggerBlock.classList.toggle('hidden', !isStaggered());
     scheduleTabBtn.classList.toggle('hidden', !(startDate.value && maturityDate.value));
   };
-  // Default the field the moment it becomes relevant, to the old assumption
-  // (start + one period) - a starting point the user can then push out for a
-  // real moratorium, rather than a blank field they must fill from scratch.
-  principalFreq.addEventListener('change', () => {
-    if (principalIsPeriodic() && !principalFirstDate.value && startDate.value) {
-      principalFirstDate.value = mod.addMonths(startDate.value, FREQ_MONTHS[principalFreq.value]);
-    }
-  });
 
   // Sold / redeemed early — bonds have no stored status field (status stays
   // fully date-derived, see bonds.js), so a checkbox is the minimal honest
