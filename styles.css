@@ -106,6 +106,24 @@ body {
 
 main { padding: 14px; }
 
+/* Swipe between portfolio tabs (Stocks surface): a brief directional slide as
+   the new portfolio's content lands, so the gesture reads as a deliberate move
+   rather than the page flickering under your thumb. The class is added after the
+   re-render and removed on animationend (see flashSwipeDirection). */
+@keyframes swipe-from-right {
+  from { transform: translateX(16px); opacity: 0.5; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes swipe-from-left {
+  from { transform: translateX(-16px); opacity: 0.5; }
+  to { transform: none; opacity: 1; }
+}
+main.swipe-in-right { animation: swipe-from-right 0.18s ease-out; }
+main.swipe-in-left { animation: swipe-from-left 0.18s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  main.swipe-in-right, main.swipe-in-left { animation: none; }
+}
+
 /* Summary card */
 .summary {
   background: linear-gradient(135deg, var(--card), var(--card-2));

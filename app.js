@@ -164,14 +164,92 @@ async function load() {
 }
 async function refresh() { await load(); render(); }
 
+// Single path for "switch to this portfolio", shared by the header tabs and the
+// swipe gesture so the two can't drift apart (clearing `search` is the easy bit
+// to forget in a second copy). `dir` is only passed by the swipe: +1 = moved
+// forward through the strip, -1 = back, and it drives the slide animation so the
+// gesture's direction is confirmed visually. A tap has no direction the user
+// physically expressed, so it stays instant.
+async function selectPortfolio(id, dir) {
+  if (state.portfolio === id) return;
+  state.portfolio = id;
+  state.search = '';
+  await refresh();
+  if (dir) flashSwipeDirection(dir);
+}
+
+// Brief directional slide so a swipe reads as "moved to the next tab" rather
+// than the content silently changing under your thumb. Cosmetic only - the class
+// is stripped on animationend so a rapid series of swipes can't stack them.
+function flashSwipeDirection(dir) {
+  const m = $('#main');
+  const cls = dir > 0 ? 'swipe-in-right' : 'swipe-in-left';
+  m.classList.remove('swipe-in-right', 'swipe-in-left');
+  void m.offsetWidth;   // reflow, so re-adding the same class restarts the animation
+  m.classList.add(cls);
+  const done = () => { m.classList.remove(cls); m.removeEventListener('animationend', done); };
+  m.addEventListener('animationend', done);
+}
+
+// True when the gesture began inside something that can itself scroll
+// horizontally - the Heatmap's wide table is the real case. That element owns the
+// swipe, so stepping tabs on top of it would fight the user's actual intent.
+// Gated on scrollWidth too: a table narrow enough to fit doesn't block swiping.
+function insideHorizontalScroller(target, root) {
+  for (let n = target; n && n !== root; n = n.parentElement) {
+    if (n.scrollWidth > n.clientWidth + 1 && /(auto|scroll)/.test(getComputedStyle(n).overflowX)) return true;
+  }
+  return false;
+}
+
+// Swipe left/right anywhere in the Stocks content to step through the portfolio
+// tabs, so switching doesn't need a reach up to the header. Touch-only on
+// purpose: a mouse drag across a page is a text selection, not a swipe.
+const SWIPE_MIN_X = 55;        // px of travel before it counts as deliberate
+const SWIPE_OFF_AXIS = 0.6;    // |dy| must stay under this fraction of |dx|
+const SWIPE_MAX_MS = 700;      // slower than this is a scroll that drifted sideways
+function installPortfolioSwipe() {
+  const host = $('#main');
+  let sx = 0, sy = 0, st = 0, live = false;
+
+  host.addEventListener('touchstart', (e) => {
+    // >1 touch is a pinch/zoom; outside Stocks there's no tab strip to step. This
+    // re-runs when a second finger lands mid-gesture, which correctly abandons
+    // the swipe rather than letting a pinch finish as one.
+    live = e.touches.length === 1 && state.appMode === 'stocks'
+      && !insideHorizontalScroller(e.target, host);
+    if (!live) return;
+    sx = e.touches[0].clientX; sy = e.touches[0].clientY; st = Date.now();
+  }, { passive: true });
+  host.addEventListener('touchcancel', () => { live = false; }, { passive: true });
+
+  host.addEventListener('touchend', (e) => {
+    if (!live) return;
+    live = false;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - sx, dy = t.clientY - sy;
+    if (Date.now() - st > SWIPE_MAX_MS) return;
+    if (Math.abs(dx) < SWIPE_MIN_X) return;
+    if (Math.abs(dy) > Math.abs(dx) * SWIPE_OFF_AXIS) return;   // too diagonal to be a clean swipe
+    // Swiping left moves forward through the strip - the content travels the
+    // same way the thumb does, which is what every tabbed mobile app does.
+    const dir = dx < 0 ? 1 : -1;
+    const next = PORTFOLIOS[PORTFOLIOS.findIndex((p) => p.id === state.portfolio) + dir];
+    // Clamp at both ends rather than wrapping: jumping from the last tab back to
+    // the first reads as a glitch, and three tabs are easy enough to tap.
+    if (next) selectPortfolio(next.id, dir);
+  }, { passive: true });
+}
+
 // ---------- chrome (built once, only active state toggles afterward) ----------
 function buildChrome() {
   const tabs = $('#portfolioTabs');
   tabs.innerHTML = '';
   PORTFOLIOS.forEach((p) => tabs.appendChild(el('button', {
     class: 'ptab', 'data-id': p.id, text: p.label,
-    onclick: () => { if (state.portfolio === p.id) return; state.portfolio = p.id; state.search = ''; refresh(); },
+    onclick: () => selectPortfolio(p.id),
   })));
+  installPortfolioSwipe();
 
   const nav = $('#bottomNav');
   nav.innerHTML = '';

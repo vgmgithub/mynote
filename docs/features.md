@@ -4,7 +4,11 @@ This is the inventory. Each entry: **what** + **where** + **why it's that way**.
 
 ## Navigation
 
-- **Portfolio tabs** (top): Me · India / Wife · India / Me · US — in this order. `buildChrome()` in app.js.
+- **Portfolio tabs** (top): Me · India / Wife · India / Me · US — in this order. `buildChrome()` in app.js. Tap a tab, or **swipe left/right anywhere in the Stocks content** to step through them (swipe left = forward, matching the direction the content travels). Both routes go through one shared `selectPortfolio()` so they can't drift. Swipe specifics:
+  - **Clamps at both ends** rather than wrapping — jumping from the last tab back to the first reads as a glitch, and three tabs are quick to tap.
+  - **Ignored inside anything that scrolls horizontally itself** (the Heatmap's wide table): that element owns the gesture. Gated on actual scrollability, so a table narrow enough to fit still allows swiping.
+  - Needs 55px of travel, `|dy|` under 0.6·`|dx|`, and under 700ms — so vertical scrolling, diagonal drags, and slow sideways drift don't trigger it. Touch-only: a mouse drag across a page is a text selection.
+  - A brief directional slide (`main.swipe-in-left/right`, 0.18s) plays as the new portfolio lands so the gesture is confirmed visually; honors `prefers-reduced-motion`. Taps stay instant — a tap has no direction the user expressed.
 - **Bottom nav**: Holdings · Heatmap · Trend · Overview. The labels were renamed (Monthly → Trend, Trends → Overview) by user request.
 - **Filter chips** (Holdings tab): Holding · Sold · All — in that order. **Default is Holding** (not All). Set via `state.filter = 'holding'` initial value.
 
