@@ -147,6 +147,19 @@ See [bonds.md](bonds.md) for the full design. Summary:
 - Seeded once from the user's X-MyNotes BOND sheet (3 real bonds), editable afterward — no payouts pre-seeded, logged by the user.
 - Home's Total Invested/Earned uses a basis **different from Fixed Deposits, on purpose**: invested = active bonds' *outstanding* principal (still-live capital); earned = realised interest from closed (matured + sold) bonds only, never an active bond's accrued-but-unpaid interest. The row's Return % is computed against the closed bonds' own principal (interest ÷ the principal that earned it), not against Invested.
 
+## Emergency Fund (7th Home card)
+
+See [emergency-fund.md](emergency-fund.md) for the full design. Summary:
+
+- **🛟 Emergency Fund** card on Home, after Bonds. Tabs: **Fund | Loans | Log**.
+- A family lending pot with a rulebook — two equal monthly contributions in, parked across MFs/bond/FD, lent out to self and family under a written interest policy, measured against a ladder of targets.
+- **Its investments stay in the `funds`/`bonds`/`fds` stores**, flagged via a **"Part of Emergency Fund"** switch on those surfaces' own forms. They keep the existing live NAV fetch (no duplicated code, no extra network calls), stay listed there with a purple **EF** badge, but leave that page's invested/return totals.
+- **Nothing about this fund enters Home's Total Invested or Total Earned** — not the parked holdings, not the idle cash, not the loans, and there's no Emergency Fund row either. Same treatment SGBs get (record in one store, a different surface counts it) and same as Dividends, which also contributes nothing. ⚠ Linking a holding therefore *lowers* Home's Total Invested by whatever it was contributing — the intended correction, since it's now reported on the fund's own page.
+- **Loans**: one entity with three grace periods — `self` (priced from day one), `emergency` (free for 3 months), `gift` (free for 5 months). Interest is **computed** as `CEILING(amount × 2% × multiplier, ₹100)` with `multiplier = max(1, ceil(months/3))`, and a **per-loan override** for exceptions. Open loans show both what's accrued so far and what it'll cost if repaid on time. Instalment ledger per loan; the interest clock stops at closure.
+- **Targets** use an `add`/`absorb` flag — `absorb` replaces the rung below rather than stacking on it (a joint fund supersedes the single-person one it already covers), which stops a naive running sum from permanently overstating how far away the final goal is.
+- **Reconciliation** is shown explicitly (`collected − invested − lent = available`) and warns in plain language when it doesn't add up, rather than rendering a bare negative.
+- No seed data — the user logs their own contributions, targets and loans.
+
 ## App lock
 
 See [app-lock.md](app-lock.md) for details. Summary:

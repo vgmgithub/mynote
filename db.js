@@ -1,7 +1,7 @@
 // IndexedDB data layer. All data lives on this device only.
 export const DB = (function () {
   const NAME = 'mynote-stocks';
-  const VERSION = 8;
+  const VERSION = 9;
   let dbp = null;
 
   function open() {
@@ -71,9 +71,25 @@ export const DB = (function () {
           const s = db.createObjectStore('bonds', { keyPath: 'id', autoIncrement: true });
           s.createIndex('owner', 'owner', { unique: false });
         }
+        // Emergency Fund. THREE logical tables in one store, discriminated by
+        // `kind` ('contribution' | 'target' | 'loan') — one store keeps the
+        // upgrade block, the backup entry and the index count to one each, and
+        // DB.byIndex('emergency','kind',…) gives each table for free. The fund's
+        // INVESTMENTS are not here: they're ordinary funds/bonds/fds records
+        // carrying `emergencyFund: true`, so they keep their live NAV fetch.
+        // See emergency.js for the three record shapes. Added in v9.
+        if (!db.objectStoreNames.contains('emergency')) {
+          const s = db.createObjectStore('emergency', { keyPath: 'id', autoIncrement: true });
+          s.createIndex('kind', 'kind', { unique: false });
+        }
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
+      // A version bump can't proceed while another tab still holds the old
+      // version open. Without this the promise never settles and the whole app
+      // hangs on a blank screen with nothing in the console — reject with
+      // something the user can act on instead.
+      req.onblocked = () => reject(new Error('MyNote is open in another tab. Close the other tab(s) and reload to finish updating the local database.'));
     });
     return dbp;
   }
@@ -123,7 +139,7 @@ export const DB = (function () {
       // `feed` is best-effort: very old backups (v2 export) won't have it, and
       // the store may not exist if the user is mid-upgrade. Don't fail the
       // whole export over a missing store.
-      const [stocks, snapshots, monthly, meta, feed, funds, fds, dividends, metals, bonds] = await Promise.all([
+      const [stocks, snapshots, monthly, meta, feed, funds, fds, dividends, metals, bonds, emergency] = await Promise.all([
         this.all('stocks'),
         this.all('snapshots'),
         this.all('monthly'),
@@ -134,6 +150,7 @@ export const DB = (function () {
         this.all('dividends').catch(() => []),
         this.all('metals').catch(() => []),
         this.all('bonds').catch(() => []),
+        this.all('emergency').catch(() => []),
       ]);
       return {
         app: 'mynote-stocks',
@@ -149,6 +166,7 @@ export const DB = (function () {
         dividends,
         metals,
         bonds,
+        emergency,
       };
     },
     // Replace all data with the contents of a previously exported object.
@@ -167,6 +185,7 @@ export const DB = (function () {
         this.clear('dividends').catch(() => {}),
         this.clear('metals').catch(() => {}),
         this.clear('bonds').catch(() => {}),
+        this.clear('emergency').catch(() => {}),
       ]);
       const tasks = [];
       (data.stocks || []).forEach((s) => tasks.push(this.put('stocks', s)));
@@ -180,6 +199,7 @@ export const DB = (function () {
       (data.dividends || []).forEach((d) => tasks.push(this.put('dividends', d).catch(() => {})));
       (data.metals || []).forEach((m) => tasks.push(this.put('metals', m).catch(() => {})));
       (data.bonds || []).forEach((b) => tasks.push(this.put('bonds', b).catch(() => {})));
+      (data.emergency || []).forEach((e) => tasks.push(this.put('emergency', e).catch(() => {})));
       await Promise.all(tasks);
     },
   };

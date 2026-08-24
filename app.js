@@ -51,6 +51,9 @@ let _metalTab = 'overview';  // 'overview' | 'gold' | 'silver' | 'sgb' (bottom n
 let _bondTab = 'holdings';   // 'holdings' | 'overview' (bottom nav)
 let _bondFilter = 'active';  // 'active' | 'matured' (matured + sold) | 'all'
 let _bondSort = 'maturity';  // 'maturity' | 'amount' | 'rate'
+// Emergency Fund view state (only used inside the Emergency Fund surface).
+let _efTab = 'fund';         // 'fund' | 'loans' | 'log' (bottom nav)
+let _efLoanFilter = 'open';  // 'open' | 'closed' | 'all'
 const MF_TYPES = ['Multi Cap', 'Flexi Cap', 'Large Cap', 'Mid Cap', 'Small Cap', 'Tax Saver', 'Technology', 'Pharma', 'Energy', 'International', 'Index', 'Debt', 'Hybrid'];
 const MF_STATUS = ['Investing', 'Investing On/Off', 'Investing Variable', 'Stopped', 'Sold'];
 
@@ -1533,13 +1536,14 @@ async function render() {
 const STOCK_SURFACE = ['#summary', '#toolbar', '#stockList', '#monthlyView', '#heatmapView', '#trendView', '#feedView', '#addBtn', '#ocrBtn'];
 function setAppMode(mode) {
   state.appMode = mode;
-  const isHome = mode === 'home', isStocks = mode === 'stocks', isMF = mode === 'mf', isFD = mode === 'fd', isDiv = mode === 'div', isMetal = mode === 'metal', isBond = mode === 'bond';
+  const isHome = mode === 'home', isStocks = mode === 'stocks', isMF = mode === 'mf', isFD = mode === 'fd', isDiv = mode === 'div', isMetal = mode === 'metal', isBond = mode === 'bond', isEF = mode === 'ef';
   $('#homeView').classList.toggle('hidden', !isHome);
   $('#mfView').classList.toggle('hidden', !isMF);
   $('#fdView').classList.toggle('hidden', !isFD);
   $('#divView').classList.toggle('hidden', !isDiv);
   $('#metalView').classList.toggle('hidden', !isMetal);
   $('#bondView').classList.toggle('hidden', !isBond);
+  $('#efView').classList.toggle('hidden', !isEF);
   $('#portfolioTabs').classList.toggle('hidden', !isStocks);
   $('#bottomNav').classList.toggle('hidden', !isStocks);
   $('#mfBottomNav').classList.toggle('hidden', !isMF);
@@ -1547,13 +1551,15 @@ function setAppMode(mode) {
   $('#divBottomNav').classList.toggle('hidden', !isDiv);
   $('#metalBottomNav').classList.toggle('hidden', !isMetal);
   $('#bondBottomNav').classList.toggle('hidden', !isBond);
+  $('#efBottomNav').classList.toggle('hidden', !isEF);
   $('#mfAddBtn').classList.toggle('hidden', !isMF);
   $('#mfFetchBtn').classList.toggle('hidden', !isMF);
   $('#fdAddBtn').classList.toggle('hidden', !isFD);
   $('#bondAddBtn').classList.toggle('hidden', !isBond);
+  $('#efAddBtn').classList.toggle('hidden', !isEF);
   if (!isMetal) $('#metalAddBtn').classList.add('hidden'); // renderMetal shows it on Gold/Silver only
   $('#backBtn').classList.toggle('hidden', isHome);
-  $('#appTitle').innerHTML = isHome ? '' : (isMF ? 'Mutual&nbsp;Funds' : isFD ? 'Fixed&nbsp;Deposits' : isDiv ? 'Dividends' : isMetal ? 'Metals' : isBond ? 'Bonds' : 'MyNote&nbsp;Stocks');
+  $('#appTitle').innerHTML = isHome ? '' : (isMF ? 'Mutual&nbsp;Funds' : isFD ? 'Fixed&nbsp;Deposits' : isDiv ? 'Dividends' : isMetal ? 'Metals' : isBond ? 'Bonds' : isEF ? 'Emergency&nbsp;Fund' : 'MyNote&nbsp;Stocks');
   if (isStocks) {
     render();
   } else {
@@ -1565,6 +1571,7 @@ function setAppMode(mode) {
     if (isDiv) { buildDivBottomNav(); renderDividend(); }
     if (isMetal) { buildMetalBottomNav(); renderMetal(); }
     if (isBond) { buildBondBottomNav(); renderBond(); }
+    if (isEF) { buildEfBottomNav(); renderEmergency(); }
   }
 }
 
@@ -1651,6 +1658,23 @@ function buildBondBottomNav() {
 }
 function updateBondNavActive() {
   $('#bondBottomNav').querySelectorAll('button').forEach((x) => x.classList.toggle('active', x.getAttribute('data-view') === _bondTab));
+}
+
+// Bottom nav for the Emergency Fund surface. "Fund" is first and deliberately
+// carries everything (corpus, parked, lent, available, targets) — the other two
+// tabs are just the editable ledgers behind it.
+function buildEfBottomNav() {
+  const nav = $('#efBottomNav');
+  if (nav.childElementCount) { updateEfNavActive(); return; }
+  nav.innerHTML = '';
+  [['fund', '🛟', 'Fund'], ['loans', '🤝', 'Loans'], ['log', '🗓️', 'Log']].forEach(([v, ico, label]) => {
+    nav.appendChild(el('button', { 'data-view': v, onclick: () => { if (_efTab === v) return; _efTab = v; renderEmergency(); } },
+      [el('span', { class: 'bn-ico', text: ico }), label]));
+  });
+  updateEfNavActive();
+}
+function updateEfNavActive() {
+  $('#efBottomNav').querySelectorAll('button').forEach((x) => x.classList.toggle('active', x.getAttribute('data-view') === _efTab));
 }
 
 const _FD_MONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -2135,6 +2159,16 @@ async function openFdForm(existing) {
 //     so it's no longer "invested" once it's back; an active bond's principal
 //     genuinely still is. See bonds.js computeBond for the realised-interest
 //     math (payoutsBeforeExit + soldGain for a sold bond).
+//   • Emergency Fund — ANY funds/bonds/fds record flagged `emergencyFund: true`
+//     is skipped by its own row above and contributes NOTHING here, not even a
+//     row of its own. The Emergency Fund surface is the sole owner of that
+//     money: its corpus, its lent-out loans and its idle cash all live there and
+//     are deliberately kept out of this pair. Same shape as the SGB rule above
+//     (record lives in one store, a different surface counts it) and the same
+//     shape as Dividends, which has a Home card and contributes nothing either.
+//     DO NOT "fix" this by adding an Emergency Fund row — the parked holdings
+//     would then be counted twice, and idle cash plus a family receivable would
+//     enter the denominator at 0% and quietly drag the headline return down.
 async function homeInvestedBreakdown() {
   const parts = [];
   let totalInvested = 0, totalValue = 0;
@@ -2149,7 +2183,7 @@ async function homeInvestedBreakdown() {
   };
   // Exclusion counts, surfaced once in the sheet's footer note instead of
   // repeated per-row - each row's own description only says what IS in it.
-  const skipped = { sgb: 0, fd: 0, bond: 0 };
+  const skipped = { sgb: 0, fd: 0, bond: 0, ef: 0 };
   try {
     // Stocks — Me-India only (holdings, not sold). SGB gold bonds excluded here -
     // they're tracked under Metals surface.
@@ -2169,6 +2203,9 @@ async function homeInvestedBreakdown() {
     let fInv = 0, fVal = 0, fN = 0;
     for (const f of funds) {
       if (f.status === 'Sold' || f.soldDate) continue;
+      // Linked to the Emergency Fund — that surface owns it, same as SGBs above
+      // belong to Metals rather than Stocks.
+      if (f.emergencyFund) { skipped.ef++; continue; }
       const c = await import('./mf.js').then(mod => mod.computeFund(f, Date.now())).catch(() => null);
       if (c) { fInv += c.invested || 0; fVal += c.value || 0; fN++; }
     }
@@ -2189,6 +2226,7 @@ async function homeInvestedBreakdown() {
       });
       for (const fdRec of fds) {
         const c = fdComp.get(fdRec.id);
+        if (fdRec.emergencyFund) { skipped.ef++; continue; }   // owned by the Emergency Fund surface
         if (c.effectiveStatus !== 'matured') { skipped.fd++; continue; }
         if (supersededIds.has(fdRec.id)) { skipped.fd++; continue; }
         dInv += c.principal; dVal += c.maturityValue; dN++;
@@ -2214,6 +2252,9 @@ async function homeInvestedBreakdown() {
       const nowB = Date.now();
       bonds.forEach((bRec) => {
         const c = bondMod.computeBond(bRec, nowB);
+        // Linked to the Emergency Fund — that surface owns it, so it must not
+        // land in either side of this row (not even its realised interest).
+        if (bRec.emergencyFund) { skipped.ef++; return; }
         // outstandingPrincipal, not principal: an amortizing bond has already
         // handed part of its capital back, and that money is no longer invested
         // here. Identical to principal for every non-amortizing active bond.
@@ -2268,6 +2309,7 @@ function openInvestedBreakdown(bd) {
   if (sk.sgb) skipBits.push(sk.sgb + ' SGB' + (sk.sgb > 1 ? 's' : '') + ' (counted under Metals instead)');
   if (sk.fd) skipBits.push(sk.fd + ' FD' + (sk.fd > 1 ? 's' : '') + ' still running or renewed');
   if (sk.bond) skipBits.push(sk.bond + ' matured/sold bond' + (sk.bond > 1 ? 's' : '') + ' whose principal has been returned');
+  if (sk.ef) skipBits.push(sk.ef + ' holding' + (sk.ef > 1 ? 's' : '') + ' linked to the Emergency Fund (tracked on its own page)');
   const footNote = 'Not counted: Wife · India and Me · US stocks (separate books), sold stocks and redeemed funds' +
     (skipBits.length ? ', ' + skipBits.join(', ') : '') +
     ' - that money is either tracked elsewhere, still locked in, or already back in hand.';
@@ -2336,7 +2378,8 @@ async function renderHome() {
   const divCard = _homeCard('💰', 'Dividends', 'per-stock · yearly · YoY', () => openDividend());
   const metalCard = _homeCard(_metalBarIcon(), 'Metals', 'gold · silver · SGB', () => openMetal());
   const bondCard = _homeCard('🧾', 'Bonds', 'coupon · maturity · vs bank', () => openBond());
-  host.appendChild(el('div', { class: 'home-cards' }, [stockCard, mfCard, metalCard, fdCard, divCard, bondCard]));
+  const efCard = _homeCard('🛟', 'Emergency Fund', 'targets · loans · corpus', () => openEmergency());
+  host.appendChild(el('div', { class: 'home-cards' }, [stockCard, mfCard, metalCard, fdCard, divCard, bondCard, efCard]));
   host.appendChild(el('p', { class: 'hint home-foot', text: 'Backup covers everything - open the ⋮ menu → Backup & Restore.' }));
 
   // Live stats for Stock and MF cards
@@ -3127,7 +3170,10 @@ async function renderBond() {
   let totInv = 0, totInterest = 0, totVsBank = 0, vsBankCount = 0, receivedToDate = 0;
   // Live capital = what's still outstanding. Same as principal for a bond whose
   // principal returns in one lump; genuinely smaller once it amortizes.
-  activeRows.forEach(({ c }) => { totInv += c.outstandingPrincipal; totInterest += c.totalInterest; });
+  // Emergency-Fund-linked bonds are excluded from every total on this page (they
+  // stay in the list, badged) because that surface owns them now — the same
+  // split SGBs have between the stocks store and the Metals surface.
+  activeRows.forEach(({ b: b2, c }) => { if (b2.emergencyFund) return; totInv += c.outstandingPrincipal; totInterest += c.totalInterest; });
   const returnPct = totInv > 0 ? (totInterest / totInv) * 100 : 0;
   // Interest earned from closed (matured + sold) bonds - real (logged payouts,
   // or realised sale proceeds) once either exists, else the coupon-rate
@@ -3135,8 +3181,12 @@ async function renderBond() {
   // actual COUPON payouts logged across every bond - sale proceeds are a
   // separate, larger figure shown on the sold card itself, not folded in here.
   let interestEarnedTotal = 0;
-  closedRows.forEach(({ c }) => { interestEarnedTotal += c.interestEarned; });
-  rows.forEach(({ c }) => { if (c.vsBank != null) { totVsBank += c.vsBank; vsBankCount++; } receivedToDate += c.payoutsTotal; });
+  closedRows.forEach(({ b: b2, c }) => { if (b2.emergencyFund) return; interestEarnedTotal += c.interestEarned; });
+  rows.forEach(({ b: b2, c }) => {
+    if (b2.emergencyFund) return;
+    if (c.vsBank != null) { totVsBank += c.vsBank; vsBankCount++; }
+    receivedToDate += c.payoutsTotal;
+  });
 
   const holdContent = el('div', { class: 'tab-content' + (_bondTab === 'holdings' ? '' : ' hidden') });
   const ovrvContent = el('div', { class: 'tab-content' + (_bondTab === 'overview' ? '' : ' hidden') });
@@ -3236,6 +3286,8 @@ function _bondCard(b2, c) {
     + (c.interestFreq && c.interestFreq !== 'maturity' ? ' ' + freqShort[c.interestFreq] : '')
     + (c.amortizes ? ' · principal ' + (freqShort[c.principalFreq] || c.principalFreq) : '')]);
   catLine.appendChild(statusBadge);
+  // Still listed here, but its money is counted on the Emergency Fund page.
+  if (b2.emergencyFund) catLine.appendChild(el('span', { class: 'badge ef-badge mf-beat', text: 'EF' }));
   // Three independent branches (not one three-way ternary) so each is easy to
   // audit on its own - a fall-through bug here previously meant "sold" landed
   // in the wrong branch of matTxt OR rightCol without the other noticing.
@@ -3531,6 +3583,16 @@ async function openBondForm(existing) {
     isSoldChk,
     el('span', { class: 'switch-track' }, [el('span', { class: 'switch-thumb' })]),
   ]);
+
+  // Linking a bond to the Emergency Fund hands ownership of it to that surface:
+  // it stays listed here with an "EF" badge but leaves this page's totals and
+  // Home's Total Invested, so the same money is never counted in two places.
+  const efChk = el('input', { type: 'checkbox' });
+  efChk.checked = !!b2.emergencyFund;
+  const efSwitch = el('label', { class: 'switch' }, [
+    efChk,
+    el('span', { class: 'switch-track' }, [el('span', { class: 'switch-thumb' })]),
+  ]);
   const soldDate = el('input', { type: 'date', value: b2.soldDate || todayISO() });
   // Deliberately explicit: entering the GAIN instead of the total proceeds
   // under-counts realised interest by exactly the principal.
@@ -3561,6 +3623,7 @@ async function openBondForm(existing) {
       startDate: startDate.value || null,
       maturityDate: maturityDate.value || null,
       payout: payout.value,
+      emergencyFund: efChk.checked,
       // A cumulative bond's interest is at maturity by definition, so don't store a
       // second, possibly-disagreeing answer for it - null means "ask `payout`".
       interestFreq: payout.value === 'cumulative' ? null : (interestFreq.value || null),
@@ -3679,6 +3742,7 @@ async function openBondForm(existing) {
     staggerBlock,
     field('Sold / redeemed early — also use this to close out a bond redeemed at maturity', soldSwitch),
     soldBlock,
+    field('Part of Emergency Fund — moves it to that page and out of these totals', efSwitch),
     readout,
   ]);
 
@@ -3761,6 +3825,611 @@ async function openBondForm(existing) {
   ]));
 }
 
+// ---------- Emergency Fund surface ----------
+// Logic in emergency.js; app.js does the `emergency`-store CRUD. The fund's
+// INVESTMENTS deliberately do NOT live in that store — they're ordinary
+// funds/bonds/fds records flagged `emergencyFund: true`, so they keep the
+// existing live NAV fetch with no duplicated code and no extra network calls.
+// Those flagged records are excluded from their own surface's totals AND from
+// Home's Total Invested, exactly the treatment SGBs already get in `stocks`.
+async function openEmergency() {
+  // No seeding: the user logs their own contributions, and the source sheet's
+  // own totals don't reconcile, so importing them would import the discrepancy.
+  setAppMode('ef');
+}
+
+// The fund's parked investments, read live from the three home stores.
+// A holding that has CLOSED (fund redeemed, bond matured/sold) stops counting as
+// parked — its principal is back in the fund, so it must fall out of
+// `invested` or the derived cash figure would understate by that much. Its gain
+// is returned separately as `realised` and folded into the corpus instead.
+async function efParked(nowMs) {
+  const now = nowMs || Date.now();
+  const items = [];
+  let invested = 0, value = 0, realised = 0;
+  const push = (o) => {
+    items.push(o);
+    if (o.closed) realised += Number(o.gain) || 0;
+    else { invested += Number(o.invested) || 0; value += Number(o.value) || 0; }
+  };
+  try {
+    const linked = ((await DB.byIndex('funds', 'owner', 'me')) || []).filter((f) => f.emergencyFund);
+    if (linked.length) {
+      const mod = await import('./mf.js');
+      for (const f of linked) {
+        const c = mod.computeFund(f, now);
+        const closed = f.status === 'Sold' || !!f.soldDate;
+        push({ kind: 'MF', name: f.name || 'Fund', closed,
+          invested: c.invested, value: c.value, gain: (c.value || 0) - (c.invested || 0),
+          sub: (f.type || 'Fund') + (c.value != null && f.navAsOf ? ' · NAV ' + f.navAsOf : '') });
+      }
+    }
+  } catch (_) { /* a missing store or module must not blank the whole surface */ }
+  try {
+    const linked = ((await DB.byIndex('bonds', 'owner', 'me')) || []).filter((b2) => b2.emergencyFund);
+    if (linked.length) {
+      const mod = await import('./bonds.js');
+      for (const b2 of linked) {
+        const c = mod.computeBond(b2, now);
+        const closed = c.effectiveStatus !== 'active';
+        push({ kind: 'Bond', name: b2.name || 'Bond', closed,
+          invested: c.outstandingPrincipal, value: c.currentValue, gain: c.interestEarned,
+          sub: (b2.rating || 'Unrated') + ' · ' + fmtIntRate(c.rate) });
+      }
+    }
+  } catch (_) {}
+  try {
+    const linked = ((await DB.byIndex('fds', 'owner', 'me')) || []).filter((f) => f.emergencyFund);
+    if (linked.length) {
+      const mod = await import('./fd.js');
+      for (const f of linked) {
+        const c = mod.computeFd(f, now);
+        const closed = c.effectiveStatus === 'matured';
+        push({ kind: 'FD', name: f.bank || 'FD', closed,
+          invested: c.principal, value: c.currentValue, gain: c.totalInterest,
+          sub: fmtIntRate(c.rate) + (c.maturity ? ' · mat ' + c.maturity : '') });
+      }
+    }
+  } catch (_) {}
+  return { invested, value, realised, count: items.length, items };
+}
+
+// All three logical tables plus the parked figures, in one pass.
+async function efLoad() {
+  const now = Date.now();
+  const [rows, parked] = await Promise.all([
+    DB.all('emergency').catch(() => []),
+    efParked(now),
+  ]);
+  const of = (k) => (rows || []).filter((r) => r.kind === k);
+  const mod = await import('./emergency.js');
+  const c = mod.computeEmergencyFund({
+    contributions: of('contribution'),
+    targets: of('target'),
+    loans: of('loan'),
+    parkedInvested: parked.invested,
+    parkedValue: parked.value,
+    parkedRealised: parked.realised,
+    parkedCount: parked.count,
+  }, now);
+  return { mod, c, parked, rows: rows || [] };
+}
+
+async function renderEmergency() {
+  const host = $('#efView');
+  host.innerHTML = '';
+  updateEfNavActive();
+  const { mod, c, parked } = await efLoad();
+
+  // ---- Summary (on every tab, so the headline figure never leaves the screen)
+  host.appendChild(el('section', { class: 'summary' }, [
+    el('div', { class: 'row-between summary-top' }, [
+      el('div', {}, [
+        el('div', { class: 'label', text: 'Fund value' }),
+        el('div', { class: 'big', text: fmtCur(c.fundValue, 'INR') }),
+      ]),
+      el('div', { class: 'summary-earned' }, [
+        el('div', { class: 'label', text: 'Interest earned' }),
+        el('div', { class: 'v ' + (c.totalInterest >= 0 ? 'pos' : 'neg'), text: (c.totalInterest >= 0 ? '+' : '') + fmtIntCur(c.totalInterest) }),
+      ]),
+    ]),
+    el('div', { class: 'grid' }, [
+      _mfCell('Collected', fmtIntCur(c.corpusIn)),
+      _mfCell('Invested', fmtIntCur(c.parkedInvested)),
+      _mfCell('Lent out', fmtIntCur(c.lentOut), c.lentOut > 0 ? 'warn' : ''),
+      _mfCell('Available', fmtIntCur(c.cashInHand), c.reconciles ? 'pos' : 'neg'),
+    ]),
+  ]));
+
+  if (_efTab === 'fund') host.appendChild(efFundTab(c, parked));
+  else if (_efTab === 'loans') host.appendChild(efLoansTab(c, mod));
+  else host.appendChild(efLogTab(c));
+}
+
+// ---- Fund tab: where the money is, the reconciliation, and the target ladder
+function efFundTab(c, parked) {
+  const wrap = el('div', { class: 'tab-content' });
+
+  // The two interest streams the user tracks separately.
+  wrap.appendChild(el('div', { class: 'chart-card' }, [
+    el('h3', { text: 'Interest' }),
+    el('div', { class: 'grid' }, [
+      _mfCell('From lending', fmtIntCur(c.loanInterestRealised), 'pos'),
+      _mfCell('From market', (c.marketInterest >= 0 ? '+' : '') + fmtIntCur(c.marketInterest), c.marketInterest >= 0 ? 'pos' : 'neg'),
+      _mfCell('Due on open loans', fmtIntCur(c.loanInterestPending), c.loanInterestPending > 0 ? 'warn' : ''),
+    ]),
+  ]));
+
+  // Where it's parked — live from the linked records.
+  const inv = el('div', { class: 'chart-card' }, [el('h3', { text: 'Invested in' })]);
+  if (!parked.count) {
+    inv.appendChild(el('p', { class: 'hint', text: 'Nothing linked yet. Open a mutual fund, bond or FD and switch on "Part of Emergency Fund" — it keeps its live NAV there and shows up here.' }));
+  } else {
+    parked.items.forEach((it) => {
+      const gain = (Number(it.value) || 0) - (Number(it.invested) || 0);
+      inv.appendChild(el('div', { class: 'card' }, [
+        el('div', { class: 'top' }, [
+          el('div', { class: 'card-left' }, [
+            el('div', { class: 'name', text: it.name }),
+            el('div', { class: 'cat mf-catline', text: it.kind + ' · ' + (it.sub || '') + (it.closed ? ' · closed' : '') }),
+          ]),
+          el('div', { class: 'card-right' }, it.closed
+            ? [el('div', { class: 'pct pos', text: '+' + fmtIntCur(it.gain) }), el('div', { class: 'meta-line', text: 'realised' })]
+            : [el('div', { class: 'pct ' + (gain >= 0 ? 'pos' : 'neg'), text: (gain >= 0 ? '+' : '') + fmtIntCur(gain) }), el('div', { class: 'meta-line', text: 'gain' })]),
+        ]),
+        it.closed ? document.createTextNode('') : el('div', { class: 'sub mf-sub2' }, [
+          el('span', {}, [el('div', {}, ['Invested ', b(fmtIntCur(it.invested))])]),
+          el('span', { class: 'value-emphasis' }, ['Value ', b(fmtIntCur(it.value))]),
+        ]),
+      ]));
+    });
+  }
+  wrap.appendChild(inv);
+
+  // Reconciliation — spelled out rather than left as a bare number, because it's
+  // the one figure that can silently go wrong if a contribution wasn't logged.
+  const rec = el('div', { class: 'chart-card' }, [el('h3', { text: 'Where it all is' })]);
+  const line = (label, amount, cls) => el('div', { class: 'bar-row' }, [
+    el('span', { class: 'bl', text: label }),
+    el('span', { class: 'bn ' + (cls || ''), text: fmtIntCur(amount) }),
+  ]);
+  rec.appendChild(line('Collected (contributions + interest)', c.corpusIn));
+  rec.appendChild(line('− Invested', c.parkedInvested));
+  rec.appendChild(line('− Lent out', c.lentOut));
+  rec.appendChild(line('= Available now', c.cashInHand, c.reconciles ? 'pos' : 'neg'));
+  if (!c.reconciles) {
+    rec.appendChild(el('p', { class: 'hint warn', text:
+      `More has been invested and lent than the log says was collected — short by ${fmtIntCur(c.shortfall)}. A contribution is probably missing from the Log tab.` }));
+  }
+  wrap.appendChild(rec);
+
+  // Target ladder.
+  const tg = el('div', { class: 'chart-card' }, [el('h3', { text: 'Targets' })]);
+  if (!c.targets.length) {
+    tg.appendChild(el('p', { class: 'hint', text: 'No targets yet. Tap + to add the first rung.' }));
+  } else {
+    c.targets.forEach((t) => {
+      tg.appendChild(el('div', { class: 'card', onclick: () => openEfTargetForm(t) }, [
+        el('div', { class: 'top' }, [
+          el('div', { class: 'card-left' }, [
+            el('div', { class: 'name' }, [t.name || 'Target',
+              t.isMet ? el('span', { class: 'badge good mf-beat', text: 'met' }) : document.createTextNode('')]),
+            el('div', { class: 'cat mf-catline', text: fmtIntCur(t.cumulative)
+              + (t.ladder === 'absorb' ? ' · replaces the previous' : '')
+              + (t.expectedClosure ? ' · by ' + t.expectedClosure : '') }),
+          ]),
+          el('div', { class: 'card-right' }, [
+            el('div', { class: 'pct ' + (t.isMet ? 'pos' : ''), text: t.pct.toFixed(0) + '%' }),
+            el('div', { class: 'meta-line', text: t.isMet ? '+' + fmtIntCur(t.surplus) + ' over' : fmtIntCur(t.remaining) + ' to go' }),
+          ]),
+        ]),
+        el('div', { class: 'bar-row' }, [
+          el('span', { class: 'bar-track' }, [el('span', { class: 'bar-fill', style: `width:${Math.max(2, t.pct).toFixed(1)}%` })]),
+        ]),
+      ]));
+    });
+  }
+  wrap.appendChild(tg);
+
+  wrap.appendChild(el('p', { class: 'hint mf-foot', text: 'Nothing here is counted in Home\'s Total Invested — the linked funds, bonds and FDs are tracked on this page instead of theirs, so the same money is never counted twice. Not financial advice.' }));
+  return wrap;
+}
+
+// ---- Loans tab
+function efLoansTab(c, mod) {
+  const wrap = el('div', { class: 'tab-content' });
+  const seg = el('div', { class: 'seg' }, [
+    ['open', `Open (${c.openCount})`],
+    ['closed', `Closed (${c.loanCount - c.openCount})`],
+    ['all', `All (${c.loanCount})`],
+  ].map(([v, label]) => el('button', {
+    class: (_efLoanFilter === v ? 'active' : ''), type: 'button', text: label,
+    onclick: () => { _efLoanFilter = v; renderEmergency(); },
+  })));
+  wrap.appendChild(el('div', { class: 'toolbar mf-toolbar-top' }, [seg]));
+
+  if (c.overdueCount || c.freeExpiringCount) {
+    const bits = [];
+    if (c.overdueCount) bits.push(`${c.overdueCount} past its return date`);
+    // Warn BEFORE the free window closes, not after interest has already started.
+    if (c.freeExpiringCount) bits.push(`${c.freeExpiringCount} about to start accruing interest`);
+    wrap.appendChild(el('p', { class: 'hint warn', text: bits.join(' · ') }));
+  }
+
+  const list = c.loans.filter((l) => _efLoanFilter === 'all' || (_efLoanFilter === 'open' ? !l.isClosed : l.isClosed));
+  if (!list.length) {
+    wrap.appendChild(el('div', { class: 'empty' }, [el('div', { class: 'e-icon', text: '🤝' }), el('p', { text: 'Nothing here.' })]));
+  } else {
+    const sec = el('section', { class: 'stock-list' });
+    // Open first, then most recently taken.
+    list.slice().sort((a, b2) => (a.isClosed - b2.isClosed) || String(b2.rec.takenDate || '').localeCompare(String(a.rec.takenDate || '')))
+      .forEach((l) => sec.appendChild(efLoanCard(l, mod)));
+    wrap.appendChild(sec);
+  }
+  return wrap;
+}
+
+function efLoanCard(l, mod) {
+  const r = l.rec;
+  const kindLabel = (mod.EF_KINDS.find(([v]) => v === r.loanKind) || [null, r.loanKind || 'Loan'])[1];
+  const badge = l.isClosed
+    ? el('span', { class: 'badge muted mf-beat', text: 'closed' })
+    : l.overdue
+      ? el('span', { class: 'badge bad mf-beat', text: 'overdue' })
+      : l.isFree
+        ? el('span', { class: 'badge good mf-beat', text: l.freeMonthsLeft <= 1 ? 'free · ' + l.freeMonthsLeft + 'm left' : 'interest-free' })
+        : el('span', { class: 'badge warn mf-beat', text: l.multiplier + '× band' });
+  return el('div', { class: 'card', onclick: () => openEfLoanForm(r) }, [
+    el('div', { class: 'top' }, [
+      el('div', { class: 'card-left' }, [
+        el('div', { class: 'name', text: (r.who || '—') + ' · ' + (r.purpose || 'Loan') }),
+        el('div', { class: 'cat mf-catline' }, [kindLabel + ' · ' + l.monthsElapsed + 'm', badge]),
+      ]),
+      el('div', { class: 'card-right' }, [
+        el('div', { class: 'pct ' + (l.interest > 0 ? 'warn' : 'pos'), text: l.interest > 0 ? fmtIntCur(l.interest) : '₹0' }),
+        el('div', { class: 'meta-line', text: l.isClosed ? 'interest' : 'if repaid on time' }),
+      ]),
+    ]),
+    el('div', { class: 'sub mf-sub2' }, [
+      el('span', {}, [
+        el('div', {}, ['Lent ', b(fmtIntCur(l.amount))]),
+        el('div', { class: 'mf-meta-mini', text: (r.takenDate || '?') + (r.expectedDate ? ' → ' + r.expectedDate : '') }),
+      ]),
+      el('span', { class: 'value-emphasis' }, [l.isClosed ? 'Repaid ' : 'Outstanding ', b(fmtIntCur(l.isClosed ? l.repaid : l.outstanding))]),
+    ]),
+    l.instalments ? el('div', { class: 'mf-meta-mini', text: `${l.instalments} instalment${l.instalments === 1 ? '' : 's'} · ${fmtIntCur(l.repaid)} repaid` }) : document.createTextNode(''),
+    // Show the accrued figure only when it differs from the quoted one, so an
+    // open loan makes clear what it costs NOW versus if repaid as planned.
+    (!l.isClosed && l.interestAccrued !== l.interest)
+      ? el('div', { class: 'meta-line', text: fmtIntCur(l.interestAccrued) + ' accrued so far' })
+      : document.createTextNode(''),
+    l.isOverridden ? el('div', { class: 'meta-line flat', text: 'interest entered manually' }) : document.createTextNode(''),
+    l.interestPaid ? el('div', { class: 'meta-line pos', text: fmtIntCur(l.interestPaid) + ' interest paid' }) : document.createTextNode(''),
+  ]);
+}
+
+// ---- Log tab: the contribution ledger
+function efLogTab(c) {
+  const wrap = el('div', { class: 'tab-content' });
+  wrap.appendChild(el('div', { class: 'chart-card' }, [
+    el('h3', { text: 'Contributed' }),
+    el('div', { class: 'grid' }, [
+      _mfCell('Total', fmtIntCur(c.contributedTotal)),
+      _mfCell('Mine', fmtIntCur(c.mineTotal)),
+      _mfCell('Spouse', fmtIntCur(c.spouseTotal)),
+      _mfCell('Months', String(c.contributionCount)),
+    ]),
+  ]));
+  const rows = (c.contributionRows || []).slice();
+  if (!rows.length) {
+    wrap.appendChild(el('div', { class: 'empty' }, [el('div', { class: 'e-icon', text: '🗓️' }), el('p', { text: 'No contributions logged yet.' }), el('p', { class: 'hint', text: 'Tap + to log a month.' })]));
+  } else {
+    const sec = el('section', { class: 'stock-list' });
+    rows.sort((a, b2) => String(b2.date || '').localeCompare(String(a.date || ''))).forEach((r) => {
+      const tot = (Number(r.mine) || 0) + (Number(r.spouse) || 0);
+      sec.appendChild(el('div', { class: 'card', onclick: () => openEfContribForm(r) }, [
+        el('div', { class: 'top' }, [
+          el('div', { class: 'card-left' }, [
+            el('div', { class: 'name', text: r.date || '—' }),
+            el('div', { class: 'cat mf-catline', text: `${fmtIntCur(r.mine)} + ${fmtIntCur(r.spouse)}` + (r.note ? ' · ' + r.note : '') }),
+          ]),
+          el('div', { class: 'card-right' }, [el('div', { class: 'pct pos', text: fmtIntCur(tot) })]),
+        ]),
+      ]));
+    });
+    wrap.appendChild(sec);
+  }
+  return wrap;
+}
+
+// Instalment ledger for a loan — an emergency draw is often repaid across
+// several months. Same date+amount shape as buildPayoutEditor.
+function buildEfRepayEditor(repayments, onChange) {
+  const rowsWrap = el('div', { class: 'hist-rows mf-txn-rows' });
+  const summary = el('div', { class: 'mf-txn-summary' });
+  const emptyEl = el('div', { class: 'mf-txn-empty', text: 'No repayments logged yet.' });
+  const refs = [];
+  const refreshSummary = () => {
+    const rows = refs.filter((r) => !r.removed);
+    const has = rows.length > 0;
+    rowsWrap.classList.toggle('hidden', !has);
+    summary.classList.toggle('hidden', !has);
+    emptyEl.classList.toggle('hidden', has);
+    if (has) {
+      const total = rows.reduce((s, r) => s + (num(r.amt.value) || 0), 0);
+      summary.innerHTML = '';
+      summary.appendChild(el('span', { text: rows.length + (rows.length === 1 ? ' instalment' : ' instalments') }));
+      summary.appendChild(el('span', { text: 'Repaid ' + fmtCur(total, 'INR') }));
+    }
+    if (typeof onChange === 'function') setTimeout(onChange, 0);
+  };
+  const addRow = (date, amount) => {
+    const d = el('input', { class: 'txn-date', type: 'date', value: date || todayISO() });
+    const amt = el('input', { class: 'txn-amt', type: 'number', inputmode: 'decimal', step: 'any', value: amount != null ? amount : '', placeholder: 'Repaid ₹' });
+    const del = el('button', { class: 'icon-btn', type: 'button', text: '×' });
+    const ref = { d, amt, removed: false };
+    amt.addEventListener('blur', refreshSummary);
+    d.addEventListener('change', refreshSummary);
+    const row = el('div', { class: 'mf-txn-row' }, [el('div', { class: 'txn-line' }, [d, amt, del])]);
+    del.addEventListener('click', () => { row.remove(); ref.removed = true; refreshSummary(); });
+    refs.push(ref);
+    rowsWrap.appendChild(row);
+    refreshSummary();
+  };
+  (repayments || []).slice().sort((a, b2) => (a.date || '').localeCompare(b2.date || '')).forEach((r) => addRow(r.date, r.amount));
+  refreshSummary();
+  const lastDate = () => refs.reduce((max, r) => (!r.removed && r.d.value && r.d.value > (max || '')) ? r.d.value : max, null);
+  const addBtn = el('button', {
+    class: 'icon-btn', type: 'button', text: '+', title: 'Add repayment',
+    onclick: () => addRow(lastDate() ? _efAddMonths(lastDate(), 1) : todayISO(), null),
+  });
+  const node = el('div', {}, [summary, emptyEl, rowsWrap, el('div', { class: 'mf-txn-btn-row' }, [addBtn])]);
+  const collect = () => {
+    const out = [];
+    for (const r of refs) {
+      if (r.removed) continue;
+      const dv = r.d.value, av = num(r.amt.value);
+      if (!dv || !(av > 0)) continue;
+      out.push({ date: dv, amount: Math.round(av * 100) / 100 });
+    }
+    return out.sort((a, b2) => (a.date || '').localeCompare(b2.date || ''));
+  };
+  return { node, collect };
+}
+// Local month-add so the editor doesn't need the module loaded just to default a date.
+function _efAddMonths(iso, months) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
+  if (!m) return todayISO();
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1 + Number(months || 0), +m[3]));
+  return isNaN(d) ? todayISO() : d.toISOString().slice(0, 10);
+}
+
+async function openEfLoanForm(existing) {
+  const isEdit = !!(existing && existing.id != null);
+  const mod = await import('./emergency.js');
+  const r = Object.assign({ loanKind: 'self', repayments: [] }, existing || {});
+
+  const numInput = (v, ph) => el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: v != null && v !== '' ? v : '', placeholder: ph });
+  const who = el('input', { type: 'text', value: r.who || '', placeholder: 'Who took it' });
+  const purpose = el('input', { type: 'text', value: r.purpose || '', placeholder: 'What for' });
+  const amount = numInput(r.amount, '₹ lent');
+  const loanKind = el('select', {}, mod.EF_KINDS.map(([v, l]) => {
+    const free = mod.EF_FREE_MONTHS[v] || 0;
+    const o = el('option', { value: v, text: l + (free ? ` — free for ${free} months` : ` — ${mod.EF_RATE}% from day one`) });
+    if (v === r.loanKind) o.selected = true;
+    return o;
+  }));
+  const takenDate = el('input', { type: 'date', value: r.takenDate || todayISO() });
+  const expectedDate = el('input', { type: 'date', value: r.expectedDate || '' });
+  const rate = numInput(r.rate, `% (blank = ${mod.EF_RATE}%)`);
+  const interestOverride = numInput(r.interestOverride, '₹ (blank = use the rule)');
+  const interestPaid = numInput(r.interestPaid, '₹ interest collected');
+  const note = el('input', { type: 'text', value: r.note || '', placeholder: 'Note (optional)' });
+
+  const closedChk = el('input', { type: 'checkbox' });
+  closedChk.checked = !!r.closedDate;
+  const closedSwitch = el('label', { class: 'switch' }, [closedChk, el('span', { class: 'switch-track' }, [el('span', { class: 'switch-thumb' })])]);
+  const closedDate = el('input', { type: 'date', value: r.closedDate || todayISO() });
+  const closedBlock = el('div', { class: 'sold-only' + (closedChk.checked ? '' : ' hidden') }, [field('Settled on', closedDate)]);
+  closedChk.addEventListener('change', () => { closedBlock.classList.toggle('hidden', !closedChk.checked); refresh(); });
+
+  const repayEditor = buildEfRepayEditor(r.repayments, () => refresh());
+
+  const buildRec = () => ({
+    kind: 'loan',
+    loanKind: loanKind.value,
+    who: who.value.trim(),
+    purpose: purpose.value.trim(),
+    amount: num(amount.value) || 0,
+    takenDate: takenDate.value || null,
+    expectedDate: expectedDate.value || null,
+    // Gate on the checkbox, not on the date having a value — the date defaults to
+    // today, so unticking must be what clears it.
+    closedDate: closedChk.checked ? (closedDate.value || todayISO()) : null,
+    rate: rate.value !== '' ? num(rate.value) : null,
+    interestOverride: interestOverride.value !== '' ? num(interestOverride.value) : null,
+    interestPaid: interestPaid.value !== '' ? num(interestPaid.value) : null,
+    repayments: repayEditor.collect(),
+    note: note.value.trim(),
+    createdAt: r.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+
+  const readout = el('div', { class: 'mf-bench-readout' });
+  const refresh = () => {
+    readout.innerHTML = '';
+    const rec = buildRec();
+    const c = mod.computeLoan(rec, Date.now());
+    readout.appendChild(el('div', { class: 'mf-bench-now' }, [
+      el('span', {}, ['Outstanding ', b(fmtIntCur(c.outstanding))]),
+      el('span', {}, [c.isClosed ? 'Interest ' : 'If repaid on time ', b(fmtIntCur(c.interest))]),
+      el('span', {}, [c.monthsElapsed + 'm · ', b(c.multiplier + '×')]),
+    ]));
+    // The interest is DERIVED, so show the arithmetic — a wrong date silently
+    // changes the band, and that's invisible otherwise.
+    if (c.isFree) {
+      readout.appendChild(el('p', { class: 'hint', text:
+        `Interest-free for the first ${c.freeMonths} months` + (c.isClosed ? ' — settled inside that window.' : ` · ${c.freeMonthsLeft} month${c.freeMonthsLeft === 1 ? '' : 's'} left before interest starts.`) }));
+    } else if (!c.isOverridden && rec.amount > 0) {
+      const rt = rec.rate != null ? rec.rate : mod.EF_RATE;
+      readout.appendChild(el('p', { class: 'hint', text:
+        `${fmtIntCur(rec.amount)} × ${rt}% × ${c.multiplier} (${c.monthsElapsed} months) = ${fmtIntCur(rec.amount * (rt / 100) * c.multiplier)}, rounded up to ${fmtIntCur(c.interest)}.` }));
+    }
+    if (c.isOverridden) readout.appendChild(el('p', { class: 'hint warn', text: 'Using the amount you typed instead of the rule.' }));
+    if (c.overdue) readout.appendChild(el('p', { class: 'hint warn', text: 'Past its expected return date.' }));
+    if (!c.isClosed && !c.isFree) {
+      const nextBand = (Math.floor(c.monthsElapsed / 3) + 1) * 3;
+      readout.appendChild(el('p', { class: 'hint', text: `Next band at ${nextBand + 1} months → ${c.multiplier + 1}× interest.` }));
+    }
+  };
+  [amount, loanKind, takenDate, expectedDate, rate, interestOverride, interestPaid, closedDate].forEach((i) => i.addEventListener('input', refresh));
+  refresh();
+
+  const del = async () => {
+    if (!window.confirm('Delete this loan? This cannot be undone.')) return;
+    await DB.del('emergency', r.id); closeModal(); toast('Loan deleted'); renderEmergency();
+  };
+  const save = async () => {
+    if (!who.value.trim()) { toast('Who took it?'); return; }
+    if (!(num(amount.value) > 0)) { toast('Enter the amount lent'); return; }
+    if (!takenDate.value) { toast('Enter the date it was taken'); return; }
+    const rec = buildRec();
+    if (isEdit) rec.id = r.id;
+    await DB.put('emergency', rec); closeModal(); toast(isEdit ? 'Loan updated' : 'Loan added'); renderEmergency();
+  };
+
+  const detailsContent = el('div', {}, [
+    el('div', { class: 'field-row' }, [field('Who', who), field('Amount (₹)', amount)]),
+    field('Purpose', purpose),
+    field('Type', loanKind),
+    el('div', { class: 'field-row' }, [field('Taken on', takenDate), field('Expected back', expectedDate)]),
+    el('div', { class: 'field-row' }, [field('Rate % override', rate), field('Interest override (₹)', interestOverride)]),
+    field('Interest collected (₹)', interestPaid),
+    field('Settled', closedSwitch),
+    closedBlock,
+    field('Note', note),
+    readout,
+  ]);
+  const repayContent = el('div', { class: 'hidden' }, [
+    el('p', { class: 'hint', text: 'Log each repayment. Once they cover the amount lent, the loan counts as settled and its interest stops climbing bands.' }),
+    repayEditor.node,
+  ]);
+  const detailsTabBtn = el('button', { class: 'active', type: 'button', text: 'Details' });
+  const repayTabBtn = el('button', { type: 'button', text: 'Repayments' });
+  const tabs = [{ btn: detailsTabBtn, content: detailsContent }, { btn: repayTabBtn, content: repayContent }];
+  const showTab = (w) => tabs.forEach((t) => { const on = t === w; t.btn.classList.toggle('active', on); t.content.classList.toggle('hidden', !on); });
+  detailsTabBtn.addEventListener('click', () => showTab(tabs[0]));
+  repayTabBtn.addEventListener('click', () => { showTab(tabs[1]); refresh(); });
+
+  const btns = [el('button', { class: 'btn primary', text: 'Save', onclick: save })];
+  if (isEdit) btns.push(el('button', { class: 'btn danger', text: 'Delete', onclick: del }));
+  btns.push(el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }));
+  openModal(el('div', { class: 'sheet has-fixed-footer' }, [
+    el('div', { class: 'sheet-scroll' }, [
+      el('h2', { text: isEdit ? (r.purpose || 'Edit loan') : 'Add loan' }),
+      el('div', { class: 'seg' }, [detailsTabBtn, repayTabBtn]),
+      detailsContent, repayContent,
+    ]),
+    el('div', { class: 'sheet-footer' }, [el('div', { class: 'btn-row', style: 'flex-wrap:wrap' }, btns)]),
+  ]));
+}
+
+async function openEfContribForm(existing) {
+  const isEdit = !!(existing && existing.id != null);
+  const r = Object.assign({}, existing || {});
+  const numInput = (v, ph) => el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: v != null && v !== '' ? v : '', placeholder: ph });
+  const date = el('input', { type: 'date', value: r.date || todayISO() });
+  const mine = numInput(r.mine, '₹ mine');
+  const spouse = numInput(r.spouse, '₹ spouse');
+  const note = el('input', { type: 'text', value: r.note || '', placeholder: 'Note (optional)' });
+  const total = el('p', { class: 'hint' });
+  const refresh = () => {
+    const t = (num(mine.value) || 0) + (num(spouse.value) || 0);
+    total.textContent = t > 0 ? 'Total for this month: ' + fmtIntCur(t) : '';
+  };
+  // Both sides pay the same amount, so mirror it — saves typing the same number
+  // twice every month, and it's still editable when a month differs.
+  mine.addEventListener('input', () => { if (!isEdit || !spouse.value) spouse.value = mine.value; refresh(); });
+  spouse.addEventListener('input', refresh);
+  refresh();
+
+  const del = async () => {
+    if (!window.confirm('Delete this contribution?')) return;
+    await DB.del('emergency', r.id); closeModal(); toast('Contribution deleted'); renderEmergency();
+  };
+  const save = async () => {
+    if (!date.value) { toast('Pick a month'); return; }
+    const m = num(mine.value) || 0, s = num(spouse.value) || 0;
+    if (!(m + s > 0)) { toast('Enter an amount'); return; }
+    const rec = { kind: 'contribution', date: date.value, mine: m, spouse: s, note: note.value.trim(),
+      createdAt: r.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString() };
+    if (isEdit) rec.id = r.id;
+    await DB.put('emergency', rec); closeModal(); toast(isEdit ? 'Contribution updated' : 'Contribution logged'); renderEmergency();
+  };
+  const btns = [el('button', { class: 'btn primary', text: 'Save', onclick: save })];
+  if (isEdit) btns.push(el('button', { class: 'btn danger', text: 'Delete', onclick: del }));
+  btns.push(el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }));
+  openModal(el('div', { class: 'sheet has-fixed-footer' }, [
+    el('div', { class: 'sheet-scroll' }, [
+      el('h2', { text: isEdit ? 'Edit contribution' : 'Log contribution' }),
+      field('Month', date),
+      el('div', { class: 'field-row' }, [field('Mine (₹)', mine), field('Spouse (₹)', spouse)]),
+      field('Note', note),
+      total,
+    ]),
+    el('div', { class: 'sheet-footer' }, [el('div', { class: 'btn-row', style: 'flex-wrap:wrap' }, btns)]),
+  ]));
+}
+
+async function openEfTargetForm(existing) {
+  const isEdit = !!(existing && existing.id != null);
+  const mod = await import('./emergency.js');
+  const r = Object.assign({ ladder: 'add' }, existing || {});
+  const name = el('input', { type: 'text', value: r.name || '', placeholder: 'Target name' });
+  const amount = el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: r.amount != null && r.amount !== '' ? r.amount : '', placeholder: '₹ target' });
+  const order = el('input', { type: 'number', inputmode: 'numeric', step: '1', value: r.order != null && r.order !== '' ? r.order : '', placeholder: 'Rung (1 = first)' });
+  const ladder = el('select', {}, mod.EF_LADDER.map(([v, l]) => { const o = el('option', { value: v, text: l }); if (v === r.ladder) o.selected = true; return o; }));
+  const expectedClosure = el('input', { type: 'text', value: r.expectedClosure || '', placeholder: 'e.g. Jul 26 (optional)' });
+  const note = el('input', { type: 'text', value: r.note || '', placeholder: 'Note (optional)' });
+
+  const del = async () => {
+    if (!window.confirm('Delete this target?')) return;
+    await DB.del('emergency', r.id); closeModal(); toast('Target deleted'); renderEmergency();
+  };
+  const save = async () => {
+    if (!name.value.trim()) { toast('Enter the target name'); return; }
+    if (!(num(amount.value) > 0)) { toast('Enter the target amount'); return; }
+    const rec = { kind: 'target', name: name.value.trim(), amount: num(amount.value) || 0,
+      ladder: ladder.value, order: num(order.value) || 0,
+      expectedClosure: expectedClosure.value.trim(), note: note.value.trim(),
+      createdAt: r.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString() };
+    if (isEdit) rec.id = r.id;
+    await DB.put('emergency', rec); closeModal(); toast(isEdit ? 'Target updated' : 'Target added'); renderEmergency();
+  };
+  const btns = [el('button', { class: 'btn primary', text: 'Save', onclick: save })];
+  if (isEdit) btns.push(el('button', { class: 'btn danger', text: 'Delete', onclick: del }));
+  btns.push(el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }));
+  openModal(el('div', { class: 'sheet has-fixed-footer' }, [
+    el('div', { class: 'sheet-scroll' }, [
+      el('h2', { text: isEdit ? (r.name || 'Edit target') : 'Add target' }),
+      field('Name', name),
+      el('div', { class: 'field-row' }, [field('Amount (₹)', amount), field('Rung order', order)]),
+      field('Stacking', ladder),
+      el('p', { class: 'hint', text: '"Replaces the previous" is for a target that supersedes the one below it rather than adding to it — e.g. a joint fund that already covers the single-person one beneath it. Use "Adds on top" when the goal genuinely stacks.' }),
+      el('div', { class: 'field-row' }, [field('Expected by', expectedClosure), field('Note', note)]),
+    ]),
+    el('div', { class: 'sheet-footer' }, [el('div', { class: 'btn-row', style: 'flex-wrap:wrap' }, btns)]),
+  ]));
+}
+
+// The + FAB is tab-aware: on Fund it adds a target, on Loans a loan, on Log a
+// contribution — so the obvious action for whatever you're looking at is one tap.
+function efAddForTab() {
+  if (_efTab === 'loans') return openEfLoanForm(null);
+  if (_efTab === 'log') return openEfContribForm(null);
+  return openEfTargetForm(null);
+}
+
 // ---------- Mutual Funds surface ----------
 // Lazy-loaded: mf.js (logic + seed data) only loads when the user opens MF.
 async function openMF() {
@@ -3836,9 +4505,13 @@ async function renderMF() {
   const viewSold = _mfFilter === 'sold';
   const list = (viewSold ? soldRows : heldRows).slice();
 
-  // Totals over the funds currently shown.
+  // Totals over the funds currently shown. Emergency-Fund-linked funds stay in
+  // the list (badged) but are excluded from every figure here — that surface owns
+  // them now, and mixing an emergency Liquid fund into long-term equity return
+  // and XIRR would misrepresent both. Same split SGBs have with Metals.
   let totInv = 0, totVal = 0, aboveBench = 0, benchCount = 0, wSum = 0, wW = 0;
-  list.forEach(({ c }) => {
+  list.forEach(({ f, c }) => {
+    if (f.emergencyFund) return;
     totInv += c.invested; totVal += c.value;
     if (c.benchStatus) { benchCount++; if (c.benchStatus === 'above') aboveBench++; }
     if (c.xirr != null && c.value > 0) { wSum += c.xirr * c.value; wW += c.value; }
@@ -4200,6 +4873,8 @@ function _mfCard(f, c) {
   const statusTxt = c.sold ? ('Sold' + (c.soldDate ? ' · ' + c.soldDate : '')) : (f.status || '');
   const catLine = el('div', { class: 'cat mf-catline' }, [(f.type || '') + (statusTxt ? ' · ' + statusTxt : '')]);
   if (c.sold) catLine.appendChild(el('span', { class: 'badge muted mf-beat', text: 'sold' }));
+  // Still listed here, but its money is counted on the Emergency Fund page.
+  if (f.emergencyFund) catLine.appendChild(el('span', { class: 'badge ef-badge mf-beat', text: 'EF' }));
   if (benchBadge) catLine.appendChild(benchBadge);
   const xirrLabel = c.xirrSource === 'sheet' ? 'XIRR (sheet)' : c.xirrSource === 'realized' ? 'Realized XIRR' : 'XIRR';
 
@@ -4402,6 +5077,16 @@ async function openFundForm(existing) {
   const latestNav = numInput(f.latestNav, 'Latest NAV ₹');
   const navAsOf = el('input', { type: 'date', value: f.navAsOf || f.valueAsOf || todayISO() });
 
+  // Linking a fund to the Emergency Fund hands ownership of it to that surface:
+  // it stays listed here with an "EF" badge and keeps its live NAV fetch, but
+  // leaves this page's totals and Home's Total Invested.
+  const efChk = el('input', { type: 'checkbox' });
+  efChk.checked = !!f.emergencyFund;
+  const efSwitch = el('label', { class: 'switch' }, [
+    efChk,
+    el('span', { class: 'switch-track' }, [el('span', { class: 'switch-thumb' })]),
+  ]);
+
   // Benchmark thresholds (user-defined %, stored as decimals; never auto-modified).
   const benchRetLo = pctInput(f.benchReturnLow, 'Low return %');
   const benchRetHi = pctInput(f.benchReturnHigh, 'High return %');
@@ -4448,6 +5133,7 @@ async function openFundForm(existing) {
       category: category.value.trim() || 'Equity',
       benchmark: f.benchmark || '',       // field removed from form; stored value preserved
       status: status.value,
+      emergencyFund: efChk.checked,
       sip: num(sip.value) || 0,
       targetYear: num(targetYear.value) || 2030,
       latestNav: ln != null ? ln : null,
@@ -4506,6 +5192,7 @@ async function openFundForm(existing) {
     el('div', { class: 'field-row' }, [field('Latest NAV', latestNav), field('NAV as of', navAsOf)]),
     soldRow,
     el('div', { class: 'field-row' }, [field('Good return', goodReturn), field('Target year', targetYear)]),
+    field('Part of Emergency Fund — moves it to that page and out of these totals', efSwitch),
     field('Remarks', remarks),
   ]);
   editTabContent.appendChild(el('p', { class: 'hint', text: 'Current value = total units × latest NAV. Log each buy (with units) on the Fund Holdings tab, then just refresh the latest NAV here to update value, return, XIRR and benchmark status.' }));
@@ -6244,6 +6931,7 @@ function bind() {
   $('#fdAddBtn').addEventListener('click', () => openFdForm(null));
   $('#metalAddBtn').addEventListener('click', () => openMetalTxn(null));
   $('#bondAddBtn').addEventListener('click', () => openBondForm(null));
+  $('#efAddBtn').addEventListener('click', () => efAddForTab());
   $('#backBtn').addEventListener('click', () => setAppMode('home'));
   $('#menuBtn').addEventListener('click', openMenu);
   const onSearch = debounce(renderList, 120);

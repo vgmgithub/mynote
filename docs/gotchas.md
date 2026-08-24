@@ -120,6 +120,19 @@ See [ocr.md](ocr.md) for the full list. Top three:
 
 ---
 
+## A DB version bump BLOCKS while another tab is open
+
+`indexedDB.open(NAME, VERSION)` fires `onblocked` — not `onerror` — when another tab still holds the previous version open. `db.js` originally handled only `onsuccess`/`onerror`, so a blocked upgrade left the `dbp` promise **permanently unsettled**: the app hung on a blank screen with *nothing in the console*. Found the hard way when bumping v8 → v9 with a second tab open.
+
+`onblocked` now rejects with an actionable message ("close the other tab(s) and reload"). Two things to remember:
+
+- **When testing any future version bump, close every other tab on the origin first** — otherwise you'll debug a phantom hang.
+- Two stale-code traps stack here. The SW doesn't self-activate (see the top of this file), *and* a second tab can block the upgrade. When a change seems to have no effect, check both before touching the code.
+
+**Adding a store is otherwise safe:** every block in `onupgradeneeded` is guarded by `if (!db.objectStoreNames.contains(...))`, so existing stores are untouched and no migration is needed. But the new store must be added to **`exportAll()` AND `importAll()`** by hand — both enumerate stores explicitly, so a new one is silently left out of backups.
+
+---
+
 ## OCR `_findStockMatch` returns the best match, NOT null
 
 Earlier behavior used a score threshold and dropped rows that didn't clear it. Then the user said: "if a name matches half of existing holdings.. select that don't skip by exact match.. best match find and show it.. if wrong will untick". Now there's no threshold — every parsed row gets the best match (or null if zero matches at any level).
