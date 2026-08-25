@@ -3839,18 +3839,28 @@ async function openEmergency() {
 }
 
 // The fund's parked investments, read live from the three home stores.
-// A holding that has CLOSED (fund redeemed, bond matured/sold) stops counting as
-// parked — its principal is back in the fund, so it must fall out of
-// `invested` or the derived cash figure would understate by that much. Its gain
-// is returned separately as `realised` and folded into the corpus instead.
+//
+// Each holding is decomposed into three separate quantities, because conflating
+// them loses real money:
+//   invested — capital still deployed (drops to 0 once the holding closes, since
+//              the principal is then back in the fund as cash)
+//   value    — what that deployed capital is worth right now (unrealised)
+//   income   — cash the holding has ALREADY paid into the fund
+//
+// `income` is the one that's easy to miss. A payout bond's currentValue stays
+// flat at its principal because each coupon leaves as cash, and a payout FD does
+// the same — so `value − invested` is 0 for both, and their real receipts would
+// vanish entirely if income weren't tracked on its own. It feeds `parkedRealised`
+// → corpusIn → available cash.
 async function efParked(nowMs) {
   const now = nowMs || Date.now();
   const items = [];
   let invested = 0, value = 0, realised = 0;
   const push = (o) => {
+    o.income = Number(o.income) || 0;
     items.push(o);
-    if (o.closed) realised += Number(o.gain) || 0;
-    else { invested += Number(o.invested) || 0; value += Number(o.value) || 0; }
+    realised += o.income;
+    if (!o.closed) { invested += Number(o.invested) || 0; value += Number(o.value) || 0; }
   };
   try {
     const linked = ((await DB.byIndex('funds', 'owner', 'me')) || []).filter((f) => f.emergencyFund);
@@ -3859,8 +3869,11 @@ async function efParked(nowMs) {
       for (const f of linked) {
         const c = mod.computeFund(f, now);
         const closed = f.status === 'Sold' || !!f.soldDate;
+        // A fund pays nothing out along the way — units × NAV already carries the
+        // whole return — so income is only the gain realised on redemption.
         push({ kind: 'MF', name: f.name || 'Fund', closed,
-          invested: c.invested, value: c.value, gain: (c.value || 0) - (c.invested || 0),
+          invested: c.invested, value: c.value,
+          income: closed ? (c.value || 0) - (c.invested || 0) : 0,
           sub: (f.type || 'Fund') + (c.value != null && f.navAsOf ? ' · NAV ' + f.navAsOf : '') });
       }
     }
@@ -3872,8 +3885,12 @@ async function efParked(nowMs) {
       for (const b2 of linked) {
         const c = mod.computeBond(b2, now);
         const closed = c.effectiveStatus !== 'active';
+        // Active: the coupons actually banked so far (post-sale rows excluded, as
+        // those are the exit itself). Closed: interestEarned already folds the
+        // coupons together with any sale gain.
         push({ kind: 'Bond', name: b2.name || 'Bond', closed,
-          invested: c.outstandingPrincipal, value: c.currentValue, gain: c.interestEarned,
+          invested: c.outstandingPrincipal, value: c.currentValue,
+          income: closed ? c.interestEarned : c.payoutsBeforeExit,
           sub: (b2.rating || 'Unrated') + ' · ' + fmtIntRate(c.rate) });
       }
     }
@@ -3885,8 +3902,12 @@ async function efParked(nowMs) {
       for (const f of linked) {
         const c = mod.computeFd(f, now);
         const closed = c.effectiveStatus === 'matured';
+        // A payout FD hands its interest over as it accrues; a cumulative one
+        // keeps it inside currentValue, so counting it as income too would
+        // double it.
         push({ kind: 'FD', name: f.bank || 'FD', closed,
-          invested: c.principal, value: c.currentValue, gain: c.totalInterest,
+          invested: c.principal, value: c.currentValue,
+          income: closed ? c.totalInterest : (c.payout ? c.accruedInterest : 0),
           sub: fmtIntRate(c.rate) + (c.maturity ? ' · mat ' + c.maturity : '') });
       }
     }
@@ -3950,12 +3971,15 @@ async function renderEmergency() {
 function efFundTab(c, parked) {
   const wrap = el('div', { class: 'tab-content' });
 
-  // The two interest streams the user tracks separately.
+  // Interest, split by whether the money has actually landed. Coupons and
+  // payout-FD interest are REAL cash already in the fund; "unrealised" is only
+  // the mark-to-market on what's still deployed.
   wrap.appendChild(el('div', { class: 'chart-card' }, [
     el('h3', { text: 'Interest' }),
     el('div', { class: 'grid' }, [
       _mfCell('From lending', fmtIntCur(c.loanInterestRealised), 'pos'),
-      _mfCell('From market', (c.marketInterest >= 0 ? '+' : '') + fmtIntCur(c.marketInterest), c.marketInterest >= 0 ? 'pos' : 'neg'),
+      _mfCell('Received from investments', fmtIntCur(c.parkedRealised), c.parkedRealised > 0 ? 'pos' : ''),
+      _mfCell('Unrealised on investments', (c.marketInterest >= 0 ? '+' : '') + fmtIntCur(c.marketInterest), c.marketInterest >= 0 ? 'pos' : 'neg'),
       _mfCell('Due on open loans', fmtIntCur(c.loanInterestPending), c.loanInterestPending > 0 ? 'warn' : ''),
     ]),
   ]));
@@ -3975,12 +3999,20 @@ function efFundTab(c, parked) {
           ]),
           el('div', { class: 'card-right' }, it.closed
             ? [el('div', { class: 'pct pos', text: '+' + fmtIntCur(it.gain) }), el('div', { class: 'meta-line', text: 'realised' })]
-            : [el('div', { class: 'pct ' + (gain >= 0 ? 'pos' : 'neg'), text: (gain >= 0 ? '+' : '') + fmtIntCur(gain) }), el('div', { class: 'meta-line', text: 'gain' })]),
+            // "unrealised", not "gain" — a payout bond sits at +₹0 here while its
+            // coupons show on their own line below, and "gain ₹0" would read as
+            // if it had earned nothing.
+            : [el('div', { class: 'pct ' + (gain >= 0 ? 'pos' : 'neg'), text: (gain >= 0 ? '+' : '') + fmtIntCur(gain) }), el('div', { class: 'meta-line', text: 'unrealised' })]),
         ]),
         it.closed ? document.createTextNode('') : el('div', { class: 'sub mf-sub2' }, [
           el('span', {}, [el('div', {}, ['Invested ', b(fmtIntCur(it.invested))])]),
           el('span', { class: 'value-emphasis' }, ['Value ', b(fmtIntCur(it.value))]),
         ]),
+        // Coupons / payout interest already banked. Shown separately because it
+        // is NOT inside the value above — that money has left the holding.
+        (!it.closed && it.income > 0)
+          ? el('div', { class: 'meta-line pos', text: fmtIntCur(it.income) + ' interest received (already cash in the fund)' })
+          : document.createTextNode(''),
       ]));
     });
   }
@@ -3993,7 +4025,7 @@ function efFundTab(c, parked) {
     el('span', { class: 'bl', text: label }),
     el('span', { class: 'bn ' + (cls || ''), text: fmtIntCur(amount) }),
   ]);
-  rec.appendChild(line('Collected (contributions + interest)', c.corpusIn));
+  rec.appendChild(line('Collected (contributions + interest received)', c.corpusIn));
   rec.appendChild(line('− Invested', c.parkedInvested));
   rec.appendChild(line('− Lent out', c.lentOut));
   rec.appendChild(line('= Available now', c.cashInHand, c.reconciles ? 'pos' : 'neg'));

@@ -109,9 +109,39 @@ fundValue      = parkedValue + cashInHand + lentOut
 totalInterest  = loanInterestRealised + marketInterest + parkedRealised
 ```
 
-`parkedRealised` handles a **closed** parked holding (bond matured, fund redeemed): its principal
-leaves `parkedInvested`, so `cashInHand` rises by it automatically, and its *gain* is added to
-`corpusIn` on top. Without it, a maturing bond's interest would silently vanish from the corpus.
+### Each parked holding decomposes into three quantities
+
+Conflating these loses real money, so `efParked()` tracks them separately:
+
+| | meaning | goes into |
+|---|---|---|
+| `invested` | capital still deployed (0 once closed — principal is back as cash) | `parkedInvested` |
+| `value` | what that deployed capital is worth now (unrealised) | `parkedValue` |
+| `income` | cash the holding has **already paid into the fund** | `parkedRealised` → `corpusIn` |
+
+`income` is the one that's easy to miss, and getting it wrong was a real bug caught after the first
+commit. **A payout bond's `currentValue` stays flat at its principal** because every coupon leaves as
+cash — and a **payout FD** behaves identically. So `value − invested` is **0** for both, and their
+actual receipts vanish entirely unless income is tracked on its own axis. A bond that had paid two
+coupons was reporting ₹0 interest earned and ₹0 available.
+
+Counted once per path, verified:
+
+| Holding | `invested` | unrealised (`value−invested`) | `income` |
+|---|---|---|---|
+| Cumulative bond, active | principal | the whole accrual | 0 (nothing paid out) |
+| Payout bond, active | outstanding principal | **0** | coupons banked (`payoutsBeforeExit`) |
+| Bond sold / matured | **0** | 0 | `interestEarned` = coupons + sale gain |
+| Payout FD, active | principal | **0** | `accruedInterest` |
+| Cumulative FD, active | principal | the accrual | 0 |
+| MF, held | invested | mark-to-market | 0 (units × NAV carries it all) |
+| MF, redeemed | **0** | 0 | realised gain |
+
+A payout row dated **on/after** a bond's sale is excluded from `income` (it's the exit itself, not
+extra interest) — the same rule `payoutsBeforeExit` already applies on the Bonds surface.
+
+For a closed holding the principal leaves `parkedInvested`, so `cashInHand` rises by it
+automatically, and only the gain is added to `corpusIn` on top.
 
 **`cashInHand` is a derived residual, so it can go negative** — meaning more has been parked and lent
 than the log says was collected (usually a missing contribution). That's surfaced as an explicit
@@ -123,9 +153,12 @@ than the log says was collected (usually a missing contribution). That's surface
 Three tabs on `#efBottomNav`. The summary card (fund value, interest earned, collected / invested /
 lent out / available) shows on **all** of them, so the headline never leaves the screen.
 
-- **Fund** — the two interest streams (lending vs market), the live "Invested in" list of linked
-  holdings, the `corpusIn − invested − lent = available` reconciliation, and the target ladder with
-  progress bars.
+- **Fund** — interest split four ways (from lending · received from investments · unrealised on
+  investments · due on open loans), the live "Invested in" list of linked holdings, the
+  `corpusIn − invested − lent = available` reconciliation, and the target ladder with progress bars.
+  A holding that has paid interest out says so on its own line ("₹X interest received (already cash in
+  the fund)"), and its right-hand figure is labelled **unrealised** rather than "gain" — otherwise a
+  payout bond showing "gain ₹0" reads as if it had earned nothing.
 - **Loans** — Open / Closed / All, with a warning strip counting overdue loans and loans **about to**
   start accruing (warn *before* the free window closes, not after). Card badges: `closed` /
   `overdue` / `interest-free` / `Nm left` / `N× band`.
