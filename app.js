@@ -4070,7 +4070,7 @@ async function renderEmergency() {
           'Collected',
           el('button', {
             class: 'calc-btn', type: 'button', 'aria-label': 'Contribution projection calculator',
-            title: 'Project future contributions', text: '🧮',
+            title: 'Project future contributions', text: '🔮',
             onclick: (e) => { e.stopPropagation(); openEfProjectionCalc(c, mod); },
           }),
         ]),

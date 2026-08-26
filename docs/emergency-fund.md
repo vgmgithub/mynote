@@ -162,7 +162,7 @@ than the log says was collected (usually a missing contribution). That's surface
 Four tabs on `#efBottomNav`: **Funds | Targets | Loans | Log**. The summary card (fund value, interest
 earned, collected / invested / lent out / available) shows on **all** of them, so the headline never
 leaves the screen. **Collected** on this card is `contributedTotal` — raw contributions only, not
-`corpusIn` — with a 🧮 button beside the label that opens the contribution-projection calculator
+`corpusIn` — with a 🔮 button beside the label that opens the contribution-projection calculator
 (below). The **+** FAB is hidden only on the Funds tab (nothing to add there directly — link a holding
 from its own form instead) and shown on Targets/Loans/Log.
 
@@ -192,7 +192,7 @@ directly.
 
 ### Contribution projection calculator
 
-The 🧮 next to the summary card's **Collected** label opens a popup that projects `contributedTotal`
+The 🔮 next to the summary card's **Collected** label opens a popup that projects `contributedTotal`
 forward, assuming the last logged monthly contribution (`mine + spouse` on the latest row) keeps
 repeating. **Auto-calculate** (on by default, whenever a contribution exists to base it on) fills the
 monthly amount from that last row; switching it off lets the amount be typed by hand for a what-if
