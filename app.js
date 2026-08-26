@@ -1716,7 +1716,7 @@ function buildEfBottomNav() {
   if (nav.childElementCount) { updateEfNavActive(); return; }
   nav.innerHTML = '';
   [['fund', '🛟', 'Funds'], ['targets', '🎯', 'Targets'], ['loans', '🤝', 'Loans'], ['log', '🗓️', 'Log']].forEach(([v, ico, label]) => {
-    nav.appendChild(el('button', { 'data-view': v, onclick: () => { if (_efTab === v) return; _efTab = v; renderEmergency(); } },
+    nav.appendChild(el('button', { 'data-view': v, onclick: () => { if (_efTab === v) return; _efTab = v; renderEmergency(); $('#efAddBtn').classList.toggle('hidden', _efTab === 'fund'); } },
       [el('span', { class: 'bn-ico', text: ico }), label]));
   });
   updateEfNavActive();
@@ -1790,7 +1790,8 @@ async function renderFD() {
   // each active FD splits into fresh (out-of-pocket) + rolledIn (recycled from a
   // matured parent); effective principal = fresh + rolledIn.
   let totEff = 0, totFresh = 0, totRolled = 0, totCurVal = 0, totInterest = 0, monthlyIncome = 0;
-  activeRows.forEach(({ c }) => {
+  activeRows.forEach(({ f, c }) => {
+    if (f.emergencyFund) return;  // owned by the Emergency Fund surface
     totEff += c.principal; totFresh += c.freshPrincipal; totRolled += c.rolledIn;
     totCurVal += c.currentValue; totInterest += c.totalInterest; monthlyIncome += c.monthlyIncome;
   });
@@ -1802,7 +1803,7 @@ async function renderFD() {
   // Realized interest from matured FDs (non-superseded only - the latest matured
   // link per chain, so recycled money isn't counted twice as the ladder loops).
   let interestMatured = 0;
-  maturedVisible.forEach(({ c }) => { interestMatured += c.totalInterest; });
+  maturedVisible.forEach(({ f, c }) => { if (!f.emergencyFund) interestMatured += c.totalInterest; });
 
   const holdContent = el('div', { class: 'tab-content' + (_fdTab === 'holdings' ? '' : ' hidden') });
   const ovrvContent = el('div', { class: 'tab-content' + (_fdTab === 'overview' ? '' : ' hidden') });
@@ -1855,7 +1856,7 @@ async function renderFD() {
 
   // ---- Overview tab: allocation by bank + income potential + next maturity ----
   const byBank = {};
-  activeRows.forEach(({ f, c }) => { const k = f.bank || 'Other'; byBank[k] = (byBank[k] || 0) + c.principal; });
+  activeRows.forEach(({ f, c }) => { if (f.emergencyFund) return; const k = f.bank || 'Other'; byBank[k] = (byBank[k] || 0) + c.principal; });
   const banks = Object.keys(byBank).sort((a, b2) => byBank[b2] - byBank[a]);
   if (banks.length && totInv > 0) {
     const alloc = el('div', { class: 'chart-card' }, [el('h3', { text: 'Invested by bank' })]);
@@ -1874,7 +1875,7 @@ async function renderFD() {
     el('div', { class: 'mf-goal-meta', text: `≈ ${fmtIntCur(monthlyIncome)} / month · ${fmtIntCur(monthlyIncome * 12)} / year` }),
     el('p', { class: 'hint', text: 'Average interest thrown off by your active FDs over their tenure (payout FDs use their actual periodic interest).' }),
   ]));
-  const upcoming = activeRows.filter(({ c }) => c.daysToMaturity != null).sort((a, b2) => a.c.daysToMaturity - b2.c.daysToMaturity)[0];
+  const upcoming = activeRows.filter(({ f, c }) => !f.emergencyFund && c.daysToMaturity != null).sort((a, b2) => a.c.daysToMaturity - b2.c.daysToMaturity)[0];
   if (upcoming) {
     ovrvContent.appendChild(el('div', { class: 'chart-card' }, [
       el('h3', { text: 'Next maturity' }),
@@ -1886,7 +1887,7 @@ async function renderFD() {
   // Matured FDs have already paid out and are done, so they'd just be clutter on
   // a forward-looking "what's coming due" view - the Holdings/Matured filter and
   // Chain tab are where matured history lives.
-  const ladderRows = rows.filter(({ c }) => c.maturity && c.effectiveStatus === 'active').sort((a, b2) => Date.parse(a.c.maturity) - Date.parse(b2.c.maturity));
+  const ladderRows = rows.filter(({ f, c }) => !f.emergencyFund && c.maturity && c.effectiveStatus === 'active').sort((a, b2) => Date.parse(a.c.maturity) - Date.parse(b2.c.maturity));
   if (!ladderRows.length) {
     ladderContent.appendChild(el('div', { class: 'empty' }, [el('div', { class: 'e-icon', text: '🪜' }), el('p', { text: 'No upcoming maturities. Add an active FD with a maturity date to see your ladder.' })]));
   } else {
@@ -1949,6 +1950,7 @@ function _fdCard(f, c, chain) {
     : el('span', { class: 'badge muted mf-beat', text: 'matured' });
   const catLine = el('div', { class: 'cat mf-catline' }, [`${fmtIntRate(c.rate)} · ${c.comp}` + (c.payout ? ' · payout' : '')]);
   catLine.appendChild(statusBadge);
+  if (f.emergencyFund) catLine.appendChild(el('span', { class: 'badge ef-badge mf-beat', text: 'EF' }));
   // A compact blue "reinvested" badge flags an FD funded by rolling in matured
   // FD(s) - replaces the old "↻ from {bank}" text (which wrapped to another line)
   // and the fresh+rolled sub-line. Full breakdown lives in the Chain tab.
@@ -2008,6 +2010,16 @@ async function openFdForm(existing) {
   const notes = el('textarea', { placeholder: 'Your notes' });
   notes.value = f.notes || '';
 
+  // Linking an FD to the Emergency Fund hands ownership of it to that surface:
+  // it stays listed here with an "EF" badge but leaves this page's totals and
+  // Home's Total Invested, so the same money is never counted in two places.
+  const efChk = el('input', { type: 'checkbox' });
+  efChk.checked = !!f.emergencyFund;
+  const efSwitch = el('label', { class: 'switch' }, [
+    efChk,
+    el('span', { class: 'switch-track' }, [el('span', { class: 'switch-thumb' })]),
+  ]);
+
   // "Funded by" — tick the matured FD(s) whose proceeds seed this one. Multiple
   // can be ticked to MERGE several matured FDs into this single new FD. Only
   // matured FDs not already consumed by another FD are offered (plus any this FD
@@ -2050,6 +2062,7 @@ async function openFdForm(existing) {
     payout: payout.value,
     parentFdIds: checkedParentIds(),
     notes: notes.value.trim(),
+    emergencyFund: efChk.checked,
     createdAt: f.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   });
@@ -2106,6 +2119,7 @@ async function openFdForm(existing) {
     el('div', { class: 'field-row' }, [field('Compounding', compounding), field('Type', payout)]),
     field('Funded by — tick matured FD(s) to merge in (adds their payout to your deposit)', parentListEl),
     field('Notes', notes),
+    field('Part of Emergency Fund — moves it to that page and out of these totals', efSwitch),
     readout,
   ]);
 
