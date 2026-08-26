@@ -1724,7 +1724,7 @@ function buildEfBottomNav() {
   const nav = $('#efBottomNav');
   if (nav.childElementCount) { updateEfNavActive(); return; }
   nav.innerHTML = '';
-  [['fund', '🛟', 'Fund'], ['loans', '🤝', 'Loans'], ['log', '🗓️', 'Log']].forEach(([v, ico, label]) => {
+  [['fund', '🛟', 'Fund'], ['targets', '🎯', 'Targets'], ['loans', '🤝', 'Loans'], ['log', '🗓️', 'Log']].forEach(([v, ico, label]) => {
     nav.appendChild(el('button', { 'data-view': v, onclick: () => { if (_efTab === v) return; _efTab = v; renderEmergency(); } },
       [el('span', { class: 'bn-ico', text: ico }), label]));
   });
@@ -4068,6 +4068,7 @@ async function renderEmergency() {
   ]));
 
   if (_efTab === 'fund') host.appendChild(efFundTab(c, parked));
+  else if (_efTab === 'targets') host.appendChild(efTargetsTab(c));
   else if (_efTab === 'loans') host.appendChild(efLoansTab(c, mod));
   else host.appendChild(efLogTab(c));
 }
@@ -4096,11 +4097,14 @@ function efFundTab(c, parked) {
   } else {
     parked.items.forEach((it) => {
       const gain = (Number(it.value) || 0) - (Number(it.invested) || 0);
+      // For bonds, show payout total instead of 0 for sold bonds
+      const isBond = it.kind === 'Bond';
+      const payoutLabel = isBond && it.closed ? ' · payouts ' + fmtIntCur(it.income) : '';
       inv.appendChild(el('div', { class: 'card' }, [
         el('div', { class: 'top' }, [
           el('div', { class: 'card-left' }, [
             el('div', { class: 'name', text: it.name }),
-            el('div', { class: 'cat mf-catline', text: it.kind + ' · ' + (it.sub || '') + (it.closed ? ' · closed' : '') }),
+            el('div', { class: 'cat mf-catline', text: it.kind + ' · ' + (it.sub || '') + (it.closed ? ' · closed' : '') + payoutLabel }),
           ]),
           el('div', { class: 'card-right' }, it.closed
             ? [el('div', { class: 'pct pos', text: '+' + fmtIntCur(it.gain) }), el('div', { class: 'meta-line', text: 'realised' })]
@@ -4140,13 +4144,22 @@ function efFundTab(c, parked) {
   }
   wrap.appendChild(rec);
 
-  // Target ladder.
-  const tg = el('div', { class: 'chart-card' }, [el('h3', { text: 'Targets' })]);
+  wrap.appendChild(el('p', { class: 'hint mf-foot', text: 'Nothing here is counted in Home\'s Total Invested — the linked funds, bonds and FDs are tracked on this page instead of theirs, so the same money is never counted twice. Not financial advice.' }));
+  return wrap;
+}
+
+// ---- Targets tab
+function efTargetsTab(c) {
+  const wrap = el('div', { class: 'tab-content' });
   if (!c.targets.length) {
-    tg.appendChild(el('p', { class: 'hint', text: 'No targets yet. Tap + to add the first rung.' }));
+    wrap.appendChild(el('div', { class: 'empty' }, [
+      el('div', { class: 'e-icon', text: '🎯' }),
+      el('p', { text: 'No targets yet.' }),
+      el('p', { class: 'hint', text: 'Tap + to add the first rung of your emergency fund ladder.' }),
+    ]));
   } else {
     c.targets.forEach((t) => {
-      tg.appendChild(el('div', { class: 'card', onclick: () => openEfTargetForm(t) }, [
+      wrap.appendChild(el('div', { class: 'card', onclick: () => openEfTargetForm(t) }, [
         el('div', { class: 'top' }, [
           el('div', { class: 'card-left' }, [
             el('div', { class: 'name' }, [t.name || 'Target',
@@ -4166,9 +4179,7 @@ function efFundTab(c, parked) {
       ]));
     });
   }
-  wrap.appendChild(tg);
-
-  wrap.appendChild(el('p', { class: 'hint mf-foot', text: 'Nothing here is counted in Home\'s Total Invested — the linked funds, bonds and FDs are tracked on this page instead of theirs, so the same money is never counted twice. Not financial advice.' }));
+  wrap.appendChild(el('p', { class: 'hint mf-foot', text: 'Your emergency fund ladder progress. Each target can replace or add to the previous one.' }));
   return wrap;
 }
 
