@@ -153,12 +153,20 @@ than the log says was collected (usually a missing contribution). That's surface
 Three tabs on `#efBottomNav`. The summary card (fund value, interest earned, collected / invested /
 lent out / available) shows on **all** of them, so the headline never leaves the screen.
 
-- **Fund** — interest split four ways (from lending · received from investments · unrealised on
-  investments · due on open loans), the live "Invested in" list of linked holdings, the
-  `corpusIn − invested − lent = available` reconciliation, and the target ladder with progress bars.
-  A holding that has paid interest out says so on its own line ("₹X interest received (already cash in
-  the fund)"), and its right-hand figure is labelled **unrealised** rather than "gain" — otherwise a
-  payout bond showing "gain ₹0" reads as if it had earned nothing.
+- **Fund** — interest split into two groups: **Realised** (from lending · received from investments —
+  cash already in the fund) and **Pending / unrealised** (unrealised on investments · due on open
+  loans — projections). Each row has an icon, a one-line explanation of what it means, and a coloured
+  left accent (green for realised, amber for pending) so the split reads at a glance instead of as four
+  flat numbers. Below that, the live "Invested in" list is grouped by category — **Mutual Funds**,
+  **Bonds**, **Fixed Deposits** — each with its own header showing the holding count and a subtotal
+  (capital still deployed in that category, or once everything in it has closed, the interest it
+  realised). Then the `corpusIn − invested − lent = available` reconciliation, and the target ladder
+  with progress bars. A holding that has paid interest out says so on its own line ("₹X interest
+  received (already cash in the fund)"), and its right-hand figure is labelled **unrealised** rather
+  than "gain" — otherwise a payout bond showing "gain ₹0" reads as if it had earned nothing. A closed
+  holding's right-hand figure is its actual realised interest/gain (`income`), not a separate `gain`
+  field — an earlier version referenced a field that was never set, so every closed holding silently
+  showed "+₹0 realised" regardless of what it actually earned.
 - **Loans** — Open / Closed / All, with a warning strip counting overdue loans and loans **about to**
   start accruing (warn *before* the free window closes, not after). Card badges: `closed` /
   `overdue` / `interest-free` / `Nm left` / `N× band`.

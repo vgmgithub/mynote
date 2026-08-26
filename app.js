@@ -4082,52 +4082,90 @@ async function renderEmergency() {
 function efFundTab(c, parked) {
   const wrap = el('div', { class: 'tab-content' });
 
-  // Interest, split by whether the money has actually landed. Coupons and
-  // payout-FD interest are REAL cash already in the fund; "unrealised" is only
-  // the mark-to-market on what's still deployed.
-  wrap.appendChild(el('div', { class: 'chart-card' }, [
-    el('h3', { text: 'Interest' }),
-    el('div', { class: 'grid' }, [
-      _mfCell('From lending', fmtIntCur(c.loanInterestRealised), 'pos'),
-      _mfCell('Received from investments', fmtIntCur(c.parkedRealised), c.parkedRealised > 0 ? 'pos' : ''),
-      _mfCell('Unrealised on investments', (c.marketInterest >= 0 ? '+' : '') + fmtIntCur(c.marketInterest), c.marketInterest >= 0 ? 'pos' : 'neg'),
-      _mfCell('Due on open loans', fmtIntCur(c.loanInterestPending), c.loanInterestPending > 0 ? 'warn' : ''),
+  // Interest, grouped by REALISED (cash already in the fund) vs PENDING /
+  // unrealised (mark-to-market or a projection) — different confidence, so kept
+  // visually apart instead of one flat row of numbers.
+  const interestCard = el('div', { class: 'chart-card ef-interest-card' }, [el('h3', { text: 'Interest' })]);
+  const interestList = el('div', { class: 'ef-interest-list' });
+  const interestRow = (icon, label, sub, amount, group, amtCls) => el('div', { class: 'ef-interest-row is-' + group }, [
+    el('div', { class: 'ef-interest-icon', text: icon }),
+    el('div', { class: 'ef-interest-body' }, [
+      el('div', { class: 'ef-interest-label', text: label }),
+      el('div', { class: 'ef-interest-sub', text: sub }),
     ]),
-  ]));
+    el('div', { class: 'ef-interest-amt ' + (amtCls || ''), text: amount }),
+  ]);
+  interestList.appendChild(el('div', { class: 'ef-interest-group-label', text: 'Realised — already cash in the fund' }));
+  interestList.appendChild(interestRow('🤝', 'From lending', 'Interest collected on loans', fmtIntCur(c.loanInterestRealised), 'realised', 'pos'));
+  interestList.appendChild(interestRow('📈', 'From investments', 'Coupons and payouts received', fmtIntCur(c.parkedRealised), 'realised', c.parkedRealised > 0 ? 'pos' : ''));
+  interestList.appendChild(el('div', { class: 'ef-interest-group-label', text: 'Pending / unrealised' }));
+  interestList.appendChild(interestRow('📊', 'Unrealised on investments', 'Mark-to-market on what\'s still deployed', (c.marketInterest >= 0 ? '+' : '') + fmtIntCur(c.marketInterest), 'pending', c.marketInterest >= 0 ? 'pos' : 'neg'));
+  interestList.appendChild(interestRow('⏳', 'Due on open loans', 'Projected if repaid on schedule', fmtIntCur(c.loanInterestPending), 'pending', c.loanInterestPending > 0 ? 'warn' : ''));
+  interestCard.appendChild(interestList);
+  wrap.appendChild(interestCard);
 
-  // Where it's parked — live from the linked records.
+  // Where it's parked — live from the linked records, grouped by category
+  // (MF / Bonds / FD) so each ladder reads as its own cluster instead of one
+  // undifferentiated list, with a per-group subtotal in the header.
   const inv = el('div', { class: 'chart-card' }, [el('h3', { text: 'Invested in' })]);
   if (!parked.count) {
     inv.appendChild(el('p', { class: 'hint', text: 'Nothing linked yet. Open a mutual fund, bond or FD and switch on "Part of Emergency Fund" — it keeps its live NAV there and shows up here.' }));
   } else {
+    const KIND_META = {
+      MF: { icon: '📈', label: 'Mutual Funds' },
+      Bond: { icon: '🧾', label: 'Bonds' },
+      FD: { icon: '🏦', label: 'Fixed Deposits' },
+    };
+    const KIND_ORDER = ['MF', 'Bond', 'FD'];
+    const groups = new Map();
     parked.items.forEach((it) => {
-      const gain = (Number(it.value) || 0) - (Number(it.invested) || 0);
-      // For bonds, show payout total instead of 0 for sold bonds
-      const isBond = it.kind === 'Bond';
-      const payoutLabel = isBond && it.closed ? ' · payouts ' + fmtIntCur(it.income) : '';
-      inv.appendChild(el('div', { class: 'card' }, [
-        el('div', { class: 'top' }, [
-          el('div', { class: 'card-left' }, [
-            el('div', { class: 'name', text: it.name }),
-            el('div', { class: 'cat mf-catline', text: it.kind + ' · ' + (it.sub || '') + (it.closed ? ' · closed' : '') + payoutLabel }),
-          ]),
-          el('div', { class: 'card-right' }, it.closed
-            ? [el('div', { class: 'pct pos', text: '+' + fmtIntCur(it.gain) }), el('div', { class: 'meta-line', text: 'realised' })]
-            // "unrealised", not "gain" — a payout bond sits at +₹0 here while its
-            // coupons show on their own line below, and "gain ₹0" would read as
-            // if it had earned nothing.
-            : [el('div', { class: 'pct ' + (gain >= 0 ? 'pos' : 'neg'), text: (gain >= 0 ? '+' : '') + fmtIntCur(gain) }), el('div', { class: 'meta-line', text: 'unrealised' })]),
-        ]),
-        it.closed ? document.createTextNode('') : el('div', { class: 'sub mf-sub2' }, [
-          el('span', {}, [el('div', {}, ['Invested ', b(fmtIntCur(it.invested))])]),
-          el('span', { class: 'value-emphasis' }, ['Value ', b(fmtIntCur(it.value))]),
-        ]),
-        // Coupons / payout interest already banked. Shown separately because it
-        // is NOT inside the value above — that money has left the holding.
-        (!it.closed && it.income > 0)
-          ? el('div', { class: 'meta-line pos', text: fmtIntCur(it.income) + ' interest received (already cash in the fund)' })
-          : document.createTextNode(''),
+      if (!groups.has(it.kind)) groups.set(it.kind, []);
+      groups.get(it.kind).push(it);
+    });
+    const kinds = KIND_ORDER.filter((k) => groups.has(k)).concat([...groups.keys()].filter((k) => !KIND_ORDER.includes(k)));
+    kinds.forEach((kind) => {
+      const list = groups.get(kind);
+      const meta = KIND_META[kind] || { icon: '💰', label: kind };
+      // Header subtotal: capital still deployed in this category, or (once
+      // everything in it has closed) the realised interest it left behind.
+      let gInvested = 0, gIncome = 0;
+      list.forEach((it) => { gIncome += Number(it.income) || 0; if (!it.closed) gInvested += Number(it.invested) || 0; });
+      inv.appendChild(el('div', { class: 'ef-group-header' }, [
+        el('span', { class: 'ef-group-ico', text: meta.icon }),
+        el('span', { class: 'ef-group-title', text: `${meta.label} · ${list.length}` }),
+        el('span', { class: 'ef-group-total', text: gInvested > 0 ? fmtIntCur(gInvested) : (gIncome > 0 ? '+' + fmtIntCur(gIncome) + ' realised' : '—') }),
       ]));
+      list.forEach((it) => {
+        const gain = (Number(it.value) || 0) - (Number(it.invested) || 0);
+        // For bonds, show payout total instead of 0 for sold bonds
+        const isBond = it.kind === 'Bond';
+        const payoutLabel = isBond && it.closed ? ' · payouts ' + fmtIntCur(it.income) : '';
+        inv.appendChild(el('div', { class: 'card' }, [
+          el('div', { class: 'top' }, [
+            el('div', { class: 'card-left' }, [
+              el('div', { class: 'name', text: it.name }),
+              el('div', { class: 'cat mf-catline', text: (it.sub || '') + (it.closed ? ' · closed' : '') + payoutLabel }),
+            ]),
+            el('div', { class: 'card-right' }, it.closed
+              // "realised" uses income (the actual realised interest/gain), not a
+              // never-set `.gain` field — closed holdings used to always show +₹0.
+              ? [el('div', { class: 'pct pos', text: '+' + fmtIntCur(it.income) }), el('div', { class: 'meta-line', text: 'realised' })]
+              // "unrealised", not "gain" — a payout bond sits at +₹0 here while its
+              // coupons show on their own line below, and "gain ₹0" would read as
+              // if it had earned nothing.
+              : [el('div', { class: 'pct ' + (gain >= 0 ? 'pos' : 'neg'), text: (gain >= 0 ? '+' : '') + fmtIntCur(gain) }), el('div', { class: 'meta-line', text: 'unrealised' })]),
+          ]),
+          it.closed ? document.createTextNode('') : el('div', { class: 'sub mf-sub2' }, [
+            el('span', {}, [el('div', {}, ['Invested ', b(fmtIntCur(it.invested))])]),
+            el('span', { class: 'value-emphasis' }, ['Value ', b(fmtIntCur(it.value))]),
+          ]),
+          // Coupons / payout interest already banked. Shown separately because it
+          // is NOT inside the value above — that money has left the holding.
+          (!it.closed && it.income > 0)
+            ? el('div', { class: 'meta-line pos', text: fmtIntCur(it.income) + ' interest received (already cash in the fund)' })
+            : document.createTextNode(''),
+        ]));
+      });
     });
   }
   wrap.appendChild(inv);

@@ -307,6 +307,41 @@ main.swipe-in-left { animation: swipe-from-left 0.18s ease-out; }
 .badge.ef-badge { color: #7c3aed; border-color: rgba(124,58,237,0.45); background: rgba(124,58,237,0.12); font-weight: 700; }
 @media (prefers-color-scheme: dark) { .badge.ef-badge { color: #c4b5fd; } }
 
+/* Emergency Fund — Interest breakdown (realised vs pending rows) and the
+   Invested-in section grouped by category (MF / Bonds / FD). */
+.ef-interest-list { display: flex; flex-direction: column; gap: 8px; }
+.ef-interest-group-label {
+  font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--muted); margin: 10px 0 2px;
+}
+.ef-interest-group-label:first-child { margin-top: 0; }
+.ef-interest-row {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--card-2); border: 1px solid var(--line); border-left: 3px solid var(--line);
+  border-radius: 10px; padding: 9px 11px;
+}
+.ef-interest-row.is-realised { border-left-color: var(--good); }
+.ef-interest-row.is-pending { border-left-color: var(--warn); }
+.ef-interest-icon {
+  flex: 0 0 auto; width: 30px; height: 30px; border-radius: 8px;
+  background: var(--card); display: flex; align-items: center; justify-content: center;
+  font-size: 1rem;
+}
+.ef-interest-body { flex: 1 1 auto; min-width: 0; }
+.ef-interest-label { font-size: 0.82rem; font-weight: 600; }
+.ef-interest-sub { font-size: 0.66rem; color: var(--muted); margin-top: 1px; }
+.ef-interest-amt { font-size: 0.92rem; font-weight: 700; white-space: nowrap; flex: 0 0 auto; }
+
+.ef-group-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 2px; margin: 14px 0 8px;
+  border-bottom: 1px solid var(--line);
+}
+.ef-group-header:first-of-type { margin-top: 4px; }
+.ef-group-ico { font-size: 1rem; }
+.ef-group-title { flex: 1 1 auto; font-size: 0.8rem; font-weight: 700; }
+.ef-group-total { font-size: 0.82rem; font-weight: 700; color: var(--muted); white-space: nowrap; }
+
 .conv { font-size: 0.95rem; }
 .pos { color: var(--good); }
 .neg { color: var(--bad); }
