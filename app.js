@@ -1548,8 +1548,11 @@ async function render() {
 const STOCK_SURFACE = ['#summary', '#toolbar', '#stockList', '#monthlyView', '#heatmapView', '#trendView', '#feedView', '#addBtn', '#ocrBtn'];
 function setAppMode(mode) {
   state.appMode = mode;
-  const isHome = mode === 'home', isStocks = mode === 'stocks', isMF = mode === 'mf', isFD = mode === 'fd', isDiv = mode === 'div', isMetal = mode === 'metal', isBond = mode === 'bond', isEF = mode === 'ef';
+  const isHome = mode === 'home', isStocks = mode === 'stocks', isMF = mode === 'mf', isFD = mode === 'fd', isDiv = mode === 'div', isMetal = mode === 'metal', isBond = mode === 'bond', isEF = mode === 'ef', isInvestment = mode === 'investment', isSavings = mode === 'savings', isExpense = mode === 'expense';
   $('#homeView').classList.toggle('hidden', !isHome);
+  $('#investmentView').classList.toggle('hidden', !isInvestment);
+  $('#savingsView').classList.toggle('hidden', !isSavings);
+  $('#expenseView').classList.toggle('hidden', !isExpense);
   $('#mfView').classList.toggle('hidden', !isMF);
   $('#fdView').classList.toggle('hidden', !isFD);
   $('#divView').classList.toggle('hidden', !isDiv);
@@ -1571,13 +1574,16 @@ function setAppMode(mode) {
   $('#efAddBtn').classList.toggle('hidden', !isEF);
   if (!isMetal) $('#metalAddBtn').classList.add('hidden'); // renderMetal shows it on Gold/Silver only
   $('#backBtn').classList.toggle('hidden', isHome);
-  $('#appTitle').innerHTML = isHome ? '' : (isMF ? 'Mutual&nbsp;Funds' : isFD ? 'Fixed&nbsp;Deposits' : isDiv ? 'Dividends' : isMetal ? 'Metals' : isBond ? 'Bonds' : isEF ? 'Emergency&nbsp;Fund' : 'MyNote&nbsp;Stocks');
+  $('#appTitle').innerHTML = isHome ? '' : (isInvestment ? 'Investment' : isSavings ? 'Savings' : isExpense ? 'Expense' : isMF ? 'Mutual&nbsp;Funds' : isFD ? 'Fixed&nbsp;Deposits' : isDiv ? 'Dividends' : isMetal ? 'Metals' : isBond ? 'Bonds' : isEF ? 'Emergency&nbsp;Fund' : 'MyNote&nbsp;Stocks');
   if (isStocks) {
     render();
   } else {
-    // Nothing from the stock surface should show on Home/MF/FD/Dividends/Metals/Bonds.
+    // Nothing from the stock surface should show on Home/MF/FD/Dividends/Metals/Bonds/Section pages.
     STOCK_SURFACE.forEach((sel) => $(sel).classList.add('hidden'));
     if (isHome) renderHome();
+    if (isInvestment) renderHomeInvestment();
+    if (isSavings) renderHomeSavings();
+    if (isExpense) renderHomeExpense();
     if (isMF) { buildMfBottomNav(); renderMF(); }
     if (isFD) { buildFdBottomNav(); renderFD(); }
     if (isDiv) { buildDivBottomNav(); renderDividend(); }
@@ -2384,86 +2390,11 @@ async function renderHome() {
   ]);
   host.appendChild(summaryCard);
 
-  const stockCard = _homeCard('📈', 'Stocks', 'Holdings · trends · news', () => setAppMode('stocks'));
-  const mfCard = _homeCard('📊', 'Mutual Funds', 'SIPs · XIRR · 2030 goal', () => openMF());
-  const fdCard = _homeCard('🏦', 'Fixed Deposits', 'FD ladder · maturity · interest', () => setAppMode('fd'));
-  const divCard = _homeCard('💰', 'Dividends', 'per-stock · yearly · YoY', () => openDividend());
-  const metalCard = _homeCard(_metalBarIcon(), 'Metals', 'gold · silver · SGB', () => openMetal());
-  const bondCard = _homeCard('🧾', 'Bonds', 'coupon · maturity · vs bank', () => openBond());
-  const efCard = _homeCard('🛟', 'Emergency Fund', 'targets · loans · corpus', () => openEmergency());
-  host.appendChild(el('div', { class: 'home-cards' }, [stockCard, mfCard, metalCard, fdCard, divCard, bondCard, efCard]));
+  const investmentCard = _homeCard('💼', 'Investment', 'Stocks · MF · FD · Bonds', () => setAppMode('investment'));
+  const savingsCard = _homeCard('🏦', 'Savings', 'Emergency Fund · Goals', () => setAppMode('savings'));
+  const expenseCard = _homeCard('💳', 'Expense', 'Coming soon', () => setAppMode('expense'));
+  host.appendChild(el('div', { class: 'home-cards' }, [investmentCard, savingsCard, expenseCard]));
   host.appendChild(el('p', { class: 'hint home-foot', text: 'Backup covers everything - open the ⋮ menu → Backup & Restore.' }));
-
-  // Live stats for Stock and MF cards
-  try {
-    // Stocks — Holdings only (exclude Sold + SGB gold bonds, matches totals above)
-    const meInStocks = (await DB.byPortfolio('stocks', 'me-in')) || [];
-    const holdings = meInStocks.filter(s => s.status === 'holding' && !/sgb/i.test(s.name || ''));
-    const stockSub = stockCard.querySelector('.home-card-sub');
-    if (holdings.length && stockSub) {
-      const invested = holdings.reduce((s, stock) => s + (Number(stock.units || 0) * Number(stock.buyPrice || 0)), 0);
-      stockSub.textContent = `${holdings.length} stocks · ${fmtIntCur(invested)} invested`;
-    }
-    // Mutual Funds — Investing only (exclude Sold; same "sold" definition mf.js
-    // uses elsewhere - status='Sold' OR a soldDate is set). Invested uses mf.js's
-    // investedOf() (average-cost-basis rollup) - not a raw sum of contribution
-    // amounts, which would wrongly add a partial-sell row's proceeds as if it
-    // were money invested.
-    const funds = (await DB.byIndex('funds', 'owner', 'me')) || [];
-    const investing = funds.filter(f => f.status !== 'Sold' && !f.soldDate);
-    const sub = mfCard.querySelector('.home-card-sub');
-    if (investing.length && sub) {
-      const mfMod = await import('./mf.js');
-      const invested = investing.reduce((s, f) => s + (mfMod.investedOf(f) || 0), 0);
-      sub.textContent = `${investing.length} funds · ${fmtIntCur(invested)} invested`;
-    }
-    // Fixed Deposits — subtext shows the active count + Total invested value,
-    // matching the FD Overview's headline (= active-FD principal only).
-    const fdList = (await DB.byIndex('fds', 'owner', 'me')) || [];
-    if (fdList.length) {
-      const fdMod = await import('./fd.js');
-      const nowT = Date.now();
-      const fdByIdC = new Map(fdList.map((x) => [x.id, x]));
-      const fdCacheC = new Map();
-      const activeFds = fdList.map((x) => fdMod.resolveChain(x, fdByIdC, nowT, fdCacheC)).filter((c) => c.effectiveStatus === 'active');
-      const activeCount = activeFds.length;
-      const invested = activeFds.reduce((s, c) => s + (Number(c.principal) || 0), 0);
-      const fdSub = fdCard.querySelector('.home-card-sub');
-      if (fdSub) fdSub.textContent = `${activeCount} active · ${fmtIntCur(invested)} invested`;
-    }
-    // Dividends — subtext shows the dividend-available-toggled stock count + this
-    // calendar year's Indian (₹) total. US is a separate currency, not summed in.
-    // Read-only pass (write:false): just tallies whatever's already tracked,
-    // without auto-creating records for newly-toggled stocks on every Home render.
-    const divMod = await import('./dividend.js');
-    const divList = await _eligibleDividendRecords(divMod, { write: false });
-    if (divList.length) {
-      const inRows = divList.filter((d) => d.market === 'in');
-      const curYear = new Date().getFullYear();
-      const inThisYr = inRows.reduce((s, d) => s + divMod.yearTotal(d, curYear), 0);
-      const divSub = divCard.querySelector('.home-card-sub');
-      if (divSub) divSub.textContent = `${divList.length} stocks · ${fmtIntCur(inThisYr)} in ${curYear}`;
-    }
-    // Metals — subtext shows total gold & silver grams (gold includes SGB) plus
-    // combined invested, matching the other cards' "… invested" convention.
-    const mp = await metalPortfolio();
-    if (mp.hasTxns || mp.gold.sgbCount) {
-      const inv = mp.gold.invested + mp.silver.invested;
-      const metalSub = metalCard.querySelector('.home-card-sub');
-      if (metalSub) metalSub.textContent = `Gold ${_gramsShort(mp.gold.grams)}g · Silver ${_gramsShort(mp.silver.grams)}g · ${fmtIntCur(inv)} invested`;
-    }
-    // Bonds — subtext shows the active count + active invested, matching the FD
-    // card's exact phrasing pattern.
-    const bondList = (await DB.byIndex('bonds', 'owner', 'me')) || [];
-    if (bondList.length) {
-      const bondMod = await import('./bonds.js');
-      const nowBnd = Date.now();
-      const activeBonds = bondList.map((x) => bondMod.computeBond(x, nowBnd)).filter((c) => c.effectiveStatus === 'active');
-      const invested = activeBonds.reduce((s, c) => s + (Number(c.outstandingPrincipal) || 0), 0);
-      const bondSub = bondCard.querySelector('.home-card-sub');
-      if (bondSub) bondSub.textContent = `${activeBonds.length} active · ${fmtIntCur(invested)} invested`;
-    }
-  } catch (_) {}
 }
 function _homeCard(icon, title, sub, onclick) {
   // `icon` is usually an emoji string, but may be a DOM node (e.g. the metals
@@ -2485,6 +2416,129 @@ function _homeCard(icon, title, sub, onclick) {
 // markup, no user data, so innerHTML is safe here.
 function _metalBarIcon() {
   return el('img', { src: 'icons/gold-bars.png', class: 'metal-bar-ico', alt: 'Gold bars' });
+}
+
+// ---------- Investment section page ----------
+async function renderHomeInvestment() {
+  const host = $('#investmentView');
+  host.innerHTML = '';
+
+  // Summary card with Total Invested and Total Earned
+  const breakdown = await homeInvestedBreakdown();
+  const totalInvested = breakdown.totalInvested;
+  const totalValue = breakdown.totalValue;
+  const totalEarned = totalValue - totalInvested;
+  const totalEarnedPct = totalInvested > 0 ? (totalEarned / totalInvested) * 100 : 0;
+
+  const summaryCard = el('div', { class: 'home-summary' }, [
+    el('div', { class: 'summary-stat' }, [
+      el('div', { class: 'stat-label' }, [
+        'Total Invested',
+        el('button', {
+          class: 'info-btn', type: 'button', 'aria-label': 'What makes up Total Invested',
+          title: 'What makes up this figure', text: 'i',
+          onclick: (e) => { e.stopPropagation(); openInvestedBreakdown(breakdown); },
+        }),
+      ]),
+      el('div', { class: 'stat-value', text: fmtIntCur(totalInvested) }),
+    ]),
+    el('div', { class: 'summary-stat' }, [
+      el('div', { class: 'stat-label', text: 'Total Earned' }),
+      el('div', { class: 'stat-value' }, [fmtIntCur(totalEarned) + ' ', el('span', { class: 'summary-badge ' + pctClass(totalEarnedPct), text: fmtPct(totalEarnedPct) })]),
+    ]),
+  ]);
+  host.appendChild(summaryCard);
+
+  // Investment cards
+  const stockCard = _homeCard('📈', 'Stocks', 'Holdings · trends · news', () => setAppMode('stocks'));
+  const mfCard = _homeCard('📊', 'Mutual Funds', 'SIPs · XIRR · 2030 goal', () => openMF());
+  const fdCard = _homeCard('🏦', 'Fixed Deposits', 'FD ladder · maturity · interest', () => setAppMode('fd'));
+  const metalCard = _homeCard(_metalBarIcon(), 'Metals', 'gold · silver · SGB', () => openMetal());
+  const bondCard = _homeCard('🧾', 'Bonds', 'coupon · maturity · vs bank', () => openBond());
+  const divCard = _homeCard('💰', 'Dividends', 'per-stock · yearly · YoY', () => openDividend());
+
+  host.appendChild(el('div', { class: 'home-cards' }, [stockCard, mfCard, fdCard, metalCard, bondCard, divCard]));
+
+  // Live stats
+  try {
+    const meInStocks = (await DB.byPortfolio('stocks', 'me-in')) || [];
+    const holdings = meInStocks.filter(s => s.status === 'holding' && !/sgb/i.test(s.name || ''));
+    const stockSub = stockCard.querySelector('.home-card-sub');
+    if (holdings.length && stockSub) {
+      const invested = holdings.reduce((s, stock) => s + (Number(stock.units || 0) * Number(stock.buyPrice || 0)), 0);
+      stockSub.textContent = `${holdings.length} stocks · ${fmtIntCur(invested)} invested`;
+    }
+
+    const funds = (await DB.byIndex('funds', 'owner', 'me')) || [];
+    const investing = funds.filter(f => f.status !== 'Sold' && !f.soldDate);
+    const sub = mfCard.querySelector('.home-card-sub');
+    if (investing.length && sub) {
+      const mfMod = await import('./mf.js');
+      const invested = investing.reduce((s, f) => s + (mfMod.investedOf(f) || 0), 0);
+      sub.textContent = `${investing.length} funds · ${fmtIntCur(invested)} invested`;
+    }
+
+    const fdList = (await DB.byIndex('fds', 'owner', 'me')) || [];
+    if (fdList.length) {
+      const fdMod = await import('./fd.js');
+      const nowT = Date.now();
+      const fdByIdC = new Map(fdList.map((x) => [x.id, x]));
+      const fdCacheC = new Map();
+      const activeFds = fdList.map((x) => fdMod.resolveChain(x, fdByIdC, nowT, fdCacheC)).filter((c) => c.effectiveStatus === 'active');
+      const activeCount = activeFds.length;
+      const invested = activeFds.reduce((s, c) => s + (Number(c.principal) || 0), 0);
+      const fdSub = fdCard.querySelector('.home-card-sub');
+      if (fdSub) fdSub.textContent = `${activeCount} active · ${fmtIntCur(invested)} invested`;
+    }
+
+    const mp = await metalPortfolio();
+    if (mp.hasTxns || mp.gold.sgbCount) {
+      const inv = mp.gold.invested + mp.silver.invested;
+      const metalSub = metalCard.querySelector('.home-card-sub');
+      if (metalSub) metalSub.textContent = `Gold ${_gramsShort(mp.gold.grams)}g · Silver ${_gramsShort(mp.silver.grams)}g · ${fmtIntCur(inv)} invested`;
+    }
+
+    const bondList = (await DB.byIndex('bonds', 'owner', 'me')) || [];
+    if (bondList.length) {
+      const bondMod = await import('./bonds.js');
+      const nowBnd = Date.now();
+      const activeBonds = bondList.map((x) => bondMod.computeBond(x, nowBnd)).filter((c) => c.effectiveStatus === 'active');
+      const invested = activeBonds.reduce((s, c) => s + (Number(c.outstandingPrincipal) || 0), 0);
+      const bondSub = bondCard.querySelector('.home-card-sub');
+      if (bondSub) bondSub.textContent = `${activeBonds.length} active · ${fmtIntCur(invested)} invested`;
+    }
+
+    const divMod = await import('./dividend.js');
+    const divList = await _eligibleDividendRecords(divMod, { write: false });
+    if (divList.length) {
+      const inRows = divList.filter((d) => d.market === 'in');
+      const curYear = new Date().getFullYear();
+      const inThisYr = inRows.reduce((s, d) => s + divMod.yearTotal(d, curYear), 0);
+      const divSub = divCard.querySelector('.home-card-sub');
+      if (divSub) divSub.textContent = `${divList.length} stocks · ${fmtIntCur(inThisYr)} in ${curYear}`;
+    }
+  } catch (_) {}
+}
+
+// ---------- Savings section page ----------
+async function renderHomeSavings() {
+  const host = $('#savingsView');
+  host.innerHTML = '';
+
+  const efCard = _homeCard('🛟', 'Emergency Fund', 'targets · loans · corpus', () => openEmergency());
+  host.appendChild(el('div', { class: 'home-cards' }, [efCard]));
+}
+
+// ---------- Expense section page ----------
+async function renderHomeExpense() {
+  const host = $('#expenseView');
+  host.innerHTML = '';
+
+  host.appendChild(el('div', { class: 'empty' }, [
+    el('div', { class: 'e-icon', text: '💳' }),
+    el('p', { text: 'Expense tracking coming soon.' }),
+    el('p', { class: 'hint', text: 'This section will track your day-to-day expenses.' }),
+  ]));
 }
 
 // Combined metals portfolio: digital gold + SGB (from Stocks, valued at the gold
