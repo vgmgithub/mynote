@@ -165,6 +165,18 @@ export function ladderTargets(targets, corpus) {
   });
 }
 
+// Projects the fund's contributed total forward, assuming the last logged
+// monthly contribution keeps repeating unchanged. Only WHOLE months between
+// the last contribution and the target count — matching how contributions are
+// actually logged, one row per month — so a target date in the same month as
+// the last contribution adds nothing yet.
+export function projectContributions(contributedTotal, lastContributionISO, monthlyAmount, throughISO) {
+  const amt = Number(monthlyAmount) || 0;
+  if (!lastContributionISO || !throughISO) return contributedTotal;
+  const months = Math.max(0, monthsBetween(lastContributionISO, throughISO));
+  return contributedTotal + months * amt;
+}
+
 // Whole-fund figures. `parkedInvested`/`parkedValue` are passed IN by app.js
 // from the linked funds/bonds/fds records (see the header note) — this module
 // never reads a store.

@@ -4065,7 +4065,17 @@ async function renderEmergency() {
       ]),
     ]),
     el('div', { class: 'grid' }, [
-      _mfCell('Collected', fmtIntCur(c.corpusIn)),
+      el('div', { class: 'cell' }, [
+        el('div', { class: 'k ef-k-icon' }, [
+          'Collected',
+          el('button', {
+            class: 'calc-btn', type: 'button', 'aria-label': 'Contribution projection calculator',
+            title: 'Project future contributions', text: '🧮',
+            onclick: (e) => { e.stopPropagation(); openEfProjectionCalc(c, mod); },
+          }),
+        ]),
+        el('div', { class: 'v', text: fmtIntCur(c.contributedTotal) }),
+      ]),
       _mfCell('Invested', fmtIntCur(c.parkedInvested)),
       _mfCell('Lent out', fmtIntCur(c.lentOut), c.lentOut > 0 ? 'warn' : ''),
       _mfCell('Available', fmtIntCur(c.cashInHand), c.reconciles ? 'pos' : 'neg'),
@@ -4189,6 +4199,99 @@ function efFundTab(c, parked) {
 
   wrap.appendChild(el('p', { class: 'hint mf-foot', text: 'Nothing here is counted in Home\'s Total Invested — the linked funds, bonds and FDs are tracked on this page instead of theirs, so the same money is never counted twice. Not financial advice.' }));
   return wrap;
+}
+
+const _EF_MONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const _efMonthLabel = (iso) => { const m = /^(\d{4})-(\d{2})/.exec(iso || ''); return m ? `${_EF_MONS[+m[2] - 1]} ${m[1]}` : '—'; };
+
+// Calculator popup opened from the 🧮 next to "Collected" on the summary card.
+// Projects the RAW contribution total (mine + spouse, no loan/investment
+// interest — that's what "Collected" now shows) forward across the next 12
+// months, assuming the last logged monthly contribution keeps repeating.
+// "Auto-calculate" (default on, when there's a contribution to base it on)
+// fills the monthly amount from the last logged row; switching it off lets
+// the amount be typed by hand for a what-if scenario.
+function openEfProjectionCalc(c, mod) {
+  const rows = (c.contributionRows || []).slice().sort((a, b2) => (a.date || '').localeCompare(b2.date || ''));
+  const last = rows.length ? rows[rows.length - 1] : null;
+  const lastAmt = last ? (Number(last.mine) || 0) + (Number(last.spouse) || 0) : 0;
+  // The upcoming-months list always starts from the current month forward —
+  // even if the last logged contribution is stale, "upcoming" should still
+  // mean upcoming from today, not from whenever it was last logged. The
+  // month-count used in the actual projection math is separate (from `last`).
+  const todayMonthISO = todayISO().slice(0, 7) + '-01';
+  const lastMonthISO = last ? last.date.slice(0, 7) + '-01' : todayMonthISO;
+  const baseISO = lastMonthISO > todayMonthISO ? lastMonthISO : todayMonthISO;
+
+  const autoChk = el('input', { type: 'checkbox' });
+  autoChk.checked = !!last;
+  if (!last) autoChk.disabled = true;
+  const autoSwitch = el('label', { class: 'switch' }, [
+    autoChk,
+    el('span', { class: 'switch-track' }, [el('span', { class: 'switch-thumb' })]),
+  ]);
+  const amtInput = el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: lastAmt || '', placeholder: '₹ per month' });
+  amtInput.disabled = autoChk.checked;
+
+  let selectedISO = mod.addMonths(baseISO, 3);
+
+  const readout = el('div', { class: 'ef-proj-big' });
+  const monthList = el('div', { class: 'ef-proj-months' });
+  const monthBtns = [];
+
+  const currentMonthlyAmt = () => (autoChk.checked ? lastAmt : (num(amtInput.value) || 0));
+
+  const refreshReadout = () => {
+    readout.innerHTML = '';
+    const amt = currentMonthlyAmt();
+    const fromISO = last ? last.date : baseISO;
+    const projected = mod.projectContributions(c.contributedTotal, fromISO, amt, selectedISO);
+    const months = Math.max(0, mod.monthsBetween(fromISO, selectedISO));
+    readout.appendChild(el('div', { class: 'label', text: 'Projected collected by ' + _efMonthLabel(selectedISO) }));
+    readout.appendChild(el('div', { class: 'big', text: fmtCur(projected, 'INR') }));
+    readout.appendChild(el('div', { class: 'hint', text:
+      `${fmtIntCur(c.contributedTotal)} now + ${months} more month${months === 1 ? '' : 's'} at ${fmtIntCur(amt)}/mo = ${fmtIntCur(projected - c.contributedTotal)} added` }));
+  };
+
+  for (let i = 1; i <= 12; i++) {
+    const mISO = mod.addMonths(baseISO, i);
+    const btn = el('button', { type: 'button', class: 'ef-proj-month' + (mISO === selectedISO ? ' active' : ''), text: _efMonthLabel(mISO) });
+    btn.addEventListener('click', () => {
+      selectedISO = mISO;
+      monthBtns.forEach((r) => r.btn.classList.toggle('active', r.iso === selectedISO));
+      refreshReadout();
+    });
+    monthBtns.push({ iso: mISO, btn });
+    monthList.appendChild(btn);
+  }
+
+  autoChk.addEventListener('change', () => {
+    amtInput.disabled = autoChk.checked;
+    if (autoChk.checked) amtInput.value = lastAmt || '';
+    refreshReadout();
+  });
+  amtInput.addEventListener('input', refreshReadout);
+
+  refreshReadout();
+
+  openModal(el('div', { class: 'sheet' }, [
+    el('h2', { text: 'Contribution projection' }),
+    el('p', { class: 'hint', text: last
+      ? `Last logged: ${_efMonthLabel(last.date)} · ${fmtIntCur(lastAmt)}`
+      : 'No contributions logged yet — enter a monthly amount to project with.' }),
+    el('div', { class: 'ef-proj-current' }, [
+      el('span', { class: 'bl', text: 'Collected so far' }),
+      el('span', { class: 'bn', text: fmtIntCur(c.contributedTotal) }),
+    ]),
+    field('Auto-calculate from last contribution', autoSwitch),
+    field('Monthly amount to project with', amtInput),
+    readout,
+    el('h3', { style: 'margin-top:14px', text: 'Upcoming months — tap one' }),
+    monthList,
+    el('div', { class: 'btn-row' }, [
+      el('button', { class: 'btn primary', text: 'Close', onclick: closeModal }),
+    ]),
+  ]));
 }
 
 // ---- Targets tab

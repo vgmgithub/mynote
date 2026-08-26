@@ -101,6 +101,7 @@ an exceeded target reports `surplus` instead.
 ## Derived figures (`computeEmergencyFund`)
 
 ```
+contributedTotal = Σ (mine + spouse) across logged contributions            // RAW money in, no interest
 corpusIn       = contributions + loanInterestRealised + parkedRealised   // everything ever taken in
 lentOut        = Σ outstanding on open loans
 marketInterest = parkedValue − parkedInvested                            // live, unrealised
@@ -108,6 +109,14 @@ cashInHand     = corpusIn − parkedInvested − lentOut
 fundValue      = parkedValue + cashInHand + lentOut
 totalInterest  = loanInterestRealised + marketInterest + parkedRealised
 ```
+
+**`contributedTotal` vs `corpusIn`** — two different "Collected" figures, deliberately kept apart. The
+summary card's **Collected** cell shows `contributedTotal` (contributions only — what the family
+actually put in), so it isn't inflated by loan interest or investment coupons the fund happened to
+earn. The "Where it all is" reconciliation on the Fund tab uses `corpusIn` instead, explicitly labelled
+"Collected (contributions + interest received)" — that's the correct basis for the
+`corpusIn − invested − lent = available` identity, since invested/lent money came from the whole pot,
+interest included.
 
 ### Each parked holding decomposes into three quantities
 
@@ -150,10 +159,14 @@ than the log says was collected (usually a missing contribution). That's surface
 
 ## UI
 
-Three tabs on `#efBottomNav`. The summary card (fund value, interest earned, collected / invested /
-lent out / available) shows on **all** of them, so the headline never leaves the screen.
+Four tabs on `#efBottomNav`: **Funds | Targets | Loans | Log**. The summary card (fund value, interest
+earned, collected / invested / lent out / available) shows on **all** of them, so the headline never
+leaves the screen. **Collected** on this card is `contributedTotal` — raw contributions only, not
+`corpusIn` — with a 🧮 button beside the label that opens the contribution-projection calculator
+(below). The **+** FAB is hidden only on the Funds tab (nothing to add there directly — link a holding
+from its own form instead) and shown on Targets/Loans/Log.
 
-- **Fund** — interest split into two groups: **Realised** (from lending · received from investments —
+- **Funds** — interest split into two groups: **Realised** (from lending · received from investments —
   cash already in the fund) and **Pending / unrealised** (unrealised on investments · due on open
   loans — projections). Each row has an icon, a one-line explanation of what it means, and a coloured
   left accent (green for realised, amber for pending) so the split reads at a glance instead of as four
@@ -173,7 +186,25 @@ lent out / available) shows on **all** of them, so the headline never leaves the
 - **Log** — the contribution ledger. `mine` mirrors into `spouse` on entry since both sides pay the
   same, still editable when a month differs.
 
-The `+` FAB is **tab-aware**: target on Fund, loan on Loans, contribution on Log.
+The `+` FAB is **tab-aware** (`efAddForTab()`): loan on Loans, contribution on Log, target on Targets
+(and as the fallback default). It's hidden entirely on Funds — there's nothing to add on that tab
+directly.
+
+### Contribution projection calculator
+
+The 🧮 next to the summary card's **Collected** label opens a popup that projects `contributedTotal`
+forward, assuming the last logged monthly contribution (`mine + spouse` on the latest row) keeps
+repeating. **Auto-calculate** (on by default, whenever a contribution exists to base it on) fills the
+monthly amount from that last row; switching it off lets the amount be typed by hand for a what-if
+scenario (e.g. "what if we step up to ₹16,000/month"). A row of the next 12 calendar months — always
+starting from the current month forward, even if the last logged contribution is stale — is tappable;
+selecting one recomputes a big readout: the projected total by that month, and the arithmetic behind it
+(`now + N months × monthly amount = added`). The month-count in that arithmetic is always measured from
+the **last actual contribution**, not from wherever the visible list starts, so a stale log doesn't
+silently under- or over-count. Logic lives in `emergency.js`'s `projectContributions()` (pure, exported,
+so it's independently testable) — `contributedTotal + monthsBetween(lastContribution, target) ×
+monthlyAmount`, months clamped at 0 so a target month at or before the last contribution just returns
+the current total.
 
 The loan form's readout spells the arithmetic out (`amount × rate × multiplier (N months) = X,
 rounded up to Y`) because the figure is derived — a wrong date silently changes the band, and that's

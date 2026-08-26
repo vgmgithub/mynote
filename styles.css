@@ -1042,6 +1042,40 @@ body.locked { overflow: hidden; }
 }
 .info-btn:hover { color: var(--text); border-color: var(--muted); }
 
+/* Same idea as .info-btn, sized for an emoji glyph instead of the italic "i" —
+   opens the Emergency Fund contribution-projection calculator. */
+.calc-btn {
+  flex: 0 0 auto; width: 18px; height: 18px; padding: 0; line-height: 1;
+  border-radius: 50%; border: 1px solid var(--line);
+  background: var(--card-2); color: var(--muted);
+  font-size: 0.62rem;
+  cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+}
+.calc-btn:hover { color: var(--text); border-color: var(--muted); }
+.summary .cell .k.ef-k-icon { display: flex; align-items: center; gap: 5px; }
+
+/* Contribution projection popup (the 🧮 next to "Collected") */
+.ef-proj-current {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 12px; background: var(--card-2); border: 1px solid var(--line);
+  border-radius: 10px; margin-bottom: 14px;
+}
+.ef-proj-current .bl { color: var(--muted); font-size: 0.82rem; }
+.ef-proj-current .bn { font-size: 1.05rem; font-weight: 700; }
+.ef-proj-big {
+  background: var(--card-2); border: 1px solid var(--line); border-radius: 10px;
+  padding: 12px 14px; margin-top: 12px; text-align: center;
+}
+.ef-proj-big .label { color: var(--muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.4px; }
+.ef-proj-big .big { font-size: 1.6rem; font-weight: 700; margin: 4px 0; color: var(--accent); }
+.ef-proj-big .hint { font-size: 0.7rem; margin: 0; }
+.ef-proj-months { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.ef-proj-month {
+  flex: 0 0 auto; background: var(--card); border: 1px solid var(--line); border-radius: 999px;
+  padding: 7px 13px; font-size: 0.8rem; color: var(--text); cursor: pointer;
+}
+.ef-proj-month.active { background: var(--accent); border-color: var(--accent); color: #06243a; font-weight: 700; }
+
 /* "What makes up Total Invested" sheet */
 .brk-head { display: flex; justify-content: space-between; color: var(--muted); font-size: 0.68rem;
   text-transform: uppercase; letter-spacing: 0.5px; padding: 0 0 6px; border-bottom: 1px solid var(--line); }
