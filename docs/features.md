@@ -162,6 +162,20 @@ See [emergency-fund.md](emergency-fund.md) for the full design. Summary:
 - **Reconciliation** is shown explicitly (`collected − invested − lent = available`) and warns in plain language when it doesn't add up, rather than rendering a bare negative.
 - No seed data — the user logs their own contributions, targets and loans.
 
+## Bank Savings (2nd Savings-section card)
+
+- **🐷 Bank Savings** card on Home, next to Emergency Fund under the Savings section. Deliberately the
+  simplest surface in the app: one flat list of savings accounts, each holding its **current balance**
+  (typed in by hand — there's no bank API to fetch it live) plus the date that balance was last
+  checked. No sub-tabs, no derived interest math.
+- Fields: bank (free text with a common-banks datalist), an optional account label (e.g. "Salary",
+  "Joint" — for telling apart two accounts at the same bank), balance, as-of date, notes.
+- Summary shows the total across every account plus the per-account average; cards are sorted balance
+  descending. Tap a card to edit or delete it.
+- **Not counted in Home's Total Invested** — it's cash in hand, not capital at work, same treatment as
+  Emergency Fund's idle cash and Dividends.
+- Own `bankSavings` IndexedDB store (v10), in `exportAll`/`importAll` for backup.
+
 ## App lock
 
 See [app-lock.md](app-lock.md) for details. Summary:

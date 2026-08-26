@@ -1,7 +1,7 @@
 // IndexedDB data layer. All data lives on this device only.
 export const DB = (function () {
   const NAME = 'mynote-stocks';
-  const VERSION = 9;
+  const VERSION = 10;
   let dbp = null;
 
   function open() {
@@ -82,6 +82,12 @@ export const DB = (function () {
           const s = db.createObjectStore('emergency', { keyPath: 'id', autoIncrement: true });
           s.createIndex('kind', 'kind', { unique: false });
         }
+        // Bank savings accounts. One row per account, holding its CURRENT balance
+        // (manually updated, not live-fetched) plus when it was last checked. No
+        // index — the surface always reads the whole flat list. Added in v10.
+        if (!db.objectStoreNames.contains('bankSavings')) {
+          db.createObjectStore('bankSavings', { keyPath: 'id', autoIncrement: true });
+        }
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
@@ -139,7 +145,7 @@ export const DB = (function () {
       // `feed` is best-effort: very old backups (v2 export) won't have it, and
       // the store may not exist if the user is mid-upgrade. Don't fail the
       // whole export over a missing store.
-      const [stocks, snapshots, monthly, meta, feed, funds, fds, dividends, metals, bonds, emergency] = await Promise.all([
+      const [stocks, snapshots, monthly, meta, feed, funds, fds, dividends, metals, bonds, emergency, bankSavings] = await Promise.all([
         this.all('stocks'),
         this.all('snapshots'),
         this.all('monthly'),
@@ -151,6 +157,7 @@ export const DB = (function () {
         this.all('metals').catch(() => []),
         this.all('bonds').catch(() => []),
         this.all('emergency').catch(() => []),
+        this.all('bankSavings').catch(() => []),
       ]);
       return {
         app: 'mynote-stocks',
@@ -167,6 +174,7 @@ export const DB = (function () {
         metals,
         bonds,
         emergency,
+        bankSavings,
       };
     },
     // Replace all data with the contents of a previously exported object.
@@ -186,6 +194,7 @@ export const DB = (function () {
         this.clear('metals').catch(() => {}),
         this.clear('bonds').catch(() => {}),
         this.clear('emergency').catch(() => {}),
+        this.clear('bankSavings').catch(() => {}),
       ]);
       const tasks = [];
       (data.stocks || []).forEach((s) => tasks.push(this.put('stocks', s)));
@@ -200,6 +209,7 @@ export const DB = (function () {
       (data.metals || []).forEach((m) => tasks.push(this.put('metals', m).catch(() => {})));
       (data.bonds || []).forEach((b) => tasks.push(this.put('bonds', b).catch(() => {})));
       (data.emergency || []).forEach((e) => tasks.push(this.put('emergency', e).catch(() => {})));
+      (data.bankSavings || []).forEach((b) => tasks.push(this.put('bankSavings', b).catch(() => {})));
       await Promise.all(tasks);
     },
   };
