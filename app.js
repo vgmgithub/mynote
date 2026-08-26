@@ -31,6 +31,9 @@ const state = {
   months: [],
 };
 
+// Navigation history for back swipe gesture - tracks the path through the app
+const navHistory = ['home'];
+
 // Mutual-fund view state (only used inside the MF surface).
 let _mfSort = 'ret';        // 'ret' | 'xirr' | 'inv' | 'name' (default: Return %)
 let _mfFilter = 'investing'; // 'investing' | 'sold' (holding vs redeemed - not SIP status)
@@ -211,6 +214,7 @@ function insideHorizontalScroller(target, root) {
 const SWIPE_MIN_X = 55;        // px of travel before it counts as deliberate
 const SWIPE_OFF_AXIS = 0.6;    // |dy| must stay under this fraction of |dx|
 const SWIPE_MAX_MS = 700;      // slower than this is a scroll that drifted sideways
+const BACK_SWIPE_EDGE_WIDTH = 30; // px from left edge to detect back swipe
 function installPortfolioSwipe() {
   const host = $('#main');
   let sx = 0, sy = 0, st = 0, live = false;
@@ -241,6 +245,37 @@ function installPortfolioSwipe() {
     // Clamp at both ends rather than wrapping: jumping from the last tab back to
     // the first reads as a glitch, and three tabs are easy enough to tap.
     if (next) selectPortfolio(next.id, dir);
+  }, { passive: true });
+}
+
+// Back swipe gesture: right swipe from the left edge navigates to the previous page
+function installBackSwipe() {
+  const host = document.documentElement;
+  let sx = 0, sy = 0, st = 0, liveBack = false;
+
+  host.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) return;
+    sx = e.touches[0].clientX; sy = e.touches[0].clientY; st = Date.now();
+    // Only arm back swipe if touch starts within the left edge zone
+    liveBack = sx < BACK_SWIPE_EDGE_WIDTH;
+  }, { passive: true });
+
+  host.addEventListener('touchcancel', () => { liveBack = false; }, { passive: true });
+
+  host.addEventListener('touchend', (e) => {
+    if (!liveBack) return;
+    liveBack = false;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - sx, dy = t.clientY - sy;
+    if (Date.now() - st > SWIPE_MAX_MS) return;
+    if (dx < SWIPE_MIN_X) return;  // must swipe right at least SWIPE_MIN_X
+    if (Math.abs(dy) > Math.abs(dx) * SWIPE_OFF_AXIS) return;
+    // Back swipe detected - navigate to previous page
+    if (navHistory.length > 1) {
+      navHistory.pop();  // remove current mode
+      const prevMode = navHistory[navHistory.length - 1];
+      setAppMode(prevMode);
+    }
   }, { passive: true });
 }
 
@@ -1548,6 +1583,10 @@ async function render() {
 const STOCK_SURFACE = ['#summary', '#toolbar', '#stockList', '#monthlyView', '#heatmapView', '#trendView', '#feedView', '#addBtn', '#ocrBtn'];
 function setAppMode(mode) {
   state.appMode = mode;
+  // Track navigation history for back swipe - if same mode is pushed again, skip it
+  if (navHistory[navHistory.length - 1] !== mode) {
+    navHistory.push(mode);
+  }
   const isHome = mode === 'home', isStocks = mode === 'stocks', isMF = mode === 'mf', isFD = mode === 'fd', isDiv = mode === 'div', isMetal = mode === 'metal', isBond = mode === 'bond', isEF = mode === 'ef', isInvestment = mode === 'investment', isSavings = mode === 'savings', isExpense = mode === 'expense';
   $('#homeView').classList.toggle('hidden', !isHome);
   $('#investmentView').classList.toggle('hidden', !isInvestment);
@@ -7076,6 +7115,7 @@ function checkMonthEndSnapshotReminder() {
 async function init() {
   applyTheme();
   buildChrome();
+  installBackSwipe();
   bind();
   // App-lock gate: if the user has set a PIN, block here until they unlock.
   // Data load happens *after* unlock - so even if the overlay is somehow
