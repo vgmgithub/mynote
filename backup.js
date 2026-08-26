@@ -1,7 +1,7 @@
 // Folder-based backup & restore using the File System Access API.
 //
 // Goal: backups live in a dedicated user-chosen folder (no Downloads clutter),
-// the app rotates them automatically (newest 5 kept), and "Restore" is one tap.
+// the app rotates them automatically (newest 2 kept), and "Restore" is one tap.
 //
 // Persistence model: the user picks the folder ONCE; we stash the FileSystem-
 // DirectoryHandle in IndexedDB.meta. If site data is wiped, the handle is lost
@@ -19,7 +19,7 @@ const HANDLE_KEY = 'backupFolderHandle';
 // else the user happens to put in the folder is left untouched.
 const BACKUP_FILE_RE = /^mynote-stocks-backup-(\d{4}-\d{2}-\d{2})\.json$/;
 const PRE_RESTORE_FILE = 'mynote-stocks-prerestore.json';
-const KEEP = 5;
+const KEEP = 2;
 
 export const BACKUPS_KEEP = KEEP;
 

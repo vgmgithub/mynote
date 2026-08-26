@@ -1,8 +1,8 @@
 {
   "id": "./",
-  "name": "MyNote Stocks",
-  "short_name": "Stocks",
-  "description": "Personal offline stock portfolio tracker. All data stays on this device.",
+  "name": "MyNotes",
+  "short_name": "MyNotes",
+  "description": "Personal offline finance tracker — investments, savings and more. All data stays on this device.",
   "start_url": "./?source=pwa",
   "scope": "./",
   "display": "standalone",

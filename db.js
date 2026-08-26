@@ -180,7 +180,7 @@ export const DB = (function () {
     // Replace all data with the contents of a previously exported object.
     async importAll(data) {
       if (!data || data.app !== 'mynote-stocks') {
-        throw new Error('This file is not a MyNote Stocks backup.');
+        throw new Error('This file is not a MyNotes backup.');
       }
       await Promise.all([
         this.clear('stocks'),

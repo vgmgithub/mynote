@@ -60,7 +60,7 @@ Layout:
 ```
 ┌─────────────────────┐
 │        🔒           │
-│  MyNote Stocks      │
+│  MyNotes            │
 │  Use biometric or…  │
 │   ● ● ○ ○           │  ← 4-dot PIN progress
 │   (error if any)    │

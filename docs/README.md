@@ -1,4 +1,4 @@
-# MyNote Stocks — Documentation
+# MyNotes — Documentation
 
 This folder exists so a fresh chat session can pick up where the last one left off without re-litigating decisions or re-discovering hard-won gotchas.
 

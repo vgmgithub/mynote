@@ -15,7 +15,7 @@ The app shows a setup sheet: "Pick a folder where your backups will be saved." T
 A main sheet shows:
 - Current backup folder name + Change link.
 - **Backup now** button + "Last: 12 Jun 2026" indicator.
-- **Recent backups** list (newest 5), each row with date + size + Restore button.
+- **Recent backups** list (newest `BACKUPS_KEEP`, currently 2), each row with date + size + Restore button.
 - **Restore from a file outside this folder...** link at the bottom — for cross-device restore.
 
 ## Naming convention

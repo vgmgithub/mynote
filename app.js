@@ -1606,7 +1606,7 @@ function applyAppMode(mode) {
   $('#bankSavAddBtn').classList.toggle('hidden', !isBankSav);
   if (!isMetal) $('#metalAddBtn').classList.add('hidden'); // renderMetal shows it on Gold/Silver only
   $('#backBtn').classList.toggle('hidden', isHome);
-  $('#appTitle').innerHTML = isHome ? '' : (isInvestment ? 'Investment' : isSavings ? 'Savings' : isExpense ? 'Expense' : isMF ? 'Mutual&nbsp;Funds' : isFD ? 'Fixed&nbsp;Deposits' : isDiv ? 'Dividends' : isMetal ? 'Metals' : isBond ? 'Bonds' : isEF ? 'Emergency&nbsp;Fund' : isBankSav ? 'Bank&nbsp;Savings' : 'MyNote&nbsp;Stocks');
+  $('#appTitle').innerHTML = isHome ? '' : (isInvestment ? 'Investment' : isSavings ? 'Savings' : isExpense ? 'Expense' : isMF ? 'Mutual&nbsp;Funds' : isFD ? 'Fixed&nbsp;Deposits' : isDiv ? 'Dividends' : isMetal ? 'Metals' : isBond ? 'Bonds' : isEF ? 'Emergency&nbsp;Fund' : isBankSav ? 'Bank&nbsp;Savings' : 'MyNotes');
   if (isStocks) {
     render();
   } else {
@@ -7135,7 +7135,7 @@ async function showLockScreen() {
 
     overlay.appendChild(el('div', { class: 'lock-card' }, [
       el('div', { class: 'lock-logo', text: '🔒' }),
-      el('div', { class: 'lock-title', text: 'MyNote Stocks' }),
+      el('div', { class: 'lock-title', text: 'MyNotes' }),
       subText,
       dots,
       errorEl,

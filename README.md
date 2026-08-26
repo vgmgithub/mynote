@@ -1,4 +1,4 @@
-# MyNote Stocks
+# MyNotes
 
 Private, offline-first stock portfolio tracker served by Apache from:
 

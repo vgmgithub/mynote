@@ -32,7 +32,7 @@ That means: simple, fast, private, reliable, no surprises. The user treats this 
 ## Workflow that drives the app
 
 1. User opens broker app → takes screenshot of holdings (sometimes 4–5 screenshots if list is long).
-2. Opens MyNote Stocks → taps 📷 → uploads screenshot(s).
+2. Opens MyNotes → taps 📷 → uploads screenshot(s).
 3. OCR reads prices/units, fuzzy-matches to existing holdings, user reviews/corrects in modal, Apply.
 4. App auto-captures the month's portfolio totals (invested/value/profit-loss + Nifty/Nasdaq benchmark).
 5. Over months, the Trend + Heatmap + Overview tabs build up a real history.
