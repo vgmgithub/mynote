@@ -1601,7 +1601,7 @@ function applyAppMode(mode) {
   $('#mfFetchBtn').classList.toggle('hidden', !isMF);
   $('#fdAddBtn').classList.toggle('hidden', !isFD);
   $('#bondAddBtn').classList.toggle('hidden', !isBond);
-  $('#efAddBtn').classList.toggle('hidden', !isEF);
+  $('#efAddBtn').classList.toggle('hidden', !isEF || _efTab === 'fund');
   if (!isMetal) $('#metalAddBtn').classList.add('hidden'); // renderMetal shows it on Gold/Silver only
   $('#backBtn').classList.toggle('hidden', isHome);
   $('#appTitle').innerHTML = isHome ? '' : (isInvestment ? 'Investment' : isSavings ? 'Savings' : isExpense ? 'Expense' : isMF ? 'Mutual&nbsp;Funds' : isFD ? 'Fixed&nbsp;Deposits' : isDiv ? 'Dividends' : isMetal ? 'Metals' : isBond ? 'Bonds' : isEF ? 'Emergency&nbsp;Fund' : 'MyNote&nbsp;Stocks');
@@ -1715,7 +1715,7 @@ function buildEfBottomNav() {
   const nav = $('#efBottomNav');
   if (nav.childElementCount) { updateEfNavActive(); return; }
   nav.innerHTML = '';
-  [['fund', '🛟', 'Fund'], ['targets', '🎯', 'Targets'], ['loans', '🤝', 'Loans'], ['log', '🗓️', 'Log']].forEach(([v, ico, label]) => {
+  [['fund', '🛟', 'Funds'], ['targets', '🎯', 'Targets'], ['loans', '🤝', 'Loans'], ['log', '🗓️', 'Log']].forEach(([v, ico, label]) => {
     nav.appendChild(el('button', { 'data-view': v, onclick: () => { if (_efTab === v) return; _efTab = v; renderEmergency(); } },
       [el('span', { class: 'bn-ico', text: ico }), label]));
   });
