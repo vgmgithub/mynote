@@ -1374,8 +1374,20 @@ function renderMonthly() {
         el('div', { class: 'pct ' + (m.returnPct != null ? pctClass(m.returnPct) : 'flat'), text: m.returnPct != null ? fmtPct(m.returnPct) : '-' }),
       ]);
       const momTip = 'MoM = this month\'s value minus last month\'s value.';
+      // Value − invested for THIS month's snapshot (stored on capture/edit, not
+      // recomputed here) — a small badge right next to Value so the return for
+      // that single month reads at a glance, without eyeballing the diff between
+      // two separate numbers.
+      const gainBadge = m.profitLoss != null
+        ? el('span', {
+            class: 'badge ' + (m.profitLoss >= 0 ? 'good' : 'bad'),
+            style: 'margin-left:6px; vertical-align:middle',
+            title: 'This month\'s value minus invested',
+            text: (m.profitLoss >= 0 ? '+' : '') + fmtCur(m.profitLoss, cur),
+          })
+        : document.createTextNode('');
       const sub = el('div', { class: 'sub' }, [
-        el('span', {}, ['Value ', b(m.value != null ? fmtCur(m.value, cur) : '-')]),
+        el('span', {}, ['Value ', b(m.value != null ? fmtCur(m.value, cur) : '-'), gainBadge]),
         mom != null
           ? el('span', { class: pctClass(mom), title: momTip }, ['MoM ', b((mom >= 0 ? '+' : '') + fmtCur(mom, cur))])
           : el('span', { class: 'flat', title: momTip, text: 'MoM -' }),

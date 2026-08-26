@@ -39,6 +39,7 @@ This is the inventory. Each entry: **what** + **where** + **why it's that way**.
 - **Month-end snapshot reminder**: during the final 7 calendar days of a month, if the current month has not been captured, the Trend tab shows a reminder banner with **Capture now**. App open also shows a once-per-session reminder toast for the active portfolio.
 - **Value-by-month chart** with Nifty 50 / Nasdaq overlay on second axis.
 - Per-month MoM calculation: `value - prev.value` (kept simple per user — was overengineered with profit-loss deltas, reverted).
+- **Per-month gain badge**: each card in the Months list shows a small `+₹X`/`-₹X` badge (reusing `.badge good`/`.badge bad`) right next to that month's Value, from the already-stored `m.profitLoss` (= that month's value − invested). Deliberately distinct from the MoM figure beside it — MoM is the change vs. the *previous* month, this badge is the standalone return *for* that month, so both read at a glance without eyeballing a diff. No badge when `profitLoss` is null (invested or value missing on a manually-entered month).
 - Tap a point on mobile to show details (SVG `<title>` only triggers on hover, so we added a click handler + `.chart-info` div).
 
 ## Overview tab (was "Trends")
