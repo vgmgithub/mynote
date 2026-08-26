@@ -322,6 +322,8 @@ main.swipe-in-left { animation: swipe-from-left 0.18s ease-out; }
 }
 .ef-interest-row.is-realised { border-left-color: var(--good); }
 .ef-interest-row.is-pending { border-left-color: var(--warn); }
+.ef-interest-row.is-mine { border-left-color: var(--accent); }
+.ef-interest-row.is-spouse { border-left-color: #7c3aed; }
 .ef-interest-icon {
   flex: 0 0 auto; width: 30px; height: 30px; border-radius: 8px;
   background: var(--card); display: flex; align-items: center; justify-content: center;

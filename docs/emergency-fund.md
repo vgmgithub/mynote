@@ -184,7 +184,10 @@ from its own form instead) and shown on Targets/Loans/Log.
   start accruing (warn *before* the free window closes, not after). Card badges: `closed` /
   `overdue` / `interest-free` / `Nm left` / `N× band`.
 - **Log** — the contribution ledger. `mine` mirrors into `spouse` on entry since both sides pay the
-  same, still editable when a month differs.
+  same, still editable when a month differs. The "Contributed" summary at the top uses the same visual
+  language as the Funds tab's Interest card — a big total (with the month count as context) over
+  Mine/Spouse icon rows (accented blue/purple), instead of the bare `.grid`/`.cell` markup it used to
+  render as (unstyled outside `.summary`).
 
 The `+` FAB is **tab-aware** (`efAddForTab()`): loan on Loans, contribution on Log, target on Targets
 (and as the fallback default). It's hidden entirely on Funds — there's nothing to add on that tab

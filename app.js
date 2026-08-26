@@ -4088,6 +4088,21 @@ async function renderEmergency() {
   else host.appendChild(efLogTab(c));
 }
 
+// Icon + label/sub + amount row, used for the Funds tab's Interest breakdown
+// and the Log tab's Contributed breakdown — one visual language for "here's
+// a figure, here's what it means" instead of the bare .grid/.cell markup
+// (which has no CSS backing outside .summary, so it used to render unstyled).
+// `group` drives the left accent color: 'realised'/'pos' green, 'pending'/
+// 'warn' amber, anything else (e.g. 'neutral') falls back to a plain border.
+const _efInfoRow = (icon, label, sub, amount, group, amtCls) => el('div', { class: 'ef-interest-row is-' + group }, [
+  el('div', { class: 'ef-interest-icon', text: icon }),
+  el('div', { class: 'ef-interest-body' }, [
+    el('div', { class: 'ef-interest-label', text: label }),
+    el('div', { class: 'ef-interest-sub', text: sub }),
+  ]),
+  el('div', { class: 'ef-interest-amt ' + (amtCls || ''), text: amount }),
+]);
+
 // ---- Fund tab: where the money is, the reconciliation, and the target ladder
 function efFundTab(c, parked) {
   const wrap = el('div', { class: 'tab-content' });
@@ -4097,14 +4112,7 @@ function efFundTab(c, parked) {
   // visually apart instead of one flat row of numbers.
   const interestCard = el('div', { class: 'chart-card ef-interest-card' }, [el('h3', { text: 'Interest' })]);
   const interestList = el('div', { class: 'ef-interest-list' });
-  const interestRow = (icon, label, sub, amount, group, amtCls) => el('div', { class: 'ef-interest-row is-' + group }, [
-    el('div', { class: 'ef-interest-icon', text: icon }),
-    el('div', { class: 'ef-interest-body' }, [
-      el('div', { class: 'ef-interest-label', text: label }),
-      el('div', { class: 'ef-interest-sub', text: sub }),
-    ]),
-    el('div', { class: 'ef-interest-amt ' + (amtCls || ''), text: amount }),
-  ]);
+  const interestRow = _efInfoRow;
   interestList.appendChild(el('div', { class: 'ef-interest-group-label', text: 'Realised — already cash in the fund' }));
   interestList.appendChild(interestRow('🤝', 'From lending', 'Interest collected on loans', fmtIntCur(c.loanInterestRealised), 'realised', 'pos'));
   interestList.appendChild(interestRow('📈', 'From investments', 'Coupons and payouts received', fmtIntCur(c.parkedRealised), 'realised', c.parkedRealised > 0 ? 'pos' : ''));
@@ -4405,15 +4413,22 @@ function efLoanCard(l, mod) {
 // ---- Log tab: the contribution ledger
 function efLogTab(c) {
   const wrap = el('div', { class: 'tab-content' });
-  wrap.appendChild(el('div', { class: 'chart-card' }, [
-    el('h3', { text: 'Contributed' }),
-    el('div', { class: 'grid' }, [
-      _mfCell('Total', fmtIntCur(c.contributedTotal)),
-      _mfCell('Mine', fmtIntCur(c.mineTotal)),
-      _mfCell('Spouse', fmtIntCur(c.spouseTotal)),
-      _mfCell('Months', String(c.contributionCount)),
-    ]),
+
+  // Contributed, redesigned to match the Funds tab's Interest card: a big
+  // total up top (with the month count as context, not just another cell),
+  // then Mine/Spouse as icon rows instead of the bare .grid/.cell markup —
+  // that had no CSS backing outside .summary, so it rendered unstyled.
+  const summaryCard = el('div', { class: 'chart-card ef-interest-card' }, [el('h3', { text: 'Contributed' })]);
+  summaryCard.appendChild(el('div', { class: 'ef-proj-big' }, [
+    el('div', { class: 'label', text: c.contributionCount + (c.contributionCount === 1 ? ' month logged' : ' months logged') }),
+    el('div', { class: 'big', text: fmtCur(c.contributedTotal, 'INR') }),
   ]));
+  const contribList = el('div', { class: 'ef-interest-list' });
+  contribList.appendChild(_efInfoRow('🧑', 'Mine', 'Your share across every logged month', fmtIntCur(c.mineTotal), 'mine'));
+  contribList.appendChild(_efInfoRow('🧑‍🤝‍🧑', 'Spouse', 'Spouse\'s share across every logged month', fmtIntCur(c.spouseTotal), 'spouse'));
+  summaryCard.appendChild(contribList);
+  wrap.appendChild(summaryCard);
+
   const rows = (c.contributionRows || []).slice();
   if (!rows.length) {
     wrap.appendChild(el('div', { class: 'empty' }, [el('div', { class: 'e-icon', text: '🗓️' }), el('p', { text: 'No contributions logged yet.' }), el('p', { class: 'hint', text: 'Tap + to log a month.' })]));
