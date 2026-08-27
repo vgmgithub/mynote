@@ -18,6 +18,11 @@ C:\Apache24\htdocs\mynote\
 ├── feed.js                 ← news fetch (Marketaux) + offline recommendation engine
 ├── mf.js                   ← mutual-fund logic (XIRR, projections) + seed data (lazy-loaded)
 ├── fd.js                   ← fixed-deposit logic (maturity/interest/ladder calc) (lazy-loaded)
+├── bonds.js                ← bond logic (coupon schedule, amortization, realised interest) (lazy-loaded)
+├── metal.js                ← gold/silver ledger totals (lazy-loaded)
+├── dividend.js             ← per-stock dividend / yearly + YoY analysis (lazy-loaded)
+├── emergency.js            ← Emergency Fund logic (loan interest, target ladder) (lazy-loaded)
+├── credit.js               ← credit-card logic (month grid, utilisation, averages) (lazy-loaded)
 ├── icons/
 │   ├── icon-192.png
 │   └── icon-512.png
@@ -64,7 +69,14 @@ state = {
 
 ## IndexedDB schema
 
-Database: `mynote-stocks`, version `5`.
+Database: `mynote-stocks`, version `11`.
+
+Stores, and the version each was added in: `stocks` / `snapshots` / `meta` / `monthly` (v1–2),
+`feed` (v3), `funds` (v4), `fds` (v5), `dividends` (v6), `metals` (v7), `bonds` (v8),
+`emergency` (v9), `bankSavings` (v10), `creditCards` (v11). Every upgrade block is guarded by
+`if (!db.objectStoreNames.contains(...))`, so a bump never touches existing stores and no migration
+is needed. **A new store must also be added to `exportAll()` AND `importAll()`** — both list every
+store explicitly, so it would otherwise be silently missing from backups.
 
 ### `stocks` store
 - Key: `id` (auto-increment).

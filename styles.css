@@ -1098,6 +1098,16 @@ body.locked { overflow: hidden; }
 }
 .ef-rule-sub-v { color: var(--accent); font-weight: 700; white-space: nowrap; }
 
+/* Credit card month grid (Expense → Credit Card). Reuses .heatmap-scroll /
+   table.heatmap for the sticky-header + horizontal-scroll mechanics; these
+   overrides only change what's specific to a money grid (right-aligned figures,
+   a wider first column for card names, and a divider above the summary rows). */
+.cc-scroll { max-height: none; }
+.cc-grid td { text-align: right; font-weight: 600; }
+.cc-grid th.rowhead, .cc-grid th.corner { max-width: none; white-space: nowrap; font-weight: 600; }
+.cc-grid tr.cc-sum th.rowhead { color: var(--muted); font-weight: 700; }
+.cc-grid tr.cc-sum:first-of-type th, .cc-grid tr.cc-sum:first-of-type td { border-top: 2px solid var(--line); }
+
 /* "What makes up Total Invested" sheet */
 .brk-head { display: flex; justify-content: space-between; color: var(--muted); font-size: 0.68rem;
   text-transform: uppercase; letter-spacing: 0.5px; padding: 0 0 6px; border-bottom: 1px solid var(--line); }

@@ -1,7 +1,7 @@
 // IndexedDB data layer. All data lives on this device only.
 export const DB = (function () {
   const NAME = 'mynote-stocks';
-  const VERSION = 10;
+  const VERSION = 11;
   let dbp = null;
 
   function open() {
@@ -88,6 +88,14 @@ export const DB = (function () {
         if (!db.objectStoreNames.contains('bankSavings')) {
           db.createObjectStore('bankSavings', { keyPath: 'id', autoIncrement: true });
         }
+        // Credit cards (Expense section). One row per CARD, each carrying its own
+        // `months: [{ ym, billed, paid }]` ledger. No index — the surface always
+        // reads the whole flat list to build the month grid. Stored per-card
+        // rather than per-month because the source sheet's column-per-month
+        // layout would need a schema change every new month. Added in v11.
+        if (!db.objectStoreNames.contains('creditCards')) {
+          db.createObjectStore('creditCards', { keyPath: 'id', autoIncrement: true });
+        }
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
@@ -145,7 +153,7 @@ export const DB = (function () {
       // `feed` is best-effort: very old backups (v2 export) won't have it, and
       // the store may not exist if the user is mid-upgrade. Don't fail the
       // whole export over a missing store.
-      const [stocks, snapshots, monthly, meta, feed, funds, fds, dividends, metals, bonds, emergency, bankSavings] = await Promise.all([
+      const [stocks, snapshots, monthly, meta, feed, funds, fds, dividends, metals, bonds, emergency, bankSavings, creditCards] = await Promise.all([
         this.all('stocks'),
         this.all('snapshots'),
         this.all('monthly'),
@@ -158,6 +166,7 @@ export const DB = (function () {
         this.all('bonds').catch(() => []),
         this.all('emergency').catch(() => []),
         this.all('bankSavings').catch(() => []),
+        this.all('creditCards').catch(() => []),
       ]);
       return {
         app: 'mynote-stocks',
@@ -175,6 +184,7 @@ export const DB = (function () {
         bonds,
         emergency,
         bankSavings,
+        creditCards,
       };
     },
     // Replace all data with the contents of a previously exported object.
@@ -195,6 +205,7 @@ export const DB = (function () {
         this.clear('bonds').catch(() => {}),
         this.clear('emergency').catch(() => {}),
         this.clear('bankSavings').catch(() => {}),
+        this.clear('creditCards').catch(() => {}),
       ]);
       const tasks = [];
       (data.stocks || []).forEach((s) => tasks.push(this.put('stocks', s)));
@@ -210,6 +221,7 @@ export const DB = (function () {
       (data.bonds || []).forEach((b) => tasks.push(this.put('bonds', b).catch(() => {})));
       (data.emergency || []).forEach((e) => tasks.push(this.put('emergency', e).catch(() => {})));
       (data.bankSavings || []).forEach((b) => tasks.push(this.put('bankSavings', b).catch(() => {})));
+      (data.creditCards || []).forEach((c) => tasks.push(this.put('creditCards', c).catch(() => {})));
       await Promise.all(tasks);
     },
   };

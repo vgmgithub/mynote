@@ -52,8 +52,10 @@ let _bondTab = 'holdings';   // 'holdings' | 'overview' (bottom nav)
 let _bondFilter = 'active';  // 'active' | 'matured' (matured + sold) | 'all'
 let _bondSort = 'maturity';  // 'maturity' | 'amount' | 'rate'
 // Emergency Fund view state (only used inside the Emergency Fund surface).
-let _efTab = 'fund';         // 'fund' | 'loans' | 'log' (bottom nav)
+let _efTab = 'fund';         // 'fund' | 'targets' | 'loans' | 'log' | 'terms' (bottom nav)
 let _efLoanFilter = 'open';  // 'open' | 'closed' | 'all'
+// Expense view state (only used inside the Expense section page).
+let _expTab = 'cc';          // 'cc' | 'alloc' | 'spend' (bottom nav)
 const MF_TYPES = ['Multi Cap', 'Flexi Cap', 'Large Cap', 'Mid Cap', 'Small Cap', 'Tax Saver', 'Technology', 'Pharma', 'Energy', 'International', 'Index', 'Debt', 'Hybrid'];
 const MF_STATUS = ['Investing', 'Investing On/Off', 'Investing Variable', 'Stopped', 'Sold'];
 
@@ -1598,12 +1600,14 @@ function applyAppMode(mode) {
   $('#metalBottomNav').classList.toggle('hidden', !isMetal);
   $('#bondBottomNav').classList.toggle('hidden', !isBond);
   $('#efBottomNav').classList.toggle('hidden', !isEF);
+  $('#expBottomNav').classList.toggle('hidden', !isExpense);
   $('#mfAddBtn').classList.toggle('hidden', !isMF);
   $('#mfFetchBtn').classList.toggle('hidden', !isMF);
   $('#fdAddBtn').classList.toggle('hidden', !isFD);
   $('#bondAddBtn').classList.toggle('hidden', !isBond);
   $('#efAddBtn').classList.toggle('hidden', !isEF || _efTab === 'fund' || _efTab === 'terms');
   $('#bankSavAddBtn').classList.toggle('hidden', !isBankSav);
+  $('#ccAddBtn').classList.toggle('hidden', !isExpense || _expTab !== 'cc');
   if (!isMetal) $('#metalAddBtn').classList.add('hidden'); // renderMetal shows it on Gold/Silver only
   $('#backBtn').classList.toggle('hidden', isHome);
   $('#appTitle').innerHTML = isHome ? '' : (isInvestment ? 'Investment' : isSavings ? 'Savings' : isExpense ? 'Expense' : isMF ? 'Mutual&nbsp;Funds' : isFD ? 'Fixed&nbsp;Deposits' : isDiv ? 'Dividends' : isMetal ? 'Metals' : isBond ? 'Bonds' : isEF ? 'Emergency&nbsp;Fund' : isBankSav ? 'Bank&nbsp;Savings' : 'MyNotes');
@@ -1615,7 +1619,7 @@ function applyAppMode(mode) {
     if (isHome) renderHome();
     if (isInvestment) renderHomeInvestment();
     if (isSavings) renderHomeSavings();
-    if (isExpense) renderHomeExpense();
+    if (isExpense) { buildExpBottomNav(); renderHomeExpense(); }
     if (isMF) { buildMfBottomNav(); renderMF(); }
     if (isFD) { buildFdBottomNav(); renderFD(); }
     if (isDiv) { buildDivBottomNav(); renderDividend(); }
@@ -1726,6 +1730,23 @@ function buildEfBottomNav() {
 }
 function updateEfNavActive() {
   $('#efBottomNav').querySelectorAll('button').forEach((x) => x.classList.toggle('active', x.getAttribute('data-view') === _efTab));
+}
+
+// Bottom nav for the Expense section (Credit Card | Allocation | Expense).
+// The + FAB only means something on Credit Card (add a card), so it's hidden on
+// the other two — same pattern as the Emergency Fund's Funds/Rules tabs.
+function buildExpBottomNav() {
+  const nav = $('#expBottomNav');
+  if (nav.childElementCount) { updateExpNavActive(); return; }
+  nav.innerHTML = '';
+  [['cc', '💳', 'Credit Card'], ['alloc', '🧭', 'Allocation'], ['spend', '🧾', 'Expense']].forEach(([v, ico, label]) => {
+    nav.appendChild(el('button', { 'data-view': v, onclick: () => { if (_expTab === v) return; _expTab = v; renderHomeExpense(); $('#ccAddBtn').classList.toggle('hidden', _expTab !== 'cc'); } },
+      [el('span', { class: 'bn-ico', text: ico }), label]));
+  });
+  updateExpNavActive();
+}
+function updateExpNavActive() {
+  $('#expBottomNav').querySelectorAll('button').forEach((x) => x.classList.toggle('active', x.getAttribute('data-view') === _expTab));
 }
 
 const _FD_MONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -2586,15 +2607,26 @@ async function renderHomeSavings() {
   } catch (_) {}
 }
 
-// ---------- Expense section page ----------
+// ---------- Expense section page (Credit Card | Allocation | Expense) ----------
 async function renderHomeExpense() {
   const host = $('#expenseView');
   host.innerHTML = '';
+  updateExpNavActive();
+  $('#ccAddBtn').classList.toggle('hidden', _expTab !== 'cc');
 
+  if (_expTab === 'cc') { await renderCreditCards(host); return; }
+  if (_expTab === 'alloc') {
+    host.appendChild(el('div', { class: 'empty' }, [
+      el('div', { class: 'e-icon', text: '🧭' }),
+      el('p', { text: 'Allocation coming soon.' }),
+      el('p', { class: 'hint', text: 'This tab will plan how each month\'s income is split across fixed costs, essentials, lifestyle and savings.' }),
+    ]));
+    return;
+  }
   host.appendChild(el('div', { class: 'empty' }, [
-    el('div', { class: 'e-icon', text: '💳' }),
+    el('div', { class: 'e-icon', text: '🧾' }),
     el('p', { text: 'Expense tracking coming soon.' }),
-    el('p', { class: 'hint', text: 'This section will track your day-to-day expenses.' }),
+    el('p', { class: 'hint', text: 'This tab will track day-to-day spending against the Allocation plan.' }),
   ]));
 }
 
@@ -4895,6 +4927,285 @@ async function openBankSavForm(existing) {
       field('Current balance (₹)', balance),
       field('As of date', asOfDate),
       field('Notes', notes),
+    ]),
+    el('div', { class: 'sheet-footer' }, [el('div', { class: 'btn-row', style: 'flex-wrap:wrap' }, btns)]),
+  ]));
+}
+
+// ---------- Credit Cards (Expense → Credit Card tab) ----------
+// Reproduces the source sheet's wide credit grid: one row per card, one column
+// per month, with Total / Last Month Difference / to be PAID / Average summary
+// rows underneath. The grid scrolls horizontally inside its own container with a
+// sticky first column (same technique as the Heatmap tab) — 27 months will never
+// fit a phone screen, and squeezing them would make the figures unreadable.
+// Logic lives in credit.js; app.js does the `creditCards`-store CRUD.
+const CC_BANKS = ['HDFC', 'ICICI', 'Axis', 'SBI', 'Kotak', 'IndusInd', 'IDFC FIRST', 'AmEx', 'Standard Chartered', 'Yes Bank', 'RBL', 'AU Small Finance'];
+
+async function renderCreditCards(host) {
+  const mod = await import('./credit.js');
+  const cards = (await DB.all('creditCards')) || [];
+
+  if (!cards.length) {
+    host.appendChild(el('div', { class: 'empty' }, [
+      el('div', { class: 'e-icon', text: '💳' }),
+      el('p', { text: 'No credit cards yet.' }),
+      el('p', { class: 'hint', text: 'Tap + to add a card — name, bank and credit limit. Then log each month\'s statement amount and what you paid.' }),
+    ]));
+    return;
+  }
+
+  const g = mod.computeCredit(cards);
+
+  // Summary: the latest month is the figure that actually matters day to day,
+  // with the lifetime totals as context underneath.
+  host.appendChild(el('section', { class: 'summary' }, [
+    el('div', { class: 'row-between summary-top' }, [
+      el('div', {}, [
+        el('div', { class: 'label', text: g.latestYm ? 'Billed in ' + mod.monthLabel(g.latestYm) : 'Billed' }),
+        el('div', { class: 'big', text: fmtCur(g.latestBilled, 'INR') }),
+      ]),
+      el('div', { class: 'summary-earned' }, [
+        el('div', { class: 'label', text: 'Still to pay' }),
+        el('div', { class: 'v ' + (g.grandToBePaid > 0 ? 'warn' : 'pos'), text: fmtIntCur(g.grandToBePaid) }),
+      ]),
+    ]),
+    el('div', { class: 'grid' }, [
+      _mfCell('Cards', String(g.cardCount)),
+      _mfCell('Avg / month', fmtIntCur(g.averagePerMonth)),
+      _mfCell('Total billed', fmtIntCur(g.grandBilled)),
+      _mfCell('Total paid', fmtIntCur(g.grandPaid), g.grandPaid > 0 ? 'pos' : ''),
+    ]),
+  ]));
+
+  // Per-card cards — tap to edit the card or log its months.
+  const list = el('section', { class: 'stock-list' });
+  g.rows.slice().sort((a, b2) => b2.c.averageUse - a.c.averageUse).forEach(({ card, c }) => {
+    const catBits = [card.bank || 'Bank'];
+    if (c.limit > 0) catBits.push('limit ' + fmtIntCur(c.limit));
+    catBits.push(c.monthCount + (c.monthCount === 1 ? ' month' : ' months'));
+    const catLine = el('div', { class: 'cat mf-catline', text: catBits.join(' · ') });
+    // Utilisation only reads as a warning against a known limit; a card with no
+    // limit on record gets no badge rather than a misleading 0%.
+    if (c.utilisationPct != null) {
+      const hot = c.utilisationPct >= 30;
+      catLine.appendChild(el('span', { class: 'badge mf-beat ' + (hot ? 'warn' : 'good'), text: c.utilisationPct.toFixed(0) + '% used' }));
+    }
+    list.appendChild(el('div', { class: 'card', onclick: () => openCreditCardForm(card) }, [
+      el('div', { class: 'top' }, [
+        el('div', { class: 'card-left' }, [
+          el('div', { class: 'name', text: card.name || 'Card' }),
+          catLine,
+        ]),
+        el('div', { class: 'card-right' }, [
+          el('div', { class: 'pct', text: fmtIntCur(c.latestBilled) }),
+          el('div', { class: 'meta-line', text: c.latestYm ? mod.monthLabel(c.latestYm) : 'no months yet' }),
+        ]),
+      ]),
+      el('div', { class: 'sub mf-sub2' }, [
+        el('span', {}, [el('div', {}, ['Avg use ', b(fmtIntCur(c.averageUse))])]),
+        el('span', { class: 'value-emphasis' }, ['To pay ', b(fmtIntCur(c.outstanding))]),
+      ]),
+    ]));
+  });
+  host.appendChild(list);
+
+  // ---- The wide grid (the sheet's A:AB) ----
+  if (g.yms.length) {
+    const wrapCard = el('div', { class: 'chart-card' }, [el('h3', { text: 'Month by month' })]);
+    const head = el('tr', {}, [el('th', { class: 'corner', text: 'Month' })]);
+    g.yms.forEach((ym) => head.appendChild(el('th', { text: mod.monthLabel(ym) })));
+    const tbody = el('tbody');
+    g.rows.forEach(({ card, cell }) => {
+      const tr = el('tr', {}, [el('th', { class: 'rowhead', text: card.name || 'Card' })]);
+      g.yms.forEach((ym) => {
+        const v = cell(ym);
+        tr.appendChild(el('td', { class: v && v.billed ? '' : 'flat', text: v && v.billed ? fmtIntCur(v.billed) : '—' }));
+      });
+      tbody.appendChild(tr);
+    });
+    // The four summary rows the sheet carries under its grid.
+    const sumRow = (label, pick, cls) => {
+      const tr = el('tr', { class: 'cc-sum' }, [el('th', { class: 'rowhead', text: label })]);
+      g.monthly.forEach((m) => {
+        const out = pick(m);
+        tr.appendChild(el('td', { class: out.cls || cls || '', text: out.text }));
+      });
+      tbody.appendChild(tr);
+    };
+    sumRow('Total', (m) => ({ text: fmtIntCur(m.billed) }));
+    sumRow('vs last month', (m) => m.diff == null
+      ? { text: '—', cls: 'flat' }
+      // A credit-card bill going DOWN is the good direction, so the colours are
+      // deliberately inverted vs. every other surface in the app.
+      : { text: (m.diff > 0 ? '+' : '') + fmtIntCur(m.diff), cls: m.diff > 0 ? 'neg' : m.diff < 0 ? 'pos' : 'flat' });
+    sumRow('Paid', (m) => ({ text: m.paid ? fmtIntCur(m.paid) : '—', cls: m.paid ? 'pos' : 'flat' }));
+    sumRow('To be paid', (m) => ({ text: m.toBePaid ? fmtIntCur(m.toBePaid) : '—', cls: m.toBePaid ? 'warn' : 'flat' }));
+
+    wrapCard.appendChild(el('div', { class: 'heatmap-scroll cc-scroll' }, [
+      el('table', { class: 'heatmap cc-grid' }, [el('thead', {}, [head]), tbody]),
+    ]));
+    wrapCard.appendChild(el('p', { class: 'hint', style: 'margin-top:8px', text: 'Scroll sideways for older months. "vs last month" compares against the previous month that has data — a green figure means the bill came down.' }));
+    host.appendChild(wrapCard);
+  }
+
+  host.appendChild(el('p', { class: 'hint mf-foot', text: 'Credit card bills are money going out, so nothing here counts toward Home\'s Total Invested. Log the statement amount as "Billed" and what actually left your account as "Paid" — the difference is what\'s still owed.' }));
+}
+
+// Per-card month ledger: one row per statement month, holding what was billed
+// and what was paid. Same shape and behaviour as buildPayoutEditor (bonds) and
+// buildEfRepayEditor (loans) — a month input rather than a date, because a card
+// statement belongs to a month, not a day.
+function buildCcMonthEditor(months, onChange) {
+  const rowsWrap = el('div', { class: 'hist-rows mf-txn-rows' });
+  const summary = el('div', { class: 'mf-txn-summary' });
+  const emptyEl = el('div', { class: 'mf-txn-empty', text: 'No months logged yet.' });
+  const refs = [];
+
+  const refreshSummary = () => {
+    const rows = refs.filter((r) => !r.removed);
+    const has = rows.length > 0;
+    rowsWrap.classList.toggle('hidden', !has);
+    summary.classList.toggle('hidden', !has);
+    emptyEl.classList.toggle('hidden', has);
+    if (has) {
+      const bTotal = rows.reduce((s, r) => s + (num(r.billed.value) || 0), 0);
+      const pTotal = rows.reduce((s, r) => s + (num(r.paid.value) || 0), 0);
+      summary.innerHTML = '';
+      summary.appendChild(el('span', { text: rows.length + (rows.length === 1 ? ' month' : ' months') }));
+      summary.appendChild(el('span', { text: 'Billed ' + fmtIntCur(bTotal) }));
+      summary.appendChild(el('span', { text: 'Paid ' + fmtIntCur(pTotal) }));
+    }
+    // Deferred for the same reason as buildPayoutEditor: this can fire while the
+    // caller's own `refresh` const is still being declared.
+    if (typeof onChange === 'function') setTimeout(onChange, 0);
+  };
+
+  const addRow = (ym, billed, paid) => {
+    const m = el('input', { class: 'txn-date', type: 'month', value: ym || todayISO().slice(0, 7) });
+    const bIn = el('input', { class: 'txn-amt', type: 'number', inputmode: 'decimal', step: 'any', value: billed != null ? billed : '', placeholder: 'Billed ₹' });
+    const pIn = el('input', { class: 'txn-amt', type: 'number', inputmode: 'decimal', step: 'any', value: paid != null && paid !== 0 ? paid : '', placeholder: 'Paid ₹' });
+    const del = el('button', { class: 'icon-btn', type: 'button', text: '×' });
+    const ref = { m, billed: bIn, paid: pIn, removed: false };
+    bIn.addEventListener('blur', refreshSummary);
+    pIn.addEventListener('blur', refreshSummary);
+    m.addEventListener('change', refreshSummary);
+    const row = el('div', { class: 'mf-txn-row' }, [el('div', { class: 'txn-line' }, [m, bIn, pIn, del])]);
+    del.addEventListener('click', () => { row.remove(); ref.removed = true; refreshSummary(); });
+    refs.push(ref);
+    rowsWrap.appendChild(row);
+    refreshSummary();
+  };
+
+  // Newest first — the month you're about to edit is almost always the latest.
+  (months || []).slice().sort((a, b2) => (b2.ym || '').localeCompare(a.ym || '')).forEach((r) => addRow(r.ym, r.billed, r.paid));
+  refreshSummary();
+
+  // "+ Add month" pre-fills the month AFTER the newest one already logged, so
+  // filling a card in month by month needs no date typing at all.
+  const nextYm = () => {
+    const latest = refs.reduce((max, r) => (!r.removed && r.m.value && r.m.value > (max || '')) ? r.m.value : max, null);
+    if (!latest) return todayISO().slice(0, 7);
+    const mm = /^(\d{4})-(\d{2})/.exec(latest);
+    if (!mm) return todayISO().slice(0, 7);
+    const d = new Date(Date.UTC(+mm[1], +mm[2], 1));   // +mm[2] is already next month (0-based)
+    return d.toISOString().slice(0, 7);
+  };
+  const addBtn = el('button', { class: 'btn ghost small', type: 'button', text: '+ Add month', onclick: () => addRow(nextYm(), null, null) });
+
+  const node = el('div', {}, [emptyEl, rowsWrap, summary, el('div', { class: 'btn-row' }, [addBtn])]);
+  const collect = () => refs
+    .filter((r) => !r.removed && r.m.value)
+    .map((r) => ({ ym: String(r.m.value).slice(0, 7), billed: num(r.billed.value) || 0, paid: num(r.paid.value) || 0 }))
+    // Drop fully-empty rows: an added-then-ignored row shouldn't create a month.
+    .filter((r) => r.billed > 0 || r.paid > 0);
+  return { node, collect };
+}
+
+async function openCreditCardForm(existing) {
+  const isEdit = !!(existing && existing.id != null);
+  const mod = await import('./credit.js');
+  const r = Object.assign({}, existing || {});
+
+  const bankList = el('datalist', { id: 'ccbanklist' }, CC_BANKS.map((x) => el('option', { value: x })));
+  const name = el('input', { type: 'text', value: r.name || '', placeholder: 'e.g. Swiggy HDFC CC' });
+  const bank = el('input', { type: 'text', value: r.bank || '', list: 'ccbanklist', placeholder: 'Issuing bank' });
+  const creditLimit = el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: r.creditLimit != null && r.creditLimit !== '' ? r.creditLimit : '', placeholder: '₹ sanctioned limit (optional)' });
+  const notes = el('textarea', { placeholder: 'Your notes' });
+  notes.value = r.notes || '';
+
+  const monthEditor = buildCcMonthEditor(r.months, () => refresh());
+
+  const buildRec = () => ({
+    name: name.value.trim(),
+    bank: bank.value.trim(),
+    creditLimit: creditLimit.value !== '' ? (num(creditLimit.value) || 0) : null,
+    months: mod.normaliseMonths(monthEditor.collect()),
+    notes: notes.value.trim(),
+    createdAt: r.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+
+  const readout = el('div', { class: 'mf-bench-readout' });
+  const refresh = () => {
+    readout.innerHTML = '';
+    const c = mod.computeCard(buildRec());
+    readout.appendChild(el('div', { class: 'mf-bench-now' }, [
+      el('span', {}, ['Avg use ', b(fmtIntCur(c.averageUse))]),
+      el('span', {}, ['Latest ', b(c.latestYm ? fmtIntCur(c.latestBilled) : '—')]),
+      el('span', {}, ['To pay ', b(fmtIntCur(c.outstanding))]),
+    ]));
+    if (c.utilisationPct != null) {
+      readout.appendChild(el('p', { class: 'hint' + (c.utilisationPct >= 30 ? ' warn' : ''), style: 'margin-top:6px', text:
+        `Latest statement is ${c.utilisationPct.toFixed(1)}% of the ${fmtIntCur(c.limit)} limit` +
+        (c.utilisationPct >= 30 ? ' — above 30% starts to weigh on your credit score.' : '.') }));
+    }
+  };
+  [name, bank, creditLimit].forEach((inp) => inp.addEventListener('input', refresh));
+  refresh();
+
+  const del = async () => {
+    if (!window.confirm('Delete this card and all its logged months? This cannot be undone.')) return;
+    await DB.del('creditCards', r.id); closeModal(); toast('Card deleted'); renderHomeExpense();
+  };
+  const save = async () => {
+    if (!name.value.trim()) { toast('Enter the card name'); return; }
+    const rec = buildRec();
+    if (isEdit) rec.id = r.id;
+    await DB.put('creditCards', rec); closeModal(); toast(isEdit ? 'Card updated' : 'Card added'); renderHomeExpense();
+  };
+
+  // ---- Tabs: Details (the card itself) | Months (its statement ledger) ----
+  const detailsContent = el('div', {}, [
+    field('Card name', name),
+    el('div', { class: 'field-row' }, [field('Bank', bank), field('Credit limit (₹)', creditLimit)]),
+    field('Notes', notes),
+    readout,
+  ]);
+  const monthsContent = el('div', { class: 'hidden' }, [
+    el('p', { class: 'hint', text: 'One row per statement month. "Billed" is the statement total, "Paid" is what actually left your account — the difference carries as still-owed.' }),
+    monthEditor.node,
+  ]);
+  const detailsTabBtn = el('button', { class: 'active', type: 'button', text: 'Details' });
+  const monthsTabBtn = el('button', { type: 'button', text: 'Months' });
+  const tabs = [{ btn: detailsTabBtn, content: detailsContent }, { btn: monthsTabBtn, content: monthsContent }];
+  const showTab = (which) => tabs.forEach((t) => {
+    const on = t === which;
+    t.btn.classList.toggle('active', on);
+    t.content.classList.toggle('hidden', !on);
+  });
+  detailsTabBtn.addEventListener('click', () => showTab(tabs[0]));
+  monthsTabBtn.addEventListener('click', () => showTab(tabs[1]));
+
+  const btns = [el('button', { class: 'btn primary', text: 'Save', onclick: save })];
+  if (isEdit) btns.push(el('button', { class: 'btn danger', text: 'Delete', onclick: del }));
+  btns.push(el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }));
+  openModal(el('div', { class: 'sheet has-fixed-footer' }, [
+    el('div', { class: 'sheet-scroll' }, [
+      el('h2', { text: isEdit ? (r.name || 'Edit card') : 'Add credit card' }),
+      el('div', { class: 'seg' }, [detailsTabBtn, monthsTabBtn]),
+      bankList,
+      detailsContent,
+      monthsContent,
     ]),
     el('div', { class: 'sheet-footer' }, [el('div', { class: 'btn-row', style: 'flex-wrap:wrap' }, btns)]),
   ]));
@@ -7403,6 +7714,7 @@ function bind() {
   $('#bondAddBtn').addEventListener('click', () => openBondForm(null));
   $('#efAddBtn').addEventListener('click', () => efAddForTab());
   $('#bankSavAddBtn').addEventListener('click', () => openBankSavForm(null));
+  $('#ccAddBtn').addEventListener('click', () => openCreditCardForm(null));
   $('#backBtn').addEventListener('click', goHome);
   $('#menuBtn').addEventListener('click', openMenu);
   const onSearch = debounce(renderList, 120);

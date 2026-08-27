@@ -177,6 +177,40 @@ See [emergency-fund.md](emergency-fund.md) for the full design. Summary:
   Emergency Fund's idle cash and Dividends.
 - Own `bankSavings` IndexedDB store (v10), in `exportAll`/`importAll` for backup.
 
+## Expense section (3rd Home section)
+
+Tabs on `#expBottomNav`: **Credit Card | Allocation | Expense**. The **+** FAB only appears on Credit
+Card (adding a card is the only add-action here). Allocation and Expense are placeholders for now.
+
+### Credit Card tab
+
+Reproduces the source sheet's `credit` tab (columns A:AB — the label column plus 27 months). See
+`credit.js` for the record shape and the math.
+
+- **Add a card**: name, issuing bank (free text + datalist of common Indian issuers), optional credit
+  limit, notes. Tap a card to edit or delete it.
+- **Per-card month ledger** on the form's **Months** tab: one row per statement month with **Billed**
+  (statement total) and **Paid** (what actually left the account). `+ Add month` pre-fills the month
+  after the newest one logged, so filling a card in needs no date typing. Duplicate months are deduped
+  last-wins by `normaliseMonths()`; fully-empty rows are dropped rather than creating a phantom month.
+- **Billed vs Paid are tracked separately on purpose** — a statement total is *not* what leaves the
+  bank that month (EMIs, partial payments, carried balances), and the source sheet's own "to be PAID"
+  row is visibly ≠ its "Total" row. Outstanding is then derived, not guessed.
+- **Month-by-month grid**: one row per card, one column per month, with **Total / vs last month / Paid
+  / To be paid** summary rows underneath — the same four the sheet carries. Scrolls horizontally inside
+  its own container with a sticky first column (reuses the Heatmap's `.heatmap-scroll` mechanics); 27
+  months can't fit a phone screen and shrinking them would make the figures unreadable.
+- **"vs last month"** compares against the previous month *that has data*, not the previous calendar
+  month — a gap month would otherwise show the whole total as a spending spike that never happened.
+  Colours are **deliberately inverted** vs. the rest of the app: a falling card bill is the good
+  direction, so down is green.
+- **Utilisation badge** per card = latest statement ÷ credit limit, warn-coloured at ≥30% (the point it
+  starts affecting a credit score). A card with no limit on record gets **no badge** rather than a
+  misleading 0%.
+- **Nothing here counts toward Home's Total Invested** — card bills are money going out.
+- Own `creditCards` IndexedDB store (v11), in `exportAll`/`importAll` for backup. Stored per-card with
+  its own `months[]` array rather than column-per-month, so a new month never needs a schema change.
+
 ## App lock
 
 See [app-lock.md](app-lock.md) for details. Summary:
