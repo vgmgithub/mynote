@@ -1078,6 +1078,26 @@ body.locked { overflow: hidden; }
 }
 .ef-proj-month.active { background: var(--accent); border-color: var(--accent); color: #06243a; font-weight: 700; }
 
+/* Emergency Fund — Rules tab (the written policy) */
+.ef-rules { display: flex; flex-direction: column; }
+.ef-rule { display: flex; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+.ef-rule:first-child { border-top: none; padding-top: 0; }
+.ef-rule-num {
+  flex: 0 0 auto; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--card-2); border: 1px solid var(--line); color: var(--accent);
+  font-size: 0.7rem; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
+.ef-rule-body { flex: 1 1 auto; min-width: 0; }
+.ef-rule-text { font-size: 0.84rem; line-height: 1.4; }
+.ef-rule-sub { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.ef-rule-sub-row {
+  display: flex; justify-content: space-between; gap: 10px;
+  font-size: 0.76rem; padding: 5px 9px;
+  background: var(--card-2); border-radius: 8px;
+}
+.ef-rule-sub-v { color: var(--accent); font-weight: 700; white-space: nowrap; }
+
 /* "What makes up Total Invested" sheet */
 .brk-head { display: flex; justify-content: space-between; color: var(--muted); font-size: 0.68rem;
   text-transform: uppercase; letter-spacing: 0.5px; padding: 0 0 6px; border-bottom: 1px solid var(--line); }

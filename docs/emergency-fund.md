@@ -159,7 +159,7 @@ than the log says was collected (usually a missing contribution). That's surface
 
 ## UI
 
-Four tabs on `#efBottomNav`: **Funds | Targets | Loans | Log**. The summary card (fund value, interest
+Five tabs on `#efBottomNav`: **Funds | Targets | Loans | Log | Rules**. The summary card (fund value, interest
 earned, collected / invested / lent out / available) shows on **all** of them, so the headline never
 leaves the screen. **Collected** on this card is `contributedTotal` — raw contributions only, not
 `corpusIn` — with a 🔮 button beside the label that opens the contribution-projection calculator
@@ -188,10 +188,19 @@ from its own form instead) and shown on Targets/Loans/Log.
   language as the Funds tab's Interest card — a big total (with the month count as context) over
   Mine/Spouse icon rows (accented blue/purple), instead of the bare `.grid`/`.cell` markup it used to
   render as (unstyled outside `.summary`).
+- **Rules** — the family's written policy (rules 1–10), verbatim, as a numbered reference list. Pure
+  display, nothing to add — the figures rules 2/7/9 quote (the 3-month emergency window, the 5-month
+  gift window) and the footer's formula (`CEILING(amount × 2% × multiplier, ₹100)`) are pulled from
+  `emergency.js`'s own `EF_FREE_MONTHS`/`EF_RATE`/`EF_ROUND_TO` constants, so this text can't drift out
+  of sync with what the Loans tab actually charges. Rule 6's multiplier bands are followed by a
+  "Beyond 12 months" row noting the real `multiplierFor()` keeps extending in further 3-month steps —
+  the written sheet only lists up to the 10–12 month band, but the live calculation doesn't cap there.
+  Rules 9/10 (the 25%-of-fund gift cap, one allocation per cycle) are documented but **not enforced** —
+  see "Not built" below.
 
 The `+` FAB is **tab-aware** (`efAddForTab()`): loan on Loans, contribution on Log, target on Targets
-(and as the fallback default). It's hidden entirely on Funds — there's nothing to add on that tab
-directly.
+(and as the fallback default). It's hidden entirely on Funds and Rules — there's nothing to add on
+either tab directly.
 
 ### Contribution projection calculator
 

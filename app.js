@@ -1602,7 +1602,7 @@ function applyAppMode(mode) {
   $('#mfFetchBtn').classList.toggle('hidden', !isMF);
   $('#fdAddBtn').classList.toggle('hidden', !isFD);
   $('#bondAddBtn').classList.toggle('hidden', !isBond);
-  $('#efAddBtn').classList.toggle('hidden', !isEF || _efTab === 'fund');
+  $('#efAddBtn').classList.toggle('hidden', !isEF || _efTab === 'fund' || _efTab === 'terms');
   $('#bankSavAddBtn').classList.toggle('hidden', !isBankSav);
   if (!isMetal) $('#metalAddBtn').classList.add('hidden'); // renderMetal shows it on Gold/Silver only
   $('#backBtn').classList.toggle('hidden', isHome);
@@ -1718,8 +1718,8 @@ function buildEfBottomNav() {
   const nav = $('#efBottomNav');
   if (nav.childElementCount) { updateEfNavActive(); return; }
   nav.innerHTML = '';
-  [['fund', '🛟', 'Funds'], ['targets', '🎯', 'Targets'], ['loans', '🤝', 'Loans'], ['log', '🗓️', 'Log']].forEach(([v, ico, label]) => {
-    nav.appendChild(el('button', { 'data-view': v, onclick: () => { if (_efTab === v) return; _efTab = v; renderEmergency(); $('#efAddBtn').classList.toggle('hidden', _efTab === 'fund'); } },
+  [['fund', '🛟', 'Funds'], ['targets', '🎯', 'Targets'], ['loans', '🤝', 'Loans'], ['log', '🗓️', 'Log'], ['terms', '📜', 'Rules']].forEach(([v, ico, label]) => {
+    nav.appendChild(el('button', { 'data-view': v, onclick: () => { if (_efTab === v) return; _efTab = v; renderEmergency(); $('#efAddBtn').classList.toggle('hidden', _efTab === 'fund' || _efTab === 'terms'); } },
       [el('span', { class: 'bn-ico', text: ico }), label]));
   });
   updateEfNavActive();
@@ -4098,6 +4098,7 @@ async function renderEmergency() {
   if (_efTab === 'fund') host.appendChild(efFundTab(c, parked));
   else if (_efTab === 'targets') host.appendChild(efTargetsTab(c));
   else if (_efTab === 'loans') host.appendChild(efLoansTab(c, mod));
+  else if (_efTab === 'terms') host.appendChild(efTermsTab(mod));
   else host.appendChild(efLogTab(c));
 }
 
@@ -4461,6 +4462,52 @@ function efLogTab(c) {
     });
     wrap.appendChild(sec);
   }
+  return wrap;
+}
+
+// ---- Rules tab: the written policy, verbatim from the family's own terms
+// sheet. Pure reference — nothing to add here, so the FAB is hidden on this
+// tab. Figures the app actually computes from (the free-months windows, the
+// rate, the rounding) are pulled from emergency.js's own constants, so this
+// text can never drift out of sync with what the Loans tab actually charges.
+function efTermsTab(mod) {
+  const wrap = el('div', { class: 'tab-content' });
+  const card = el('div', { class: 'chart-card' }, [el('h3', { text: 'Emergency Fund Terms' })]);
+  const list = el('div', { class: 'ef-rules' });
+
+  const rule = (n, text, subRows) => {
+    list.appendChild(el('div', { class: 'ef-rule' }, [
+      el('div', { class: 'ef-rule-num', text: String(n) }),
+      el('div', { class: 'ef-rule-body' }, [
+        el('div', { class: 'ef-rule-text', text }),
+        subRows ? el('div', { class: 'ef-rule-sub' }, subRows.map(([k, v]) => el('div', { class: 'ef-rule-sub-row' }, [
+          el('span', { text: k }), el('span', { class: 'ef-rule-sub-v', text: v }),
+        ]))) : document.createTextNode(''),
+      ]),
+    ]));
+  };
+
+  rule(1, 'The fund should be used only for genuine emergencies.');
+  rule(2, `If we use the fund, the used amount must be repaid within ${mod.EF_FREE_MONTHS.emergency} months.`);
+  rule(3, 'If repayment takes longer than that for an emergency, we must pay interest based on usage.');
+  rule(4, 'If the fund is used for a non-emergency, interest must be paid from the beginning of usage.');
+  rule(5, 'If repayment exceeds the free window, additional interest will apply.');
+  rule(6, 'Additional interest is calculated for every 3-month block:', [
+    ['Up to 3 months', '1×'],
+    ['4–6 months', '2×'],
+    ['7–9 months', '3×'],
+    ['10–12 months', '4×'],
+    ['Beyond 12 months', '+1× every further 3 months'],
+  ]);
+  rule(7, `The rule above applies to both emergency and non-emergency usage. Only emergency use within ${mod.EF_FREE_MONTHS.emergency} months is interest-free.`);
+  rule(8, 'These rules apply to our personal use only.');
+  rule(9, `For helping others, up to 25% of the fund can be given without interest or reason, but must be returned within 3–${mod.EF_FREE_MONTHS.gift} months.`);
+  rule(10, 'Only one allocation of the 25% for others is allowed per cycle. After repayment, the amount can be given again — not multiple times simultaneously.');
+
+  card.appendChild(list);
+  wrap.appendChild(card);
+  wrap.appendChild(el('p', { class: 'hint mf-foot', text:
+    `This is the written policy — the Loans tab computes interest from it automatically: CEILING(amount × ${mod.EF_RATE}% × multiplier, ₹${mod.EF_ROUND_TO}), with the multiplier from rule 6 and the free windows from rules 2, 7 and 9.` }));
   return wrap;
 }
 

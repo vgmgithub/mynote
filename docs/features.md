@@ -152,7 +152,8 @@ See [bonds.md](bonds.md) for the full design. Summary:
 
 See [emergency-fund.md](emergency-fund.md) for the full design. Summary:
 
-- **🛟 Emergency Fund** card on Home (under the Savings section). Tabs: **Funds | Targets | Loans | Log**. The **+** FAB is hidden on the Funds tab (nothing to add there directly — link a holding from its own form instead) and shown on the other three.
+- **🛟 Emergency Fund** card on Home (under the Savings section). Tabs: **Funds | Targets | Loans | Log | Rules**. The **+** FAB is hidden on Funds and Rules (nothing to add on either — link a holding from its own form instead) and shown on the other three.
+- **Rules tab**: the family's written policy (10 numbered rules, including the 1×/2×/3×/4× interest-multiplier bands), displayed verbatim as reference. The figures it quotes and the footer's interest formula are pulled from `emergency.js`'s own constants, so the text can't drift from what Loans actually charges.
 - A family lending pot with a rulebook — two equal monthly contributions in, parked across MFs/bond/FD, lent out to self and family under a written interest policy, measured against a ladder of targets.
 - **Its investments stay in the `funds`/`bonds`/`fds` stores**, flagged via a **"Part of Emergency Fund"** switch on those surfaces' own forms (Bonds, MF, and FD all have it). They keep the existing live NAV fetch (no duplicated code, no extra network calls), stay listed there with a purple **EF** badge, but leave that page's invested/return totals.
 - **Funds tab**: interest split into **Realised** (from lending, received from investments — real cash) vs **Pending/unrealised** (mark-to-market, due on open loans), each row iconed and colour-accented. The "Invested in" list groups linked holdings by category — Mutual Funds / Bonds / Fixed Deposits — each with a header subtotal, instead of one flat list.
