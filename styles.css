@@ -1180,6 +1180,18 @@ body.locked { overflow: hidden; }
 .cc-grid th.rowhead, .cc-grid th.corner { max-width: none; white-space: nowrap; font-weight: 600; }
 .cc-grid tr.cc-sum th.rowhead { color: var(--muted); font-weight: 700; }
 .cc-grid tr.cc-sum:first-of-type th, .cc-grid tr.cc-sum:first-of-type td { border-top: 2px solid var(--line); }
+/* "To be paid" cell once every card billed that month is marked paid via the
+   card list's "To Pay" button — green + bolder than the grid's usual 600. */
+.cc-grid td.cc-fully-paid { font-weight: 800; background: rgba(52,211,153,0.12); border-radius: 4px; }
+
+/* Card list: "To Pay" action button (replaces the old static figure) and its
+   paid-confirmation counterpart once tapped. */
+.btn.warn { background: var(--warn); color: #3a2405; }
+.cc-pay-btn { min-height: 0; }
+.cc-paid-tag { color: var(--good); }
+/* Small inline confirmation next to a month row in the Details > Months editor
+   — paidOn isn't editable there, this just shows its current state. */
+.cc-row-paid-tag { flex: 0 0 auto; }
 
 /* "What makes up Total Invested" sheet */
 .brk-head { display: flex; justify-content: space-between; color: var(--muted); font-size: 0.68rem;

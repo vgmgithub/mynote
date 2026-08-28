@@ -5677,7 +5677,7 @@ async function renderCreditCards(host) {
     host.appendChild(el('div', { class: 'empty' }, [
       el('div', { class: 'e-icon', text: '💳' }),
       el('p', { text: 'No credit cards yet.' }),
-      el('p', { class: 'hint', text: 'Tap + to add a card — name, bank and credit limit. Then log each month\'s statement amount and what you paid.' }),
+      el('p', { class: 'hint', text: 'Tap + to add a card — name, bank and credit limit. Then log each month\'s statement amount and any reimbursement against it.' }),
     ]));
     return;
   }
@@ -5701,7 +5701,7 @@ async function renderCreditCards(host) {
       _mfCell('Cards', String(g.cardCount)),
       _mfCell('Avg / month', fmtIntCur(g.averagePerMonth)),
       _mfCell('Total billed', fmtIntCur(g.grandBilled)),
-      _mfCell('Total paid', fmtIntCur(g.grandPaid), g.grandPaid > 0 ? 'pos' : ''),
+      _mfCell('Total reimbursed', fmtIntCur(g.grandReimbursed), g.grandReimbursed > 0 ? 'pos' : ''),
     ]),
   ]));
 
@@ -5710,6 +5710,7 @@ async function renderCreditCards(host) {
   g.rows.slice().sort((a, b2) => b2.c.averageUse - a.c.averageUse).forEach(({ card, c }) => {
     const catBits = [card.bank || 'Bank'];
     if (c.limit > 0) catBits.push('limit ' + fmtIntCur(c.limit));
+    if (card.cycleStartDay && card.cycleEndDay) catBits.push('cycle ' + card.cycleStartDay + '–' + card.cycleEndDay);
     catBits.push(c.monthCount + (c.monthCount === 1 ? ' month' : ' months'));
     const catLine = el('div', { class: 'cat mf-catline', text: catBits.join(' · ') });
     // Utilisation only reads as a warning against a known limit; a card with no
@@ -5718,6 +5719,22 @@ async function renderCreditCards(host) {
       const hot = c.utilisationPct >= 30;
       catLine.appendChild(el('span', { class: 'badge mf-beat ' + (hot ? 'warn' : 'good'), text: c.utilisationPct.toFixed(0) + '% used' }));
     }
+
+    // The latest logged month's due amount, as either a "To Pay" button
+    // (tap to mark it settled) or a paid confirmation — never a plain
+    // static figure, since paying is now a tracked action, not just a number.
+    let payControl;
+    if (!c.latestYm) {
+      payControl = el('span', { class: 'value-emphasis', text: 'No months logged yet' });
+    } else if (c.latestPaidOn) {
+      payControl = el('span', { class: 'value-emphasis cc-paid-tag' }, ['✓ Paid ', b(fmtIntCur(c.latestToBePaid))]);
+    } else {
+      payControl = el('button', {
+        class: 'btn warn small cc-pay-btn', type: 'button', text: 'To Pay ' + fmtIntCur(c.latestToBePaid),
+        onclick: (e) => { e.stopPropagation(); markCardMonthPaid(card, c.latestYm); },
+      });
+    }
+
     list.appendChild(el('div', { class: 'card', onclick: () => openCreditCardForm(card) }, [
       el('div', { class: 'top' }, [
         el('div', { class: 'card-left' }, [
@@ -5731,7 +5748,7 @@ async function renderCreditCards(host) {
       ]),
       el('div', { class: 'sub mf-sub2' }, [
         el('span', {}, [el('div', {}, ['Avg use ', b(fmtIntCur(c.averageUse))])]),
-        el('span', { class: 'value-emphasis' }, ['To pay ', b(fmtIntCur(c.outstanding))]),
+        payControl,
       ]),
     ]));
   });
@@ -5761,28 +5778,49 @@ async function renderCreditCards(host) {
       tbody.appendChild(tr);
     };
     sumRow('Total', (m) => ({ text: fmtIntCur(m.billed) }));
+    sumRow('Reimbursed', (m) => ({ text: m.reimbursed ? fmtIntCur(m.reimbursed) : '—', cls: m.reimbursed ? 'pos' : 'flat' }));
+    sumRow('To be paid', (m) => ({
+      text: m.toBePaid ? fmtIntCur(m.toBePaid) : '—',
+      // Green + bold once every card billed that month has been marked paid
+      // via the "To Pay" button on the card list; otherwise the usual
+      // still-owed warning colour.
+      cls: m.fullyPaid ? 'pos cc-fully-paid' : (m.toBePaid ? 'warn' : 'flat'),
+    }));
     sumRow('vs last month', (m) => m.diff == null
       ? { text: '—', cls: 'flat' }
       // A credit-card bill going DOWN is the good direction, so the colours are
-      // deliberately inverted vs. every other surface in the app.
+      // deliberately inverted vs. every other surface in the app. Compares
+      // TO BE PAID (not the raw bill) since a reimbursement changes what's
+      // actually still owed.
       : { text: (m.diff > 0 ? '+' : '') + fmtIntCur(m.diff), cls: m.diff > 0 ? 'neg' : m.diff < 0 ? 'pos' : 'flat' });
-    sumRow('Paid', (m) => ({ text: m.paid ? fmtIntCur(m.paid) : '—', cls: m.paid ? 'pos' : 'flat' }));
-    sumRow('To be paid', (m) => ({ text: m.toBePaid ? fmtIntCur(m.toBePaid) : '—', cls: m.toBePaid ? 'warn' : 'flat' }));
 
     wrapCard.appendChild(el('div', { class: 'heatmap-scroll cc-scroll' }, [
       el('table', { class: 'heatmap cc-grid' }, [el('thead', {}, [head]), tbody]),
     ]));
-    wrapCard.appendChild(el('p', { class: 'hint', style: 'margin-top:8px', text: 'Scroll sideways for older months. "vs last month" compares against the previous month that has data — a green figure means the bill came down.' }));
+    wrapCard.appendChild(el('p', { class: 'hint', style: 'margin-top:8px', text: 'Scroll sideways for older months. "vs last month" compares the to-be-paid figure against the previous month that has data — a green figure means less is owed.' }));
     host.appendChild(wrapCard);
   }
 
-  host.appendChild(el('p', { class: 'hint mf-foot', text: 'Credit card bills are money going out, so nothing here counts toward Home\'s Total Invested. Log the statement amount as "Billed" and what actually left your account as "Paid" — the difference is what\'s still owed.' }));
+  host.appendChild(el('p', { class: 'hint mf-foot', text: 'Credit card bills are money going out, so nothing here counts toward Home\'s Total Invested. Log the statement amount as "Billed" and any reimbursement against it — the difference is what\'s still owed. Use the "To Pay" button on each card once you\'ve actually settled it.' }));
+}
+
+// Marks a card's given statement month as settled — a direct patch on the
+// stored record rather than going through openCreditCardForm's full save, so
+// tapping "To Pay" on the list never risks clobbering an in-progress edit.
+// Logging a NEW month later (statement for the next cycle) starts that row
+// with no paidOn, so the button naturally comes back next cycle.
+async function markCardMonthPaid(card, ym) {
+  if (!ym) return;
+  const months = (card.months || []).map((m) => (m.ym === ym ? Object.assign({}, m, { paidOn: new Date().toISOString() }) : m));
+  await DB.put('creditCards', Object.assign({}, card, { months, updatedAt: new Date().toISOString() }));
+  toast('Marked as paid');
+  renderHomeExpense();
 }
 
 // Per-card month ledger: one row per statement month, holding what was billed
-// and what was paid. Same shape and behaviour as buildPayoutEditor (bonds) and
-// buildEfRepayEditor (loans) — a month input rather than a date, because a card
-// statement belongs to a month, not a day.
+// and what was reimbursed. Same shape and behaviour as buildPayoutEditor (bonds)
+// and buildEfRepayEditor (loans) — a month input rather than a date, because a
+// card statement belongs to a month, not a day.
 function buildCcMonthEditor(months, onChange) {
   const rowsWrap = el('div', { class: 'hist-rows mf-txn-rows' });
   const summary = el('div', { class: 'mf-txn-summary' });
@@ -5797,27 +5835,32 @@ function buildCcMonthEditor(months, onChange) {
     emptyEl.classList.toggle('hidden', has);
     if (has) {
       const bTotal = rows.reduce((s, r) => s + (num(r.billed.value) || 0), 0);
-      const pTotal = rows.reduce((s, r) => s + (num(r.paid.value) || 0), 0);
+      const rTotal = rows.reduce((s, r) => s + (num(r.reimbursed.value) || 0), 0);
       summary.innerHTML = '';
       summary.appendChild(el('span', { text: rows.length + (rows.length === 1 ? ' month' : ' months') }));
       summary.appendChild(el('span', { text: 'Billed ' + fmtIntCur(bTotal) }));
-      summary.appendChild(el('span', { text: 'Paid ' + fmtIntCur(pTotal) }));
+      summary.appendChild(el('span', { text: 'Reimbursed ' + fmtIntCur(rTotal) }));
     }
     // Deferred for the same reason as buildPayoutEditor: this can fire while the
     // caller's own `refresh` const is still being declared.
     if (typeof onChange === 'function') setTimeout(onChange, 0);
   };
 
-  const addRow = (ym, billed, paid) => {
+  // `paidOn` isn't an editable field here (that's the "To Pay" button on the
+  // card list) — it's just carried through untouched so re-saving Details
+  // never wipes out an already-settled month. A small ✓ tag shows its state
+  // for transparency while editing.
+  const addRow = (ym, billed, reimbursed, paidOn) => {
     const m = el('input', { class: 'txn-date', type: 'month', value: ym || todayISO().slice(0, 7) });
     const bIn = el('input', { class: 'txn-amt', type: 'number', inputmode: 'decimal', step: 'any', value: billed != null ? billed : '', placeholder: 'Billed ₹' });
-    const pIn = el('input', { class: 'txn-amt', type: 'number', inputmode: 'decimal', step: 'any', value: paid != null && paid !== 0 ? paid : '', placeholder: 'Paid ₹' });
+    const rIn = el('input', { class: 'txn-amt', type: 'number', inputmode: 'decimal', step: 'any', value: reimbursed != null && reimbursed !== 0 ? reimbursed : '', placeholder: 'Reimbursed ₹' });
     const del = el('button', { class: 'icon-btn', type: 'button', text: '×' });
-    const ref = { m, billed: bIn, paid: pIn, removed: false };
+    const ref = { m, billed: bIn, reimbursed: rIn, paidOn: paidOn || null, removed: false };
+    const paidTag = el('span', { class: 'badge good cc-row-paid-tag' + (paidOn ? '' : ' hidden'), text: '✓ Paid' });
     bIn.addEventListener('blur', refreshSummary);
-    pIn.addEventListener('blur', refreshSummary);
+    rIn.addEventListener('blur', refreshSummary);
     m.addEventListener('change', refreshSummary);
-    const row = el('div', { class: 'mf-txn-row' }, [el('div', { class: 'txn-line' }, [m, bIn, pIn, del])]);
+    const row = el('div', { class: 'mf-txn-row' }, [el('div', { class: 'txn-line' }, [m, bIn, rIn, paidTag, del])]);
     del.addEventListener('click', () => { row.remove(); ref.removed = true; refreshSummary(); });
     refs.push(ref);
     rowsWrap.appendChild(row);
@@ -5825,11 +5868,12 @@ function buildCcMonthEditor(months, onChange) {
   };
 
   // Newest first — the month you're about to edit is almost always the latest.
-  (months || []).slice().sort((a, b2) => (b2.ym || '').localeCompare(a.ym || '')).forEach((r) => addRow(r.ym, r.billed, r.paid));
+  (months || []).slice().sort((a, b2) => (b2.ym || '').localeCompare(a.ym || '')).forEach((r) => addRow(r.ym, r.billed, r.reimbursed, r.paidOn));
   refreshSummary();
 
   // "+ Add month" pre-fills the month AFTER the newest one already logged, so
-  // filling a card in month by month needs no date typing at all.
+  // filling a card in month by month needs no date typing at all. A fresh row
+  // always starts unpaid — that's what brings the "To Pay" button back next cycle.
   const nextYm = () => {
     const latest = refs.reduce((max, r) => (!r.removed && r.m.value && r.m.value > (max || '')) ? r.m.value : max, null);
     if (!latest) return todayISO().slice(0, 7);
@@ -5838,14 +5882,14 @@ function buildCcMonthEditor(months, onChange) {
     const d = new Date(Date.UTC(+mm[1], +mm[2], 1));   // +mm[2] is already next month (0-based)
     return d.toISOString().slice(0, 7);
   };
-  const addBtn = el('button', { class: 'btn ghost small', type: 'button', text: '+ Add month', onclick: () => addRow(nextYm(), null, null) });
+  const addBtn = el('button', { class: 'btn ghost small', type: 'button', text: '+ Add month', onclick: () => addRow(nextYm(), null, null, null) });
 
   const node = el('div', {}, [emptyEl, rowsWrap, summary, el('div', { class: 'btn-row' }, [addBtn])]);
   const collect = () => refs
     .filter((r) => !r.removed && r.m.value)
-    .map((r) => ({ ym: String(r.m.value).slice(0, 7), billed: num(r.billed.value) || 0, paid: num(r.paid.value) || 0 }))
+    .map((r) => ({ ym: String(r.m.value).slice(0, 7), billed: num(r.billed.value) || 0, reimbursed: num(r.reimbursed.value) || 0, paidOn: r.paidOn || null }))
     // Drop fully-empty rows: an added-then-ignored row shouldn't create a month.
-    .filter((r) => r.billed > 0 || r.paid > 0);
+    .filter((r) => r.billed > 0 || r.reimbursed > 0);
   return { node, collect };
 }
 
@@ -5858,8 +5902,10 @@ async function openCreditCardForm(existing) {
   const name = el('input', { type: 'text', value: r.name || '', placeholder: 'e.g. Swiggy HDFC CC' });
   const bank = el('input', { type: 'text', value: r.bank || '', list: 'ccbanklist', placeholder: 'Issuing bank' });
   const creditLimit = el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: r.creditLimit != null && r.creditLimit !== '' ? r.creditLimit : '', placeholder: '₹ sanctioned limit (optional)' });
-  const notes = el('textarea', { placeholder: 'Your notes' });
-  notes.value = r.notes || '';
+  // Billing cycle (day-of-month range, e.g. 5 -> 4) instead of a free-text
+  // notes field — this is what the card list's "cycle 5–4" hint reflects.
+  const cycleStartDay = el('input', { type: 'number', inputmode: 'numeric', step: '1', min: '1', max: '31', value: r.cycleStartDay != null && r.cycleStartDay !== '' ? r.cycleStartDay : '', placeholder: 'e.g. 5' });
+  const cycleEndDay = el('input', { type: 'number', inputmode: 'numeric', step: '1', min: '1', max: '31', value: r.cycleEndDay != null && r.cycleEndDay !== '' ? r.cycleEndDay : '', placeholder: 'e.g. 4' });
 
   const monthEditor = buildCcMonthEditor(r.months, () => refresh());
 
@@ -5867,8 +5913,9 @@ async function openCreditCardForm(existing) {
     name: name.value.trim(),
     bank: bank.value.trim(),
     creditLimit: creditLimit.value !== '' ? (num(creditLimit.value) || 0) : null,
+    cycleStartDay: cycleStartDay.value !== '' ? (num(cycleStartDay.value) || null) : null,
+    cycleEndDay: cycleEndDay.value !== '' ? (num(cycleEndDay.value) || null) : null,
     months: mod.normaliseMonths(monthEditor.collect()),
-    notes: notes.value.trim(),
     createdAt: r.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   });
@@ -5906,11 +5953,12 @@ async function openCreditCardForm(existing) {
   const detailsContent = el('div', {}, [
     field('Card name', name),
     el('div', { class: 'field-row' }, [field('Bank', bank), field('Credit limit (₹)', creditLimit)]),
-    field('Notes', notes),
+    el('div', { class: 'field-row' }, [field('Cycle start day', cycleStartDay), field('Cycle end day', cycleEndDay)]),
+    el('p', { class: 'hint', style: 'margin:-6px 0 0', text: 'Day of month the billing cycle runs, e.g. 5 to 4 — shown on the card list, doesn\'t affect any totals.' }),
     readout,
   ]);
   const monthsContent = el('div', { class: 'hidden' }, [
-    el('p', { class: 'hint', text: 'One row per statement month. "Billed" is the statement total, "Paid" is what actually left your account — the difference carries as still-owed.' }),
+    el('p', { class: 'hint', text: 'One row per statement month. "Billed" is the statement total, "Reimbursed" is money credited back against it (e.g. home spending on this card) — the difference is what\'s still owed. Use the "To Pay" button on the card list once you\'ve actually settled a month.' }),
     monthEditor.node,
   ]);
   const detailsTabBtn = el('button', { class: 'active', type: 'button', text: 'Details' });
