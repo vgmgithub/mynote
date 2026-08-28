@@ -3344,7 +3344,7 @@ async function openDivForm(rec) {
   const yearRefs = [];
   const numInput = (v, ph) => el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: v != null && v !== '' ? v : '', placeholder: ph });
 
-  let addYearRow = (year, a, b2, preSelectMonths = []) => {
+  let addYearRow = (year, a, b2, preSelectMonths = [], presetPerMonth = null) => {
     const yy = el('input', { type: 'number', inputmode: 'numeric', step: '1', value: year != null ? year : '', placeholder: 'Year' });
     const rm = el('button', { class: 'icon-btn', type: 'button', text: '×' });
 
@@ -3472,8 +3472,15 @@ async function openDivForm(rec) {
         rm,
       ]);
 
-      // Pre-populate from b2 (old perUnit) if present, distribute equally.
-      if (b2 != null && b2 !== '') {
+      // Pre-populate the actual per-month values saved for this year. Records
+      // saved before per-month storage existed only have a flat perUnit total
+      // (b2) with no breakdown — for those only, fall back to splitting it
+      // evenly across this year's months as a best-effort guess.
+      if (presetPerMonth) {
+        Object.keys(presetPerMonth).forEach((m) => {
+          if (yearMonths.has(m)) monthlyInputs[m] = presetPerMonth[m];
+        });
+      } else if (b2 != null && b2 !== '') {
         const perUnit = Number(b2) || 0;
         if (yearMonths.size > 0) {
           const perMonth = perUnit / yearMonths.size;
@@ -3510,8 +3517,8 @@ async function openDivForm(rec) {
 
   // Override addYearRow to track rows by year and manage slider visibility
   const originalAddYearRow = addYearRow;
-  addYearRow = (year, a, b2, preSelectMonths = []) => {
-    originalAddYearRow(year, a, b2, preSelectMonths);
+  addYearRow = (year, a, b2, preSelectMonths = [], presetPerMonth = null) => {
+    originalAddYearRow(year, a, b2, preSelectMonths, presetPerMonth);
     const lastRow = yearRowsWrap.lastChild;
     if (lastRow) {
       rowsByYear.set(year, lastRow);
@@ -3520,12 +3527,29 @@ async function openDivForm(rec) {
     }
   };
 
-  // Load every saved year into the slider, then make sure the current year has
-  // a row too (created automatically — no "+ Add year" click needed to start
-  // entering this year's dividend).
-  sortedYears.forEach((y) => addYearRow(y.year, isUs ? usAmountOf(y) : y.units, isUs ? undefined : y.perUnit, isUs ? [] : mod.parseMonths(rec.months)));
+  // Load every saved year into the slider, using THAT year's own saved months
+  // (and, for India, its own per-month breakdown) — not a global list shared
+  // across every year, which previously meant unchecking a month in one year
+  // didn't stick (it kept reappearing from other years' months on reload) and
+  // reopening a year always re-split its total evenly instead of restoring
+  // what was actually entered per month. Records saved before this fix have
+  // no per-year `months`/`perMonth` yet — fall back to the old record-level
+  // `rec.months` list for those only, with no per-month breakdown to restore.
+  sortedYears.forEach((y) => addYearRow(
+    y.year,
+    isUs ? usAmountOf(y) : y.units,
+    isUs ? undefined : y.perUnit,
+    y.months ? y.months : (isUs ? [] : mod.parseMonths(rec.months)),
+    isUs ? null : (y.perMonth || null),
+  ));
   if (!hasCurYear) {
-    addYearRow(curYear, isUs ? '' : currentUnits, '', isUs ? [] : mod.parseMonths(rec.months));
+    // Brand new year, nothing saved for it yet — default its months to
+    // whatever the most recent prior year actually used (a reasonable guess
+    // that the stock keeps paying in the same months), falling back to the
+    // legacy record-level list if even that isn't available.
+    const priorMonths = (sortedYears[0] && sortedYears[0].months) ? sortedYears[0].months
+      : (isUs ? [] : mod.parseMonths(rec.months));
+    addYearRow(curYear, isUs ? '' : currentUnits, '', priorMonths, null);
   }
 
   // Create slider navigation
@@ -3561,16 +3585,28 @@ async function openDivForm(rec) {
       if (r.removed) continue;
       const y = parseInt(r.yy.value, 10);
       if (!Number.isFinite(y)) continue;
+      // This year's own months — saved per-year so unchecking a month here
+      // doesn't get overwritten by another year's selection on next open.
+      const yearMonthsArr = [...r.yearMonths].sort((m1, m2) => mod.MONTHS.indexOf(m1) - mod.MONTHS.indexOf(m2));
       if (isUs) {
-        map.set(y, { year: y, amount: r.amt.value === '' ? null : num(r.amt.value) });
+        map.set(y, { year: y, amount: r.amt.value === '' ? null : num(r.amt.value), months: yearMonthsArr });
       } else {
-        // India: sum per-month values to get perUnit.
+        // India: keep the exact per-month breakdown (so reopening restores
+        // what was actually typed, not an evenly-split guess) alongside the
+        // summed perUnit (still needed by yearTotal()'s units*perUnit math).
         let perUnit = null;
+        let perMonth = null;
         if (r.monthlyInputs && Object.keys(r.monthlyInputs).length > 0) {
-          const sum = Object.values(r.monthlyInputs).reduce((total, val) => total + (Number(val) || 0), 0);
+          perMonth = {};
+          let sum = 0;
+          Object.keys(r.monthlyInputs).forEach((m) => {
+            const v = Number(r.monthlyInputs[m]) || 0;
+            perMonth[m] = v;
+            sum += v;
+          });
           perUnit = sum > 0 ? sum : null;
         }
-        map.set(y, { year: y, units: num(r.uu.value) || 0, perUnit });
+        map.set(y, { year: y, units: num(r.uu.value) || 0, perUnit, months: yearMonthsArr, perMonth });
       }
     }
     return [...map.values()].sort((x, y) => x.year - y.year);
