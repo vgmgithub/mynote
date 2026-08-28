@@ -1539,6 +1539,11 @@ html[data-theme="light"] {
   .badge.due-badge-div, .due-soon-card.is-div .due-soon-days { color: #5eead4; }
 }
 
+/* Dividend form: pending stock notice for stocks without current year entry */
+.div-pending-notice { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; padding: 10px 12px; background: rgba(251,191,36,0.1); border-left: 3px solid var(--warn); border-radius: 6px; }
+.div-pending-notice span:first-child { font-size: 0.85rem; font-weight: 700; color: var(--warn); }
+.div-pending-notice span:last-child { font-size: 0.75rem; color: var(--text); }
+
 /* Allocation tracker (Expense → Allocation tab) */
 .alloc-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
 .alloc-header h3 { margin: 0; font-size: 1rem; }

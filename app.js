@@ -3429,8 +3429,13 @@ async function openDivForm(rec) {
   if (!allYears.includes(curYear)) allYears.push(curYear);
   allYears = [...new Set(allYears)].sort((a, b) => b - a); // unique, newest first
 
+  // For pending stocks (no current year data), show the most recent year first
+  // This helps user see what dividend was paid before and add current year
+  const hasCurYear = sortedYears.some(y => y.year === curYear);
+  const initialYear = !hasCurYear && sortedYears.length > 0 ? sortedYears[0].year : curYear;
+
   // Track which year is currently being viewed in the slider
-  let sliderCurrentYear = curYear;
+  let sliderCurrentYear = initialYear;
 
   // Store row elements by year for toggling visibility
   const rowsByYear = new Map();
@@ -3490,8 +3495,8 @@ async function openDivForm(rec) {
     },
   });
 
-  // Show only current year initially
-  showYear(curYear);
+  // Show most recent year initially (or current year if has data)
+  showYear(initialYear);
 
   const collectYears = () => {
     const map = new Map();
@@ -3540,12 +3545,23 @@ async function openDivForm(rec) {
       addYearBtn,
     ])),
   ]);
+  const headerContent = [
+    el('h2', { text: rec.name || 'Edit stock' }),
+    el('p', { class: 'hint', text: (isUs ? 'US ($)' : 'India (₹)') + ' · name and market are set on the Stocks edit form.' }),
+  ];
+
+  // Show pending notice for stocks without current year data
+  if (!hasCurYear) {
+    headerContent.push(el('div', { class: 'div-pending-notice' }, [
+      el('span', { text: '📋 Pending ' + curYear }),
+      el('span', { text: 'Click "+ Add year" button to create ' + curYear + ' entry' }),
+    ]));
+  }
+
+  headerContent.push(content);
+
   openModal(el('div', { class: 'sheet has-fixed-footer' }, [
-    el('div', { class: 'sheet-scroll' }, [
-      el('h2', { text: rec.name || 'Edit stock' }),
-      el('p', { class: 'hint', text: (isUs ? 'US ($)' : 'India (₹)') + ' · name and market are set on the Stocks edit form.' }),
-      content,
-    ]),
+    el('div', { class: 'sheet-scroll' }, headerContent),
     el('div', { class: 'sheet-footer' }, [el('div', { class: 'btn-row', style: 'flex-wrap:wrap' }, [
       el('button', { class: 'btn primary', text: 'Save', onclick: save }),
       el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }),
