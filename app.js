@@ -3465,13 +3465,12 @@ async function openDivForm(rec) {
   if (!allYears.includes(curYear)) allYears.push(curYear);
   allYears = [...new Set(allYears)].sort((a, b) => b - a); // unique, newest first
 
-  // For pending stocks (no current year data), show the most recent year first
-  // This helps user see what dividend was paid before and add current year
+  // Whether this stock already had a current-year entry before opening the form
+  // (used only for the pending notice below — the row itself is always created).
   const hasCurYear = sortedYears.some(y => y.year === curYear);
-  const initialYear = !hasCurYear && sortedYears.length > 0 ? sortedYears[0].year : curYear;
 
   // Track which year is currently being viewed in the slider
-  let sliderCurrentYear = initialYear;
+  let sliderCurrentYear = curYear;
 
   // Store row elements by year for toggling visibility
   const rowsByYear = new Map();
@@ -3488,10 +3487,11 @@ async function openDivForm(rec) {
     }
   };
 
-  // Load all years into the slider
-  if (sortedYears.length) {
-    sortedYears.forEach((y) => addYearRow(y.year, isUs ? usAmountOf(y) : y.units, isUs ? undefined : y.perUnit, isUs ? [] : mod.parseMonths(rec.months)));
-  } else {
+  // Load every saved year into the slider, then make sure the current year has
+  // a row too (created automatically — no "+ Add year" click needed to start
+  // entering this year's dividend).
+  sortedYears.forEach((y) => addYearRow(y.year, isUs ? usAmountOf(y) : y.units, isUs ? undefined : y.perUnit, isUs ? [] : mod.parseMonths(rec.months)));
+  if (!hasCurYear) {
     addYearRow(curYear, isUs ? '' : currentUnits, '', isUs ? [] : mod.parseMonths(rec.months));
   }
 
@@ -3504,7 +3504,6 @@ async function openDivForm(rec) {
     yearLabel.textContent = String(year);
     prevBtn.disabled = allYears.indexOf(year) >= allYears.length - 1;
     nextBtn.disabled = allYears.indexOf(year) <= 0;
-    addYearBtn.classList.toggle('hidden', year === curYear);
   };
 
   const prevBtn = el('button', { class: 'icon-btn', type: 'button', text: '◀', onclick: () => {
@@ -3520,19 +3519,8 @@ async function openDivForm(rec) {
   const sliderNav = el('div', { class: 'div-slider-nav', style: 'display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:10px' }, [prevBtn, yearLabel, nextBtn]);
   yearRowsWrap.insertBefore(sliderNav, yearRowsWrap.firstChild);
 
-  const addYearBtn = el('button', {
-    class: 'btn ghost small', type: 'button', text: '+ Add year',
-    onclick: () => {
-      const nextYear = Math.max(...allYears) + 1;
-      allYears.push(nextYear);
-      allYears.sort((a, b) => b - a);
-      addYearRow(nextYear, isUs ? '' : currentUnits, '', isUs ? [] : mod.parseMonths(rec.months));
-      showYear(nextYear);
-    },
-  });
-
-  // Show most recent year initially (or current year if has data)
-  showYear(initialYear);
+  // Current year always has a row (created above), so open straight on it.
+  showYear(curYear);
 
   const collectYears = () => {
     const map = new Map();
@@ -3578,7 +3566,6 @@ async function openDivForm(rec) {
       el('p', { class: 'hint', style: 'margin:0 0 8px', text: 'Tap month initials to mark which months this year paid. Global months list updates from all years.' }),
       yearHead,
       yearRowsWrap,
-      addYearBtn,
     ])),
   ]);
   const headerContent = [
@@ -3586,11 +3573,12 @@ async function openDivForm(rec) {
     el('p', { class: 'hint', text: (isUs ? 'US ($)' : 'India (₹)') + ' · name and market are set on the Stocks edit form.' }),
   ];
 
-  // Show pending notice for stocks without current year data
+  // Show pending notice for stocks without current year data — the row is
+  // already there, ready to fill in, no button click needed.
   if (!hasCurYear) {
     headerContent.push(el('div', { class: 'div-pending-notice' }, [
       el('span', { text: '📋 Pending ' + curYear }),
-      el('span', { text: 'Click "+ Add year" button to create ' + curYear + ' entry' }),
+      el('span', { text: 'Fill in the ' + curYear + ' details below and tap Save.' }),
     ]));
   }
 
