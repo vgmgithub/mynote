@@ -3162,23 +3162,21 @@ async function openDivForm(rec) {
         breakdownWrap.appendChild(summary);
       };
 
+      // Last fetched date display
+      const lastFetchedSpan = el('span', { class: 'div-fetch-date', text: '—' });
+
       // Fetch button to get latest units from linked stock
       const fetchBtn = el('button', {
         class: 'btn ghost small', type: 'button', text: '↻ Fetch',
-        onclick: async () => {
-          if (!linkedStock) return;
-          const latest = await DB.get('stocks', rec.stockId).catch(() => null);
-          if (latest) {
-            uu.value = latest.units || '';
+        onclick: () => {
+          if (linkedStock) {
+            uu.value = linkedStock.units || '';
             const now = new Date().toLocaleDateString('en-IN', { year: '2-digit', month: '2-digit', day: '2-digit' });
             lastFetchedSpan.textContent = now;
-            updateTotal();  // recalculate if India
+            if (typeof updateTotal === 'function') updateTotal();
           }
         },
       });
-
-      // Last fetched date display
-      const lastFetchedSpan = el('span', { class: 'div-fetch-date', text: '—' });
 
       ref = { yy, uu, yearMonths, monthlyInputs, removed: false };
       row = el('div', { class: 'div-yedit-row div-yedit-row-india' }, [
