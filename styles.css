@@ -267,12 +267,14 @@ main.swipe-in-left { animation: swipe-from-left 0.18s ease-out; }
 .div-yedit-row-india { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 6px; }
 .div-year-left-col { display: flex; flex-direction: column; gap: 8px; flex: 0 0 180px; }
 .div-year-right-col { flex: 1; }
-.div-units-group { display: flex; flex-direction: column; gap: 4px; padding: 8px; background: var(--card-2); border-radius: 6px; }
-.div-units-label { display: flex; align-items: center; gap: 4px; font-size: 0.72rem; font-weight: 600; color: var(--muted); }
-.div-units-label input { flex: 0 0 60px; padding: 4px; border: 1px solid var(--line); border-radius: 4px; }
-.div-units-label .btn { padding: 3px 6px; font-size: 0.65rem; }
-.div-fetch-info { font-size: 0.65rem; color: var(--muted); }
-.div-fetch-date { font-weight: 600; color: var(--accent); }
+.div-units-group { display: flex; flex-direction: column; gap: 6px; padding: 8px; background: var(--card-2); border-radius: 6px; }
+.div-units-row { display: flex; flex-direction: column; gap: 4px; }
+.div-units-label-text { font-size: 0.65rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.3px; }
+.div-units-input-row { display: flex; align-items: center; gap: 4px; }
+.div-units-input-row input { flex: 0 0 45px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; font-size: 0.75rem; }
+.div-units-input-row .btn { padding: 3px 5px; font-size: 0.6rem; }
+.div-fetch-info { font-size: 0.62rem; color: var(--muted); line-height: 1.3; }
+.div-fetch-date { font-weight: 700; color: var(--accent); }
 .div-india-breakdown { display: flex; flex-direction: column; gap: 4px; }
 .div-month-input { display: flex; align-items: center; gap: 4px; font-size: 0.7rem; }
 .div-month-input span { flex: 0 0 42px; color: var(--muted); font-weight: 600; }

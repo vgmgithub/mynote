@@ -3201,9 +3201,11 @@ async function openDivForm(rec) {
       // Last fetched date display
       const lastFetchedSpan = el('span', { class: 'div-fetch-date', text: '—' });
 
-      // Fetch button to get latest units from linked stock
+      // Fetch button to get latest units from linked stock (only for current year)
+      const curYear = new Date().getFullYear();
+      const isCurYear = year === curYear;
       const fetchBtn = el('button', {
-        class: 'btn ghost small', type: 'button', text: '↻ Fetch',
+        class: 'btn ghost small' + (isCurYear ? '' : ' hidden'), type: 'button', text: '↻',
         onclick: () => {
           if (linkedStock) {
             uu.value = linkedStock.units || '';
@@ -3219,12 +3221,14 @@ async function openDivForm(rec) {
         el('div', { class: 'div-year-left-col' }, [
           el('div', { class: 'div-year-input-group' }, [yy, monthsGrid]),
           el('div', { class: 'div-units-group' }, [
-            el('label', { class: 'div-units-label' }, [
-              el('span', { text: 'Units' }),
-              uu,
-              fetchBtn,
+            el('div', { class: 'div-units-row' }, [
+              el('span', { class: 'div-units-label-text', text: 'Units' }),
+              el('div', { class: 'div-units-input-row' }, [
+                uu,
+                fetchBtn,
+              ]),
             ]),
-            el('div', { class: 'div-fetch-info', style: 'font-size:0.65rem; color:var(--muted); margin-top:2px' }, [
+            el('div', { class: 'div-fetch-info' }, [
               el('span', { text: 'Fetched: ' }),
               lastFetchedSpan,
             ]),
