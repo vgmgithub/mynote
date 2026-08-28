@@ -3223,35 +3223,52 @@ function _divCard(rec, mod, curYear, cur) {
   const isUs = rec.market === 'us';
   const recentYears = mod.yearsOf(rec).slice(0, 3); // Show top 3 years for clarity
   const breakdown = el('div', { class: 'div-years' });
+  // Months from this point in the year onward (inclusive of the current
+  // month) get the highlighted "upcoming" chip style on the consolidated
+  // months line below.
+  const curMonthIx = new Date().getMonth();
 
   recentYears.forEach((y) => {
     const yr = (rec.years || []).find((r) => Number(r.year) === y) || {};
     const yearTotal = mod.yearTotal(rec, y);
-    const subTxt = isUs ? '' : `${Number(yr.units) || 0} × ${yr.perUnit != null && yr.perUnit !== '' ? mod.fmtDiv(Number(yr.perUnit), cur) : '—'}`;
+    const calcTxt = isUs ? '' : `${Number(yr.units) || 0} × ${yr.perUnit != null && yr.perUnit !== '' ? mod.fmtDiv(Number(yr.perUnit), cur) : '—'}`;
     const isCurrentYear = y === curYear;
-    breakdown.appendChild(el('div', { class: 'div-year-row' + (isCurrentYear ? ' current-year' : '') }, [
-      el('span', { class: 'div-year-k', text: String(y) }),
-      el('span', { class: 'div-year-v', text: mod.fmtDiv(yearTotal, cur) }),
-      el('span', { class: 'div-year-sub', text: subTxt }),
+    // This year's own payout months (falls back to nothing for records
+    // saved before per-year months existed — the calc/total still show).
+    const yrMonths = Array.isArray(yr.months) ? yr.months : [];
+    const chips = el('div', { class: 'div-year-month-chips' }, yrMonths.map((m) =>
+      el('span', { class: 'div-month-chip', text: m })));
+
+    breakdown.appendChild(el('div', { class: 'div-year-entry' + (isCurrentYear ? ' current-year' : '') }, [
+      el('div', { class: 'div-year-entry-top' }, [
+        el('span', { class: 'div-year-entry-k', text: String(y) }),
+        el('span', { class: 'div-year-entry-v', text: mod.fmtDiv(yearTotal, cur) }),
+        el('span', { class: 'div-year-entry-calc', text: calcTxt }),
+      ]),
+      chips,
     ]));
   });
 
-  const status = curTotal > 0 ? '✓ Active' : '○ Pending';
-  const statusClass = curTotal > 0 ? 'div-status-active' : 'div-status-pending';
+  const monthChipsTop = el('div', { class: 'div-card-months' },
+    months.length
+      ? months.map((m) => el('span', {
+          class: 'div-month-chip' + (mod.MONTHS.indexOf(m) >= curMonthIx ? ' upcoming' : ''),
+          text: m,
+        }))
+      : [el('span', { class: 'hint', text: '— No payout months' })]);
 
   return el('div', { class: 'card div-card-enhanced', onclick: () => openDivForm(rec) }, [
     el('div', { class: 'top' }, [
       el('div', { class: 'div-card-header' }, [
         el('div', { class: 'div-card-name-section' }, [
           el('div', { class: 'name', text: rec.name || 'Stock' }),
-          el('div', { class: 'div-card-status ' + statusClass, text: status }),
         ]),
         el('div', { class: 'card-right' }, [
           el('div', { class: 'kv-val div-cur-total', text: mod.fmtDiv(curTotal, cur) }),
           el('div', { class: 'kv-label', text: String(curYear) }),
         ]),
       ]),
-      el('div', { class: 'div-card-months', text: months.length ? '🗓️ ' + months.join(', ') : '— No payout months' }),
+      monthChipsTop,
     ]),
     breakdown,
   ]);
