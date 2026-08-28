@@ -3434,7 +3434,16 @@ async function openDivForm(rec) {
         totalSpan.textContent = units + ' × ' + sum.toFixed(2) + ' = ' + mod.fmtDiv(yearTotal, 'INR');
       };
 
-      const updateIndiaBreakdown = () => {
+      // Reassigns the outer `let updateIndiaBreakdown` stub — must NOT be
+      // `const` here. The month-button click handler above (outside this
+      // India-only block) closes over that OUTER binding; a `const` here
+      // would shadow it with a separate variable the click handler never
+      // sees, so clicking a month would keep calling the do-nothing stub
+      // forever — toggling a month wouldn't add/remove its box or
+      // recalculate anything, despite the button's own active state still
+      // visibly changing. (This is exactly the bug reported: unchecking a
+      // month didn't remove its text box or refresh the total.)
+      updateIndiaBreakdown = () => {
         monthInputsWrap.innerHTML = '';
         [...yearMonths].sort((m1, m2) => mod.MONTHS.indexOf(m1) - mod.MONTHS.indexOf(m2)).forEach((m) => {
           const inp = numInput(monthlyInputs[m], m.slice(0, 3) + '/u');
