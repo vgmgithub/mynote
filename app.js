@@ -2924,6 +2924,7 @@ async function openAllocForm(year, focusCategory = null) {
     emergency: 0, fd: 0, indStock: 0, usStock: 0, metal: 0, savings: 0
   };
 
+  const numInput = (v, ph) => el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: v != null && v !== '' ? v : '', placeholder: ph });
   const fields = {};
   const categories = [
     { key: 'salary', label: 'Salary' },
@@ -2939,51 +2940,54 @@ async function openAllocForm(year, focusCategory = null) {
     { key: 'savings', label: 'Savings' },
   ];
 
-  const form = el('div', { class: 'sheet-form' }, [
+  const inputs = [];
+  const formContent = [
     el('h2', { text: `Allocations for ${year}` }),
     el('div', { class: 'alloc-form-grid' }, categories.map(cat => {
       const inp = numInput(curAlloc[cat.key], cat.label);
       fields[cat.key] = inp;
+      inputs.push(inp);
       return el('div', { class: 'alloc-field' }, [
         el('label', { text: cat.label }),
         inp,
       ]);
     })),
-  ]);
+    el('div', { class: 'sheet-btns' }, [
+      el('button', {
+        class: 'btn primary',
+        text: 'Save',
+        onclick: async () => {
+          const rec = { year, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+          categories.forEach(cat => {
+            rec[cat.key] = Number(fields[cat.key].value) || 0;
+          });
 
-  const modal = el('div', { class: 'sheet-modal' }, form);
+          if (curAlloc.id) rec.id = curAlloc.id;
+          await DB.put('allocations', rec);
+          closeModal();
+          _allocYear = year;
+          renderAllocation($('#expenseView'));
+          toast('Allocations saved');
+        },
+      }),
+      el('button', {
+        class: 'btn ghost',
+        text: 'Cancel',
+        onclick: closeModal,
+      }),
+    ]),
+  ];
 
-  // Buttons
-  const btnRow = el('div', { class: 'sheet-btns' }, [
-    el('button', {
-      class: 'btn primary',
-      text: 'Save',
-      onclick: async () => {
-        const rec = { year, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
-        categories.forEach(cat => {
-          rec[cat.key] = Number(fields[cat.key].value) || 0;
-        });
+  const host = $('#modalHost');
+  host.innerHTML = '';
+  formContent.forEach(node => host.appendChild(node));
+  host.classList.remove('hidden');
+  host.setAttribute('aria-hidden', 'false');
 
-        if (curAlloc.id) rec.id = curAlloc.id;
-        await DB.put('allocations', rec);
-        modal.remove();
-        _allocYear = year;
-        renderAllocation($('#expenseView'));
-        toast('Allocations saved');
-      },
-    }),
-    el('button', {
-      class: 'btn secondary',
-      text: 'Cancel',
-      onclick: () => modal.remove(),
-    }),
-  ]);
-
-  form.appendChild(btnRow);
-  document.body.appendChild(modal);
-
-  if (focusCategory) {
-    fields[focusCategory]?.focus();
+  if (focusCategory && fields[focusCategory]) {
+    fields[focusCategory].focus();
+  } else if (inputs.length > 0) {
+    inputs[0].focus();
   }
 }
 
