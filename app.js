@@ -3087,14 +3087,24 @@ async function openDivForm(rec) {
 
     // Per-year month toggles (compact 3-col grid).
     const yearMonths = new Set();
+    const monthlyInputs = {};  // {month: perUnitAmount} for India stocks
+
     const monthsGrid = el('div', { class: 'div-year-months' }, mod.MONTHS.map((m) => {
       const btn = el('button', {
         type: 'button', class: 'div-year-mon-btn', text: m.slice(0, 1),
         title: m, 'data-month': m,
       });
       btn.addEventListener('click', () => {
-        if (yearMonths.has(m)) { yearMonths.delete(m); btn.classList.remove('active'); }
-        else { yearMonths.add(m); btn.classList.add('active'); }
+        if (yearMonths.has(m)) {
+          yearMonths.delete(m);
+          delete monthlyInputs[m];
+          btn.classList.remove('active');
+        } else {
+          yearMonths.add(m);
+          monthlyInputs[m] = '';
+          btn.classList.add('active');
+        }
+        if (!isUs) updateIndiaBreakdown();
       });
       return btn;
     }));
@@ -3108,13 +3118,65 @@ async function openDivForm(rec) {
         amt, rm,
       ]);
     } else {
+      // India: show units + per-month breakdown with live total calculation.
       const uu = numInput(a, 'Units');
-      const pp = numInput(b2, 'Div/unit');
-      ref = { yy, uu, pp, yearMonths, removed: false };
-      row = el('div', { class: 'div-yedit-row' }, [
+      const breakdownWrap = el('div', { class: 'div-india-breakdown' });
+
+      const updateIndiaBreakdown = () => {
+        breakdownWrap.innerHTML = '';
+        const monthBtns = [];
+        const monthInputsList = [];
+
+        [...yearMonths].sort((m1, m2) => mod.MONTHS.indexOf(m1) - mod.MONTHS.indexOf(m2)).forEach((m) => {
+          const inp = numInput(monthlyInputs[m], m.slice(0, 3) + '/u');
+          monthlyInputs[m] = inp.value;
+          monthInputsList.push(inp);
+          const label = el('label', { class: 'div-month-input' }, [
+            el('span', { text: m + ':' }),
+            inp,
+          ]);
+          breakdownWrap.appendChild(label);
+          inp.addEventListener('change', () => { monthlyInputs[m] = inp.value; updateTotal(); });
+        });
+        updateTotal();
+      };
+
+      const updateTotal = () => {
+        const units = Number(uu.value) || 0;
+        const perMonthVals = Object.values(monthlyInputs).map((v) => Number(v) || 0);
+        const sum = perMonthVals.reduce((a, b) => a + b, 0);
+        const yearTotal = units * sum;
+        const summary = el('div', { class: 'div-breakdown-summary' }, [
+          el('span', { class: 'div-breakdown-calc', text: perMonthVals.length ? perMonthVals.join(' + ') + ' = ' + sum.toFixed(2) : '—' }),
+          el('span', { class: 'div-breakdown-total', text: units + ' × ' + sum.toFixed(2) + ' = ' + fmtDiv(yearTotal, 'INR') }),
+        ]);
+        breakdownWrap.appendChild(summary);
+      };
+
+      ref = { yy, uu, yearMonths, monthlyInputs, removed: false };
+      row = el('div', { class: 'div-yedit-row div-yedit-row-india' }, [
         el('div', { class: 'div-year-input-group' }, [yy, monthsGrid]),
-        uu, pp, rm,
+        el('div', { class: 'div-year-india-data' }, [
+          el('label', { class: 'div-units-label' }, [
+            el('span', { text: 'Units' }),
+            uu,
+          ]),
+          breakdownWrap,
+        ]),
+        rm,
       ]);
+
+      // Pre-populate from b2 (old perUnit) if present, distribute equally.
+      if (b2 != null && b2 !== '') {
+        const perUnit = Number(b2) || 0;
+        if (yearMonths.size > 0) {
+          const perMonth = perUnit / yearMonths.size;
+          [...yearMonths].forEach((m) => { monthlyInputs[m] = perMonth; });
+        }
+      }
+
+      // Initial render.
+      updateIndiaBreakdown();
     }
     rm.addEventListener('click', () => { row.remove(); ref.removed = true; });
     yearRefs.push(ref);
@@ -3138,8 +3200,17 @@ async function openDivForm(rec) {
       if (r.removed) continue;
       const y = parseInt(r.yy.value, 10);
       if (!Number.isFinite(y)) continue;
-      if (isUs) map.set(y, { year: y, amount: r.amt.value === '' ? null : num(r.amt.value) });
-      else map.set(y, { year: y, units: num(r.uu.value) || 0, perUnit: r.pp.value === '' ? null : num(r.pp.value) });
+      if (isUs) {
+        map.set(y, { year: y, amount: r.amt.value === '' ? null : num(r.amt.value) });
+      } else {
+        // India: sum per-month values to get perUnit.
+        let perUnit = null;
+        if (r.monthlyInputs && Object.keys(r.monthlyInputs).length > 0) {
+          const sum = Object.values(r.monthlyInputs).reduce((total, val) => total + (Number(val) || 0), 0);
+          perUnit = sum > 0 ? sum : null;
+        }
+        map.set(y, { year: y, units: num(r.uu.value) || 0, perUnit });
+      }
     }
     return [...map.values()].sort((x, y) => x.year - y.year);
   };
