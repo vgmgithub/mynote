@@ -2571,7 +2571,9 @@ async function _homeUpcomingStrip() {
     const d = it.days;
     // An FD maturing today is already 'matured' per fd.js so it never reaches
     // here, but a bond payout dated today legitimately can - hence the Today case.
-    const dayTxt = d <= 0 ? 'Today' : d === 1 ? 'Tomorrow' : d + ' days left';
+    // Abbreviated ("3d") rather than "3 days left" so the card stays narrow -
+    // several of these need to fit a phone screen at once.
+    const dayTxt = d <= 0 ? 'Today' : d === 1 ? 'Tomorrow' : d + 'd';
     // Anything inside 2 days is worth the warning colour; the rest is just info.
     const urgent = d <= 2;
     rail.appendChild(el('button', { class: 'due-soon-card' + (urgent ? ' is-urgent' : ''), type: 'button', onclick: it.go }, [
@@ -2580,12 +2582,38 @@ async function _homeUpcomingStrip() {
       el('span', { class: 'due-soon-meta' }, [
         el('span', { class: 'badge mf-beat due-badge-' + it.kind.toLowerCase(), text: it.kind }),
         it.ef ? el('span', { class: 'badge ef-badge mf-beat', text: 'EF' }) : document.createTextNode(''),
-        el('span', { class: 'due-soon-date', text: it.date || '' }),
+        el('span', { class: 'due-soon-date', text: _shortDayMon(it.date) }),
       ]),
     ]));
   });
-  strip.appendChild(rail);
+
+  // The rail already scrolls, but with only two or three cards on screen there's
+  // nothing telling you more exist off to the right. A fade on the trailing edge
+  // is that cue - shown only when the rail genuinely overflows, and cleared once
+  // you reach the end so it never implies content that isn't there.
+  const scroller = el('div', { class: 'due-soon-scroller' }, [rail]);
+  const syncFade = () => {
+    const max = rail.scrollWidth - rail.clientWidth;
+    scroller.classList.toggle('can-scroll', max > 2);
+    scroller.classList.toggle('at-end', max > 2 && rail.scrollLeft >= max - 2);
+  };
+  rail.addEventListener('scroll', syncFade, { passive: true });
+  // Deferred via setTimeout, not requestAnimationFrame: the rail isn't attached
+  // to the document yet (renderHome() appends the returned strip right after
+  // this call returns), and rAF is suspended entirely on a backgrounded tab
+  // (e.g. the phone screen just locked) - a plain macrotask still fires either
+  // way, and reading clientWidth/scrollWidth forces the layout it needs.
+  setTimeout(syncFade, 0);
+
+  strip.appendChild(scroller);
   return strip;
+}
+
+// 'YYYY-MM-DD' -> '3 Sep'. The year is noise for something landing inside a
+// week, and dropping it keeps the card narrow.
+function _shortDayMon(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
+  return m ? +m[3] + ' ' + _FD_MONS[+m[2] - 1] : '';
 }
 
 function _homeCard(icon, title, sub, onclick) {

@@ -33,8 +33,18 @@ This is the inventory. Each entry: **what** + **where** + **why it's that way**.
     maturity day itself as already `matured`, so it moves to the FD page's Matured bucket instead (the
     user was warned the previous day as "Tomorrow"). A **bond** payout dated today legitimately can
     appear, which is why the "Today" label exists at all.
-  - Scrolls inside its own rail with scroll-snap (same technique as `.portfolio-tabs`), so the page body
-    never scrolls sideways. Verified at 375px.
+  - **Small chip cards** (~104px, 3+ visible at once on a phone) so a growing list of due items stays
+    scannable rather than dominating Home. Days-left is abbreviated ("3d") and the date drops its year
+    ("3 Sep") to fit. Scrolls inside its own rail with scroll-snap (same technique as `.portfolio-tabs`),
+    so the page body never scrolls sideways.
+  - **Edge fade on the trailing edge** once the rail actually overflows (`.can-scroll`), clearing again
+    at full scroll (`.at-end`) — the cue that more cards exist off-screen, without implying it when they
+    don't. Recomputed on every scroll event. The width check runs via `setTimeout(fn, 0)`, not
+    `requestAnimationFrame` — the rail isn't attached to the document yet when it's scheduled (the caller
+    appends the returned strip right after), and rAF is fully suspended on a backgrounded tab (e.g. the
+    screen just locked), while a plain macrotask still fires either way.
+  - Verified at 375px: 1 card (no fade, correctly not scrollable) and 6 cards (fade shown while
+    scrollable, clears at both scroll-start and scroll-end).
 
 ## Navigation
 
