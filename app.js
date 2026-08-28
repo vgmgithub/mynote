@@ -3151,7 +3151,7 @@ async function openDivForm(rec) {
         const yearTotal = units * sum;
         const summary = el('div', { class: 'div-breakdown-summary' }, [
           el('span', { class: 'div-breakdown-calc', text: perMonthVals.length ? perMonthVals.join(' + ') + ' = ' + sum.toFixed(2) : '—' }),
-          el('span', { class: 'div-breakdown-total', text: units + ' × ' + sum.toFixed(2) + ' = ' + fmtDiv(yearTotal, 'INR') }),
+          el('span', { class: 'div-breakdown-total', text: units + ' × ' + sum.toFixed(2) + ' = ' + mod.fmtDiv(yearTotal, 'INR') }),
         ]);
         breakdownWrap.appendChild(summary);
       };
