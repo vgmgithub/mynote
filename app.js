@@ -3081,7 +3081,7 @@ async function openDivForm(rec) {
   const yearRefs = [];
   const numInput = (v, ph) => el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: v != null && v !== '' ? v : '', placeholder: ph });
 
-  const addYearRow = (year, a, b2) => {
+  const addYearRow = (year, a, b2, preSelectMonths = []) => {
     const yy = el('input', { type: 'number', inputmode: 'numeric', step: '1', value: year != null ? year : '', placeholder: 'Year' });
     const rm = el('button', { class: 'icon-btn', type: 'button', text: '×' });
 
@@ -3093,8 +3093,14 @@ async function openDivForm(rec) {
     let updateIndiaBreakdown = () => {};
 
     const monthsGrid = el('div', { class: 'div-year-months' }, mod.MONTHS.map((m) => {
+      // Pre-select months from the record (for existing years) or from user's selection
+      const isPreSelected = preSelectMonths.includes(m);
+      if (isPreSelected) {
+        yearMonths.add(m);
+        monthlyInputs[m] = '';
+      }
       const btn = el('button', {
-        type: 'button', class: 'div-year-mon-btn', text: m.slice(0, 1),
+        type: 'button', class: 'div-year-mon-btn' + (isPreSelected ? ' active' : ''), text: m.slice(0, 1),
         title: m, 'data-month': m,
       });
       btn.addEventListener('click', () => {
@@ -3190,11 +3196,11 @@ async function openDivForm(rec) {
   // A US year saved before the direct-amount change has no `amount` yet (old
   // units/perUnit shape) — show its computed total so the figure isn't lost.
   const usAmountOf = (y) => (y.amount != null ? y.amount : (y.units != null && y.perUnit != null ? (Number(y.units) || 0) * (Number(y.perUnit) || 0) : ''));
-  if (sortedYears.length) sortedYears.forEach((y) => addYearRow(y.year, isUs ? usAmountOf(y) : y.units, isUs ? undefined : y.perUnit));
-  else addYearRow(new Date().getFullYear(), isUs ? '' : currentUnits, '');
+  if (sortedYears.length) sortedYears.forEach((y) => addYearRow(y.year, isUs ? usAmountOf(y) : y.units, isUs ? undefined : y.perUnit, isUs ? [] : mod.parseMonths(rec.months)));
+  else addYearRow(new Date().getFullYear(), isUs ? '' : currentUnits, '', isUs ? [] : mod.parseMonths(rec.months));
   const addYearBtn = el('button', {
     class: 'btn ghost small', type: 'button', text: '+ Add year',
-    onclick: () => addYearRow(new Date().getFullYear(), isUs ? '' : currentUnits, ''),
+    onclick: () => addYearRow(new Date().getFullYear(), isUs ? '' : currentUnits, '', isUs ? [] : mod.parseMonths(rec.months)),
   });
 
   const collectYears = () => {
