@@ -275,6 +275,13 @@ main.swipe-in-left { animation: swipe-from-left 0.18s ease-out; }
 .div-breakdown-summary { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
 .div-breakdown-calc { font-size: 0.68rem; color: var(--muted); }
 .div-breakdown-total { font-size: 0.76rem; font-weight: 700; color: var(--accent); }
+/* Year slider: navigate between dividend entry years */
+.div-year-slider .div-slider-nav { display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.div-slider-nav .icon-btn { padding: 4px 8px; font-size: 0.8rem; }
+.div-slider-nav .icon-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.div-year-label { font-weight: 700; min-width: 40px; text-align: center; font-size: 0.95rem; }
+.div-year-row-item { transition: opacity 0.15s ease; }
+.div-year-row-item.hidden { display: none; }
 .div-year-editor + .btn { margin-top: 2px; }
 /* Metals: price control row under the summary card */
 .metal-price-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 2px 10px; }

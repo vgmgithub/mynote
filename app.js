@@ -3193,15 +3193,77 @@ async function openDivForm(rec) {
   };
 
   const sortedYears = (rec.years || []).slice().sort((x, y) => Number(y.year) - Number(x.year));
-  // A US year saved before the direct-amount change has no `amount` yet (old
-  // units/perUnit shape) — show its computed total so the figure isn't lost.
   const usAmountOf = (y) => (y.amount != null ? y.amount : (y.units != null && y.perUnit != null ? (Number(y.units) || 0) * (Number(y.perUnit) || 0) : ''));
-  if (sortedYears.length) sortedYears.forEach((y) => addYearRow(y.year, isUs ? usAmountOf(y) : y.units, isUs ? undefined : y.perUnit, isUs ? [] : mod.parseMonths(rec.months)));
-  else addYearRow(new Date().getFullYear(), isUs ? '' : currentUnits, '', isUs ? [] : mod.parseMonths(rec.months));
+  const curYear = new Date().getFullYear();
+
+  // Collect all years, ensure current year is included
+  let allYears = sortedYears.map((y) => y.year);
+  if (!allYears.includes(curYear)) allYears.push(curYear);
+  allYears = [...new Set(allYears)].sort((a, b) => b - a); // unique, newest first
+
+  // Track which year is currently being viewed in the slider
+  let sliderCurrentYear = curYear;
+
+  // Store row elements by year for toggling visibility
+  const rowsByYear = new Map();
+
+  // Override addYearRow to track rows by year and manage slider visibility
+  const originalAddYearRow = addYearRow;
+  addYearRow = (year, a, b2, preSelectMonths = []) => {
+    originalAddYearRow(year, a, b2, preSelectMonths);
+    const lastRow = yearRowsWrap.lastChild;
+    if (lastRow) {
+      rowsByYear.set(year, lastRow);
+      lastRow.classList.add('div-year-row-item');
+      lastRow.setAttribute('data-year', year);
+    }
+  };
+
+  // Load all years into the slider
+  if (sortedYears.length) {
+    sortedYears.forEach((y) => addYearRow(y.year, isUs ? usAmountOf(y) : y.units, isUs ? undefined : y.perUnit, isUs ? [] : mod.parseMonths(rec.months)));
+  } else {
+    addYearRow(curYear, isUs ? '' : currentUnits, '', isUs ? [] : mod.parseMonths(rec.months));
+  }
+
+  // Create slider navigation
+  const showYear = (year) => {
+    sliderCurrentYear = year;
+    rowsByYear.forEach((row, y) => {
+      row.classList.toggle('hidden', y !== year);
+    });
+    yearLabel.textContent = String(year);
+    prevBtn.disabled = allYears.indexOf(year) >= allYears.length - 1;
+    nextBtn.disabled = allYears.indexOf(year) <= 0;
+    addYearBtn.classList.toggle('hidden', year === curYear);
+  };
+
+  const prevBtn = el('button', { class: 'icon-btn', type: 'button', text: '◀', onclick: () => {
+    const idx = allYears.indexOf(sliderCurrentYear);
+    if (idx < allYears.length - 1) showYear(allYears[idx + 1]);
+  }});
+  const nextBtn = el('button', { class: 'icon-btn', type: 'button', text: '▶', onclick: () => {
+    const idx = allYears.indexOf(sliderCurrentYear);
+    if (idx > 0) showYear(allYears[idx - 1]);
+  }});
+  const yearLabel = el('span', { class: 'div-year-label', text: String(curYear), style: 'font-weight:700; min-width:40px; text-align:center' });
+
+  const sliderNav = el('div', { class: 'div-slider-nav', style: 'display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:10px' }, [prevBtn, yearLabel, nextBtn]);
+  yearRowsWrap.insertBefore(sliderNav, yearRowsWrap.firstChild);
+
   const addYearBtn = el('button', {
     class: 'btn ghost small', type: 'button', text: '+ Add year',
-    onclick: () => addYearRow(new Date().getFullYear(), isUs ? '' : currentUnits, '', isUs ? [] : mod.parseMonths(rec.months)),
+    onclick: () => {
+      const nextYear = Math.max(...allYears) + 1;
+      allYears.push(nextYear);
+      allYears.sort((a, b) => b - a);
+      addYearRow(nextYear, isUs ? '' : currentUnits, '', isUs ? [] : mod.parseMonths(rec.months));
+      showYear(nextYear);
+    },
   });
+
+  // Show only current year initially
+  showYear(curYear);
 
   const collectYears = () => {
     const map = new Map();
