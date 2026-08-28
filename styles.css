@@ -1538,3 +1538,29 @@ html[data-theme="light"] {
   .badge.due-badge-bond { color: #fcd34d; }
   .badge.due-badge-div, .due-soon-card.is-div .due-soon-days { color: #5eead4; }
 }
+
+/* Allocation tracker (Expense → Allocation tab) */
+.alloc-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.alloc-header h3 { margin: 0; font-size: 1rem; }
+.alloc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin: 16px 0; }
+.alloc-card { background: var(--card-2); border: 1px solid var(--line); border-radius: 12px; padding: 14px; cursor: pointer; transition: all 0.2s ease; }
+.alloc-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+.alloc-cat-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.alloc-icon { font-size: 1.2rem; }
+.alloc-label { font-size: 0.75rem; font-weight: 700; color: var(--muted); text-transform: uppercase; }
+.alloc-value { font-size: 1rem; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+.alloc-stepup { font-size: 0.7rem; font-weight: 600; }
+.alloc-stepup.step-up-pos { color: var(--good); }
+.alloc-stepup.step-up-neg { color: var(--bad); }
+.alloc-stepup.step-up-flat { color: var(--muted); }
+.alloc-total { background: linear-gradient(135deg, var(--card) 0%, var(--card-2) 100%); border: 1px solid var(--accent); border-radius: 12px; padding: 16px; margin: 20px 0; text-align: center; }
+.alloc-total-label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 6px; }
+.alloc-total-value { font-size: 1.4rem; font-weight: 700; color: var(--accent); margin-bottom: 4px; }
+.alloc-total-stepup { font-size: 0.85rem; color: var(--good); font-weight: 700; }
+.alloc-form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin: 16px 0; }
+.alloc-field { display: flex; flex-direction: column; gap: 4px; }
+.alloc-field label { font-size: 0.75rem; font-weight: 700; color: var(--muted); }
+.alloc-field input { padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); font-size: 0.9rem; }
+.sheet-form h2 { margin: 0 0 16px; font-size: 1.1rem; }
+.sheet-btns { display: flex; gap: 8px; margin-top: 16px; }
+.sheet-btns button { flex: 1; }

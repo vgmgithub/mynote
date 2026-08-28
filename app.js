@@ -2815,20 +2815,179 @@ async function renderHomeExpense() {
   $('#ccAddBtn').classList.toggle('hidden', _expTab !== 'cc');
 
   if (_expTab === 'cc') { await renderCreditCards(host); return; }
-  if (_expTab === 'alloc') {
-    host.appendChild(el('div', { class: 'empty' }, [
-      el('div', { class: 'e-icon', text: '🧭' }),
-      el('p', { text: 'Allocation coming soon.' }),
-      el('p', { class: 'hint', text: 'This tab will plan how each month\'s income is split across fixed costs, essentials, lifestyle and savings.' }),
-    ]));
-    return;
-  }
+  if (_expTab === 'alloc') { await renderAllocation(host); return; }
   host.appendChild(el('div', { class: 'empty' }, [
     el('div', { class: 'e-icon', text: '🧾' }),
     el('p', { text: 'Expense tracking coming soon.' }),
     el('p', { class: 'hint', text: 'This tab will track day-to-day spending against the Allocation plan.' }),
   ]));
 }
+
+// ---------- Allocation tracker (Expense → Allocation tab) ----------
+async function renderAllocation(host) {
+  const allAllocs = await DB.all('allocations').catch(() => []);
+  const curYear = new Date().getFullYear();
+  const allocYears = allAllocs.map(a => a.year).sort((a, b) => b - a);
+  const selectedYear = allocYears.length > 0 ? allocYears[0] : curYear;
+
+  const allocCategories = [
+    { key: 'salary', label: 'Salary', icon: '💼' },
+    { key: 'home', label: 'Home', icon: '🏠' },
+    { key: 'houseExp', label: 'House Exp', icon: '🏡' },
+    { key: 'card', label: 'Card', icon: '💳' },
+    { key: 'mf', label: 'MF', icon: '📈' },
+    { key: 'emergency', label: 'Emergency', icon: '🚨' },
+    { key: 'fd', label: 'FD', icon: '🏦' },
+    { key: 'indStock', label: 'Ind Stock', icon: '📊' },
+    { key: 'usStock', label: 'US Stock', icon: '🗽' },
+    { key: 'metal', label: 'Metal', icon: '⭐' },
+    { key: 'savings', label: 'Savings', icon: '💰' },
+  ];
+
+  const header = el('div', { class: 'alloc-header' }, [
+    el('h3', { text: 'Annual Allocations' }),
+    el('button', {
+      class: 'btn primary small',
+      text: '+ Add Year',
+      onclick: () => openAllocForm(curYear),
+    }),
+  ]);
+  host.appendChild(header);
+
+  if (allocYears.length === 0) {
+    host.appendChild(el('div', { class: 'empty' }, [
+      el('div', { class: 'e-icon', text: '🧭' }),
+      el('p', { text: 'No allocations recorded yet.' }),
+      el('p', { class: 'hint', text: 'Click "Add Year" to start tracking how your income is allocated.' }),
+    ]));
+    return;
+  }
+
+  // Year selector
+  const yearSeg = el('div', { class: 'seg' }, allocYears.map(y =>
+    el('button', {
+      class: (y === selectedYear ? 'active' : ''),
+      text: String(y),
+      onclick: () => { _allocYear = y; renderAllocation(host); },
+    })
+  ));
+  host.appendChild(yearSeg);
+
+  const curAlloc = allAllocs.find(a => a.year === selectedYear);
+  const prevAlloc = allAllocs.find(a => a.year === selectedYear - 1);
+
+  // Allocation cards with step-up %
+  const allocWrap = el('div', { class: 'alloc-grid' });
+  allocCategories.forEach(cat => {
+    const val = curAlloc ? (curAlloc[cat.key] || 0) : 0;
+    const prevVal = prevAlloc ? (prevAlloc[cat.key] || 0) : 0;
+    const stepUp = prevVal > 0 ? (((val - prevVal) / prevVal) * 100) : (val > 0 ? 100 : 0);
+    const stepUpClass = stepUp > 5 ? 'step-up-pos' : stepUp < -5 ? 'step-up-neg' : 'step-up-flat';
+
+    const card = el('div', { class: 'alloc-card', onclick: () => openAllocForm(selectedYear, cat.key) }, [
+      el('div', { class: 'alloc-cat-header' }, [
+        el('span', { class: 'alloc-icon', text: cat.icon }),
+        el('span', { class: 'alloc-label', text: cat.label }),
+      ]),
+      el('div', { class: 'alloc-value', text: '₹ ' + Number(val).toLocaleString('en-IN') }),
+      el('div', { class: 'alloc-stepup ' + stepUpClass, text: (stepUp > 0 ? '▲' : stepUp < 0 ? '▼' : '—') + ' ' + Math.abs(Math.round(stepUp)) + '%' }),
+    ]);
+    allocWrap.appendChild(card);
+  });
+  host.appendChild(allocWrap);
+
+  // Total row
+  const totalVal = curAlloc ? allocCategories.reduce((sum, cat) => sum + (Number(curAlloc[cat.key]) || 0), 0) : 0;
+  const prevTotalVal = prevAlloc ? allocCategories.reduce((sum, cat) => sum + (Number(prevAlloc[cat.key]) || 0), 0) : 0;
+  const totalStepUp = prevTotalVal > 0 ? (((totalVal - prevTotalVal) / prevTotalVal) * 100) : 0;
+
+  host.appendChild(el('div', { class: 'alloc-total' }, [
+    el('div', { class: 'alloc-total-label', text: 'Total Annual Allocation' }),
+    el('div', { class: 'alloc-total-value', text: '₹ ' + Number(totalVal).toLocaleString('en-IN') }),
+    el('div', { class: 'alloc-total-stepup', text: '▲ ' + Math.round(totalStepUp) + '% YoY' }),
+  ]));
+
+  // Edit button
+  host.appendChild(el('button', {
+    class: 'btn secondary',
+    text: '✎ Edit All Allocations',
+    onclick: () => openAllocForm(selectedYear),
+  }));
+}
+
+// Allocation form modal
+async function openAllocForm(year, focusCategory = null) {
+  const allAllocs = await DB.all('allocations');
+  const curAlloc = allAllocs.find(a => a.year === year) || {
+    year,
+    salary: 0, home: 0, houseExp: 0, card: 0, mf: 0,
+    emergency: 0, fd: 0, indStock: 0, usStock: 0, metal: 0, savings: 0
+  };
+
+  const fields = {};
+  const categories = [
+    { key: 'salary', label: 'Salary' },
+    { key: 'home', label: 'Home' },
+    { key: 'houseExp', label: 'House Exp' },
+    { key: 'card', label: 'Card' },
+    { key: 'mf', label: 'MF' },
+    { key: 'emergency', label: 'Emergency' },
+    { key: 'fd', label: 'FD' },
+    { key: 'indStock', label: 'Ind Stock' },
+    { key: 'usStock', label: 'US Stock' },
+    { key: 'metal', label: 'Metal' },
+    { key: 'savings', label: 'Savings' },
+  ];
+
+  const form = el('div', { class: 'sheet-form' }, [
+    el('h2', { text: `Allocations for ${year}` }),
+    el('div', { class: 'alloc-form-grid' }, categories.map(cat => {
+      const inp = numInput(curAlloc[cat.key], cat.label);
+      fields[cat.key] = inp;
+      return el('div', { class: 'alloc-field' }, [
+        el('label', { text: cat.label }),
+        inp,
+      ]);
+    })),
+  ]);
+
+  const modal = el('div', { class: 'sheet-modal' }, form);
+
+  // Buttons
+  const btnRow = el('div', { class: 'sheet-btns' }, [
+    el('button', {
+      class: 'btn primary',
+      text: 'Save',
+      onclick: async () => {
+        const rec = { year, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+        categories.forEach(cat => {
+          rec[cat.key] = Number(fields[cat.key].value) || 0;
+        });
+
+        if (curAlloc.id) rec.id = curAlloc.id;
+        await DB.put('allocations', rec);
+        modal.remove();
+        _allocYear = year;
+        renderAllocation($('#expenseView'));
+        toast('Allocations saved');
+      },
+    }),
+    el('button', {
+      class: 'btn secondary',
+      text: 'Cancel',
+      onclick: () => modal.remove(),
+    }),
+  ]);
+
+  form.appendChild(btnRow);
+  document.body.appendChild(modal);
+
+  if (focusCategory) {
+    fields[focusCategory]?.focus();
+  }
+}
+
+let _allocYear = new Date().getFullYear();
 
 // Combined metals portfolio: digital gold + SGB (from Stocks, valued at the gold
 // ₹/gram price) as one gold figure, plus silver. Shared by Home + Overview so the
