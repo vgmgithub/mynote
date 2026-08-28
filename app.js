@@ -2926,40 +2926,86 @@ async function openAllocForm(year, focusCategory = null) {
 
   const numInput = (v, ph) => el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: v != null && v !== '' ? v : '', placeholder: ph });
   const fields = {};
-  const categories = [
-    { key: 'salary', label: 'Salary' },
-    { key: 'home', label: 'Home' },
-    { key: 'houseExp', label: 'House Exp' },
-    { key: 'card', label: 'Card' },
-    { key: 'mf', label: 'MF' },
-    { key: 'emergency', label: 'Emergency' },
-    { key: 'fd', label: 'FD' },
-    { key: 'indStock', label: 'Ind Stock' },
-    { key: 'usStock', label: 'US Stock' },
-    { key: 'metal', label: 'Metal' },
-    { key: 'savings', label: 'Savings' },
+
+  // Organize categories into groups
+  const categoryGroups = [
+    {
+      group: 'Income',
+      icon: '💼',
+      categories: [
+        { key: 'salary', label: 'Salary', icon: '💰' },
+      ]
+    },
+    {
+      group: 'Fixed Expenses',
+      icon: '🏠',
+      categories: [
+        { key: 'home', label: 'Home', icon: '🏠' },
+        { key: 'houseExp', label: 'House Exp', icon: '🏡' },
+        { key: 'card', label: 'Card', icon: '💳' },
+      ]
+    },
+    {
+      group: 'Investments',
+      icon: '📈',
+      categories: [
+        { key: 'mf', label: 'MF', icon: '📈' },
+        { key: 'fd', label: 'FD', icon: '🏦' },
+        { key: 'indStock', label: 'Ind Stock', icon: '📊' },
+        { key: 'usStock', label: 'US Stock', icon: '🗽' },
+        { key: 'metal', label: 'Metal', icon: '⭐' },
+      ]
+    },
+    {
+      group: 'Contingency',
+      icon: '🛡️',
+      categories: [
+        { key: 'emergency', label: 'Emergency', icon: '🚨' },
+        { key: 'savings', label: 'Savings', icon: '💰' },
+      ]
+    },
   ];
 
   const inputs = [];
-  const formContent = [
-    el('h2', { text: `Allocations for ${year}` }),
-    el('div', { class: 'alloc-form-grid' }, categories.map(cat => {
-      const inp = numInput(curAlloc[cat.key], cat.label);
+  const groupSections = categoryGroups.map(grp => {
+    const groupCards = el('div', { class: 'alloc-form-group-cards' }, grp.categories.map(cat => {
+      const inp = numInput(curAlloc[cat.key], 'Amount');
       fields[cat.key] = inp;
       inputs.push(inp);
-      return el('div', { class: 'alloc-field' }, [
-        el('label', { text: cat.label }),
-        inp,
+
+      return el('div', { class: 'alloc-form-card' }, [
+        el('div', { class: 'alloc-form-cat-header' }, [
+          el('span', { class: 'alloc-form-cat-icon', text: cat.icon }),
+          el('span', { class: 'alloc-form-cat-label', text: cat.label }),
+        ]),
+        el('div', { class: 'alloc-form-input-wrap' }, [
+          inp,
+          el('span', { class: 'alloc-form-currency', text: '₹' }),
+        ]),
       ]);
-    })),
+    }));
+
+    return el('div', { class: 'alloc-form-section' }, [
+      el('div', { class: 'alloc-form-section-header' }, [
+        el('span', { class: 'alloc-form-section-icon', text: grp.icon }),
+        el('h3', { class: 'alloc-form-section-title', text: grp.group }),
+      ]),
+      groupCards,
+    ]);
+  });
+
+  const formContent = [
+    el('h2', { text: `Annual Allocation - ${year}` }),
+    el('p', { class: 'hint', text: 'Enter how much you allocate to each category for this year' }),
+    el('div', { class: 'alloc-form-sections' }, groupSections),
     el('div', { class: 'sheet-btns' }, [
       el('button', {
         class: 'btn primary',
-        text: 'Save',
+        text: 'Save Allocations',
         onclick: async () => {
           const rec = { year, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
-          categories.forEach(cat => {
-            rec[cat.key] = Number(fields[cat.key].value) || 0;
+          Object.keys(fields).forEach(key => {
+            rec[key] = Number(fields[key].value) || 0;
           });
 
           if (curAlloc.id) rec.id = curAlloc.id;
@@ -2967,7 +3013,7 @@ async function openAllocForm(year, focusCategory = null) {
           closeModal();
           _allocYear = year;
           renderAllocation($('#expenseView'));
-          toast('Allocations saved');
+          toast('Allocations saved for ' + year);
         },
       }),
       el('button', {

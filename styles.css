@@ -1566,6 +1566,22 @@ html[data-theme="light"] {
 .alloc-field { display: flex; flex-direction: column; gap: 4px; }
 .alloc-field label { font-size: 0.75rem; font-weight: 700; color: var(--muted); }
 .alloc-field input { padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); font-size: 0.9rem; }
-.sheet-form h2 { margin: 0 0 16px; font-size: 1.1rem; }
-.sheet-btns { display: flex; gap: 8px; margin-top: 16px; }
+.sheet-form h2 { margin: 0 0 8px; font-size: 1.2rem; font-weight: 700; }
+.sheet-btns { display: flex; gap: 8px; margin-top: 20px; }
 .sheet-btns button { flex: 1; }
+
+/* Allocation form: grouped sections with cards */
+.alloc-form-sections { display: flex; flex-direction: column; gap: 20px; margin: 16px 0; }
+.alloc-form-section { display: flex; flex-direction: column; gap: 10px; }
+.alloc-form-section-header { display: flex; align-items: center; gap: 10px; padding: 0 4px; margin-bottom: 4px; }
+.alloc-form-section-icon { font-size: 1.3rem; }
+.alloc-form-section-title { margin: 0; font-size: 0.95rem; font-weight: 700; color: var(--text); text-transform: uppercase; letter-spacing: 0.3px; }
+.alloc-form-group-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+.alloc-form-card { background: var(--card-2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 8px; transition: all 0.15s ease; }
+.alloc-form-card:hover { border-color: var(--accent); box-shadow: 0 2px 8px rgba(56,189,248,0.1); }
+.alloc-form-cat-header { display: flex; align-items: center; gap: 6px; }
+.alloc-form-cat-icon { font-size: 1.1rem; }
+.alloc-form-cat-label { font-size: 0.75rem; font-weight: 700; color: var(--muted); }
+.alloc-form-input-wrap { position: relative; display: flex; align-items: center; }
+.alloc-form-input-wrap input { flex: 1; padding: 7px 28px 7px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); font-size: 0.9rem; font-weight: 600; }
+.alloc-form-currency { position: absolute; right: 8px; font-size: 0.85rem; color: var(--muted); font-weight: 600; pointer-events: none; }

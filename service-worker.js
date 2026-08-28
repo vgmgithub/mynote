@@ -1,4 +1,4 @@
-const CACHE = 'mynote-stocks-v257';
+const CACHE = 'mynote-stocks-v258';
 const ASSETS = [
   './',
   './index.html',
