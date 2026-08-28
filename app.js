@@ -3081,7 +3081,7 @@ async function openDivForm(rec) {
   const yearRefs = [];
   const numInput = (v, ph) => el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: v != null && v !== '' ? v : '', placeholder: ph });
 
-  const addYearRow = (year, a, b2, preSelectMonths = []) => {
+  let addYearRow = (year, a, b2, preSelectMonths = []) => {
     const yy = el('input', { type: 'number', inputmode: 'numeric', step: '1', value: year != null ? year : '', placeholder: 'Year' });
     const rm = el('button', { class: 'icon-btn', type: 'button', text: '×' });
 
