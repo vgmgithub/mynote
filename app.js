@@ -2422,9 +2422,9 @@ function openInvestedBreakdown(bd) {
   ]));
 }
 
-// How far ahead Home's "Maturing this week" strip looks. One week: near enough
+// How far ahead Home's "Coming up this week" strip looks. One week: near enough
 // that the money needs a decision now, far enough ahead to actually act on it.
-const FD_SOON_DAYS = 7;
+const UPCOMING_DAYS = 7;
 
 async function renderHome() {
   const host = $('#homeView');
@@ -2462,11 +2462,12 @@ async function renderHome() {
   ]);
   host.appendChild(summaryCard);
 
-  // Upcoming FD maturities, above the section cards. Wrapped because a failure
-  // here must never blank Home - same defensive stance as the live-stats blocks.
+  // Upcoming FD maturities + bond payouts, above the section cards. Wrapped
+  // because a failure here must never blank Home - same defensive stance as the
+  // live-stats blocks.
   try {
-    const fdSoon = await _homeFdMaturityStrip();
-    if (fdSoon) host.appendChild(fdSoon);
+    const soon = await _homeUpcomingStrip();
+    if (soon) host.appendChild(soon);
   } catch (_) {}
 
   const investmentCard = _homeCard('💼', 'Investment', 'Stocks · MF · FD · Bonds', () => setAppMode('investment'));
@@ -2475,60 +2476,113 @@ async function renderHome() {
   host.appendChild(el('div', { class: 'home-cards' }, [investmentCard, savingsCard, expenseCard]));
   host.appendChild(el('p', { class: 'hint home-foot', text: 'Backup covers everything - open the ⋮ menu → Backup & Restore.' }));
 }
-// Horizontally-scrolling strip of FDs maturing within the next week, shown on
-// Home above the section cards. Purely a nudge: money is about to land and
-// usually needs a decision (renew, roll into a new FD, or spend it), and that
-// decision is easy to miss when the FD ladder lives three taps away.
+// Horizontally-scrolling strip of money ARRIVING within the next week, shown on
+// Home above the section cards. Two sources, one rail:
+//   FD   - the deposit matures (principal + interest lands as one lump)
+//   BOND - the next scheduled payout (a coupon, a principal installment, or the
+//          maturity lump for a bond that pays only at the end)
 //
-// Returns null when nothing is due, so Home appends nothing at all rather than
-// an empty heading.
+// Purely a nudge: incoming money usually needs a decision (renew, reinvest, or
+// spend), and that decision is easy to miss when the FD ladder and the Bonds page
+// each live three taps away.
 //
-// Deliberately INCLUDES Emergency-Fund-linked FDs. Linking a record moves it out
-// of a page's TOTALS, never out of its listings (it keeps its EF badge on the FD
-// page) - and "cash arrives Thursday" is an action reminder, not a total, so it
-// matters no matter which surface counts the money.
-async function _homeFdMaturityStrip() {
-  const fds = (await DB.byIndex('fds', 'owner', 'me')) || [];
-  if (!fds.length) return null;
-  const mod = await import('./fd.js');
+// Cards deliberately carry NO instrument name - just how long, how much, and an
+// FD/BOND badge. The strip answers "what's landing and when", and a tap goes to
+// that instrument's LIST page (not the individual record's edit form) because the
+// next thing you actually want is the whole ladder in context.
+//
+// Returns null when nothing is due, so Home appends nothing at all rather than an
+// empty heading.
+//
+// Deliberately INCLUDES Emergency-Fund-linked records. Linking a record moves it
+// out of a page's TOTALS, never out of its listings (it keeps its EF badge there)
+// - and "cash arrives Thursday" is an action reminder, not a total, so it matters
+// no matter which surface counts the money. The EF badge rides along so that money
+// isn't mistaken for free cash.
+async function _homeUpcomingStrip() {
   const now = Date.now();
-  // resolveChain, not computeFd: an FD funded by rolled-in matured parents has a
-  // bigger effective deposit, so its maturity amount is only right via the chain.
-  const byId = new Map(fds.map((x) => [x.id, x]));
-  const cache = new Map();
-  const due = fds
-    .map((f) => ({ f, c: mod.resolveChain(f, byId, now, cache) }))
-    // Active only - a matured FD has already paid out, so it isn't "upcoming".
-    // An active FD is never superseded by a child, so no supersede check needed.
-    .filter(({ c }) => c.effectiveStatus === 'active' && c.daysToMaturity != null && c.daysToMaturity <= FD_SOON_DAYS)
-    .sort((a, b2) => a.c.daysToMaturity - b2.c.daysToMaturity);
-  if (!due.length) return null;
+  const items = [];
 
-  const strip = el('div', { class: 'fd-soon' });
-  strip.appendChild(el('div', { class: 'fd-soon-head' }, [
-    el('span', { class: 'fd-soon-title', text: '⏰ Maturing this week' }),
-    el('span', { class: 'fd-soon-count', text: due.length + (due.length === 1 ? ' FD' : ' FDs') }),
+  // ---- FDs: the maturity lump ----
+  try {
+    const fds = (await DB.byIndex('fds', 'owner', 'me')) || [];
+    if (fds.length) {
+      const mod = await import('./fd.js');
+      // resolveChain, not computeFd: an FD funded by rolled-in matured parents has
+      // a bigger effective deposit, so its payout is only right via the chain.
+      const byId = new Map(fds.map((x) => [x.id, x]));
+      const cache = new Map();
+      fds.forEach((f) => {
+        const c = mod.resolveChain(f, byId, now, cache);
+        // Active only - a matured FD has already paid out, so it isn't "upcoming".
+        // An active FD is never superseded by a child, so no supersede check needed.
+        if (c.effectiveStatus !== 'active') return;
+        if (c.daysToMaturity == null || c.daysToMaturity > UPCOMING_DAYS) return;
+        items.push({
+          kind: 'FD', days: c.daysToMaturity, amount: c.maturityValue,
+          date: c.maturity, ef: !!f.emergencyFund, go: () => setAppMode('fd'),
+        });
+      });
+    }
+  } catch (_) { /* one source failing must not take out the other */ }
+
+  // ---- Bonds: the next scheduled payout ----
+  try {
+    const bonds = (await DB.byIndex('bonds', 'owner', 'me')) || [];
+    if (bonds.length) {
+      const mod = await import('./bonds.js');
+      bonds.forEach((b2) => {
+        const c = mod.computeBond(b2, now);
+        if (c.effectiveStatus !== 'active' || c.isSold) return;
+        // A bond with periodic interest or amortizing principal has a schedule, so
+        // `nextDue` is the next dated event on it (its final row is the maturity
+        // lump, so this covers maturity too). A plain at-maturity bond has NO
+        // schedule and therefore no nextDue - for those the one payout event is
+        // the maturity itself.
+        let date = null, amount = 0;
+        if (c.nextDue) {
+          date = c.nextDue.date;
+          amount = (Number(c.nextDue.interest) || 0) + (Number(c.nextDue.principal) || 0);
+        } else if (c.maturity) {
+          date = c.maturity;
+          amount = c.maturityValue;
+        }
+        if (!date || !(amount > 0)) return;
+        const days = Math.ceil((Date.parse(date) - now) / 86400000);
+        if (!(days >= 0) || days > UPCOMING_DAYS) return;
+        items.push({
+          kind: 'BOND', days, amount, date,
+          ef: !!b2.emergencyFund, go: () => openBond(),
+        });
+      });
+    }
+  } catch (_) {}
+
+  if (!items.length) return null;
+  items.sort((a, b2) => a.days - b2.days);
+
+  const strip = el('div', { class: 'due-soon' });
+  strip.appendChild(el('div', { class: 'due-soon-head' }, [
+    el('span', { class: 'due-soon-title', text: '\u23f0 Coming up this week' }),
+    el('span', { class: 'due-soon-count', text: items.length + (items.length === 1 ? ' payout' : ' payouts') }),
   ]));
-  const rail = el('div', { class: 'fd-soon-rail' });
-  due.forEach(({ f, c }) => {
-    const d = c.daysToMaturity;
-    // d is always >= 1 here: fd.js derives status purely from the date and treats
-    // maturity DAY itself as already 'matured' (the money has landed), so such an
-    // FD is filtered out above and moves to the FD page's Matured bucket. No
-    // "Today" case to handle - the user got the heads-up yesterday as "Tomorrow".
-    const dayTxt = d === 1 ? 'Tomorrow' : d + ' days left';
+  const rail = el('div', { class: 'due-soon-rail' });
+  items.forEach((it) => {
+    const d = it.days;
+    // An FD maturing today is already 'matured' per fd.js so it never reaches
+    // here, but a bond payout dated today legitimately can - hence the Today case.
+    const dayTxt = d <= 0 ? 'Today' : d === 1 ? 'Tomorrow' : d + ' days left';
     // Anything inside 2 days is worth the warning colour; the rest is just info.
     const urgent = d <= 2;
-    const chip = el('button', { class: 'fd-soon-card' + (urgent ? ' is-urgent' : ''), type: 'button', onclick: () => openFdForm(f) }, [
-      el('span', { class: 'fd-soon-days', text: dayTxt }),
-      el('span', { class: 'fd-soon-bank', text: f.bank || 'Fixed Deposit' }),
-      el('span', { class: 'fd-soon-amt', text: fmtIntCur(c.maturityValue) }),
-      el('span', { class: 'fd-soon-meta' }, [
-        c.maturity || '',
-        f.emergencyFund ? el('span', { class: 'badge ef-badge mf-beat', text: 'EF' }) : document.createTextNode(''),
+    rail.appendChild(el('button', { class: 'due-soon-card' + (urgent ? ' is-urgent' : ''), type: 'button', onclick: it.go }, [
+      el('span', { class: 'due-soon-days', text: dayTxt }),
+      el('span', { class: 'due-soon-amt', text: fmtIntCur(it.amount) }),
+      el('span', { class: 'due-soon-meta' }, [
+        el('span', { class: 'badge mf-beat due-badge-' + it.kind.toLowerCase(), text: it.kind }),
+        it.ef ? el('span', { class: 'badge ef-badge mf-beat', text: 'EF' }) : document.createTextNode(''),
+        el('span', { class: 'due-soon-date', text: it.date || '' }),
       ]),
-    ]);
-    rail.appendChild(chip);
+    ]));
   });
   strip.appendChild(rail);
   return strip;

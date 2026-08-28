@@ -6,20 +6,33 @@ This is the inventory. Each entry: **what** + **where** + **why it's that way**.
 
 - **Hero + summary** (Total Invested / Total Earned, with the ⓘ breakdown sheet), then the three
   section cards: **Investment · Savings · Expense**.
-- **⏰ Maturing this week** — a horizontally-scrolling strip of FD maturity reminders, sitting between
-  the summary and the section cards. `_homeFdMaturityStrip()` in app.js.
-  - Shows any **active** FD maturing within `FD_SOON_DAYS` (7), soonest first, with **days left**, the
-    **maturity amount**, the maturity date, and an EF badge where applicable. Tap one to open that FD.
-  - Cards inside 2 days get a **warn-coloured** left accent; the rest use the accent colour.
-  - Maturity amounts come from `resolveChain()`, not `computeFd()` — an FD funded by rolled-in matured
-    parents has a larger effective deposit, so the chain is the only way to get its payout right.
-  - **Renders nothing at all when nothing is due** — no empty heading.
-  - **Deliberately includes Emergency-Fund-linked FDs.** Linking a record removes it from a page's
-    *totals*, never from its *listings* (it keeps its EF badge on the FD page). "Cash arrives Thursday"
-    is an action reminder, not a total, so it matters regardless of which surface counts the money.
+- **⏰ Coming up this week** — a horizontally-scrolling strip of money *arriving* in the next
+  `UPCOMING_DAYS` (7), sitting between the summary and the section cards. `_homeUpcomingStrip()` in
+  app.js. Two sources share one rail:
+  - **FD** — the deposit matures (principal + interest as one lump). Maturity amounts come from
+    `resolveChain()`, not `computeFd()` — an FD funded by rolled-in matured parents has a larger
+    effective deposit, so the chain is the only way to get its payout right.
+  - **BOND** — `computeBond().nextDue`, the next dated event on its schedule (interest + principal
+    for that row; the schedule's final row *is* the maturity lump, so that case is covered). A plain
+    **at-maturity bond has no schedule and therefore no `nextDue`** — for those the single payout
+    event is the maturity itself, handled as an explicit fallback. Sold and matured bonds are skipped.
+  - **Cards carry no instrument name** — just days left, the amount, and an **FD**/**BOND** badge.
+    The strip answers "what's landing and when", so every card is the same shape whatever its source;
+    the badge is the identifier and the two colours are deliberately distinct (accent vs amber).
+  - **A tap goes to the instrument's LIST page** (`setAppMode('fd')` / `openBond()`), *not* the
+    individual record's edit form — the next thing you want is the whole ladder in context.
+  - Sorted soonest first across both sources. Cards inside 2 days get a **warn-coloured** left accent.
+  - **Renders nothing at all when nothing is due** — no empty heading. Each source is independently
+    try/catch-wrapped so one failing can't take out the other, and the whole call is wrapped again in
+    `renderHome()` so it can never blank Home.
+  - **Deliberately includes Emergency-Fund-linked records.** Linking a record removes it from a page's
+    *totals*, never from its *listings*. "Cash arrives Thursday" is an action reminder, not a total, so
+    it matters regardless of which surface counts the money — and the **EF** badge rides along beside
+    the type badge so that money isn't mistaken for free cash.
   - An FD maturing **today** does *not* appear: `fd.js` derives status purely from the date and treats
-    maturity day itself as already `matured`, so it moves to the FD page's Matured bucket instead. The
-    user was already warned the previous day as "Tomorrow", so `daysToMaturity` is always ≥ 1 here.
+    maturity day itself as already `matured`, so it moves to the FD page's Matured bucket instead (the
+    user was warned the previous day as "Tomorrow"). A **bond** payout dated today legitimately can
+    appear, which is why the "Today" label exists at all.
   - Scrolls inside its own rail with scroll-snap (same technique as `.portfolio-tabs`), so the page body
     never scrolls sideways. Verified at 375px.
 

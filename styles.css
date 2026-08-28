@@ -1413,15 +1413,17 @@ html[data-theme="light"] {
 .mf-stats-vals { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
 .mf-stats-pct { font-weight: 700; font-size: 0.95rem; }
 
-/* Home → "Maturing this week": horizontally-scrolling FD maturity reminders,
-   sitting between the summary and the section cards. Scrolls inside its own
-   rail (same technique as .portfolio-tabs) so the page body never scrolls
-   sideways, with scroll-snap so a flick lands on a card rather than mid-card. */
-.fd-soon { margin-top: 18px; }
-.fd-soon-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
-.fd-soon-title { font-size: 0.82rem; font-weight: 700; }
-.fd-soon-count { font-size: 0.68rem; color: var(--muted); }
-.fd-soon-rail {
+/* Home → "Coming up this week": horizontally-scrolling strip of incoming money
+   (FD maturities + bond payouts), between the summary and the section cards.
+   Scrolls inside its own rail (same technique as .portfolio-tabs) so the page
+   body never scrolls sideways, with scroll-snap so a flick lands on a card
+   rather than mid-card. Cards carry no instrument name - the FD/BOND badge is
+   the identifier, so every card is the same shape regardless of source. */
+.due-soon { margin-top: 18px; }
+.due-soon-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.due-soon-title { font-size: 0.82rem; font-weight: 700; }
+.due-soon-count { font-size: 0.68rem; color: var(--muted); }
+.due-soon-rail {
   display: flex; gap: 10px;
   overflow-x: auto;
   scroll-snap-type: x proximity;
@@ -1429,20 +1431,25 @@ html[data-theme="light"] {
   scrollbar-width: none;
   padding-bottom: 2px;
 }
-.fd-soon-rail::-webkit-scrollbar { display: none; }
-.fd-soon-card {
+.due-soon-rail::-webkit-scrollbar { display: none; }
+.due-soon-card {
   flex: 0 0 auto; scroll-snap-align: start;
-  min-width: 148px; max-width: 200px;
-  display: flex; flex-direction: column; gap: 2px;
+  min-width: 136px;
+  display: flex; flex-direction: column; gap: 3px;
   text-align: left; cursor: pointer;
   background: var(--card); color: var(--text);
   border: 1px solid var(--line); border-left: 3px solid var(--accent);
   border-radius: 12px; padding: 10px 12px;
 }
-.fd-soon-card:active { background: var(--card-2); }
-.fd-soon-card.is-urgent { border-left-color: var(--warn); }
-.fd-soon-days { font-size: 0.68rem; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.4px; }
-.fd-soon-card.is-urgent .fd-soon-days { color: var(--warn); }
-.fd-soon-bank { font-size: 0.8rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fd-soon-amt { font-size: 1.05rem; font-weight: 700; }
-.fd-soon-meta { display: flex; align-items: center; gap: 6px; font-size: 0.64rem; color: var(--muted); }
+.due-soon-card:active { background: var(--card-2); }
+.due-soon-card.is-urgent { border-left-color: var(--warn); }
+.due-soon-days { font-size: 0.68rem; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.4px; }
+.due-soon-card.is-urgent .due-soon-days { color: var(--warn); }
+.due-soon-amt { font-size: 1.15rem; font-weight: 700; }
+.due-soon-meta { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.due-soon-date { font-size: 0.62rem; color: var(--muted); }
+/* Instrument-type badges. These are the card's only identifier, so the two read
+   as clearly different colours rather than two shades of the same one. */
+.badge.due-badge-fd { color: var(--accent); border-color: rgba(14,165,233,0.45); background: rgba(14,165,233,0.12); font-weight: 700; }
+.badge.due-badge-bond { color: #d97706; border-color: rgba(217,119,6,0.45); background: rgba(217,119,6,0.12); font-weight: 700; }
+@media (prefers-color-scheme: dark) { .badge.due-badge-bond { color: #fcd34d; } }
