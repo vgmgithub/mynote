@@ -2,6 +2,27 @@
 
 This is the inventory. Each entry: **what** + **where** + **why it's that way**. Don't re-implement; if the user asks for a behavior in here, point them at the existing path.
 
+## Home screen
+
+- **Hero + summary** (Total Invested / Total Earned, with the ⓘ breakdown sheet), then the three
+  section cards: **Investment · Savings · Expense**.
+- **⏰ Maturing this week** — a horizontally-scrolling strip of FD maturity reminders, sitting between
+  the summary and the section cards. `_homeFdMaturityStrip()` in app.js.
+  - Shows any **active** FD maturing within `FD_SOON_DAYS` (7), soonest first, with **days left**, the
+    **maturity amount**, the maturity date, and an EF badge where applicable. Tap one to open that FD.
+  - Cards inside 2 days get a **warn-coloured** left accent; the rest use the accent colour.
+  - Maturity amounts come from `resolveChain()`, not `computeFd()` — an FD funded by rolled-in matured
+    parents has a larger effective deposit, so the chain is the only way to get its payout right.
+  - **Renders nothing at all when nothing is due** — no empty heading.
+  - **Deliberately includes Emergency-Fund-linked FDs.** Linking a record removes it from a page's
+    *totals*, never from its *listings* (it keeps its EF badge on the FD page). "Cash arrives Thursday"
+    is an action reminder, not a total, so it matters regardless of which surface counts the money.
+  - An FD maturing **today** does *not* appear: `fd.js` derives status purely from the date and treats
+    maturity day itself as already `matured`, so it moves to the FD page's Matured bucket instead. The
+    user was already warned the previous day as "Tomorrow", so `daysToMaturity` is always ≥ 1 here.
+  - Scrolls inside its own rail with scroll-snap (same technique as `.portfolio-tabs`), so the page body
+    never scrolls sideways. Verified at 375px.
+
 ## Navigation
 
 - **Portfolio tabs** (top): Me · India / Wife · India / Me · US — in this order. `buildChrome()` in app.js. Tap a tab, or **swipe left/right anywhere in the Stocks content** to step through them (swipe left = forward, matching the direction the content travels). Both routes go through one shared `selectPortfolio()` so they can't drift. Swipe specifics:

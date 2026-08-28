@@ -2422,6 +2422,10 @@ function openInvestedBreakdown(bd) {
   ]));
 }
 
+// How far ahead Home's "Maturing this week" strip looks. One week: near enough
+// that the money needs a decision now, far enough ahead to actually act on it.
+const FD_SOON_DAYS = 7;
+
 async function renderHome() {
   const host = $('#homeView');
   host.innerHTML = '';
@@ -2458,12 +2462,78 @@ async function renderHome() {
   ]);
   host.appendChild(summaryCard);
 
+  // Upcoming FD maturities, above the section cards. Wrapped because a failure
+  // here must never blank Home - same defensive stance as the live-stats blocks.
+  try {
+    const fdSoon = await _homeFdMaturityStrip();
+    if (fdSoon) host.appendChild(fdSoon);
+  } catch (_) {}
+
   const investmentCard = _homeCard('💼', 'Investment', 'Stocks · MF · FD · Bonds', () => setAppMode('investment'));
   const savingsCard = _homeCard('🏦', 'Savings', 'Emergency Fund · Goals', () => setAppMode('savings'));
   const expenseCard = _homeCard('💳', 'Expense', 'Coming soon', () => setAppMode('expense'));
   host.appendChild(el('div', { class: 'home-cards' }, [investmentCard, savingsCard, expenseCard]));
   host.appendChild(el('p', { class: 'hint home-foot', text: 'Backup covers everything - open the ⋮ menu → Backup & Restore.' }));
 }
+// Horizontally-scrolling strip of FDs maturing within the next week, shown on
+// Home above the section cards. Purely a nudge: money is about to land and
+// usually needs a decision (renew, roll into a new FD, or spend it), and that
+// decision is easy to miss when the FD ladder lives three taps away.
+//
+// Returns null when nothing is due, so Home appends nothing at all rather than
+// an empty heading.
+//
+// Deliberately INCLUDES Emergency-Fund-linked FDs. Linking a record moves it out
+// of a page's TOTALS, never out of its listings (it keeps its EF badge on the FD
+// page) - and "cash arrives Thursday" is an action reminder, not a total, so it
+// matters no matter which surface counts the money.
+async function _homeFdMaturityStrip() {
+  const fds = (await DB.byIndex('fds', 'owner', 'me')) || [];
+  if (!fds.length) return null;
+  const mod = await import('./fd.js');
+  const now = Date.now();
+  // resolveChain, not computeFd: an FD funded by rolled-in matured parents has a
+  // bigger effective deposit, so its maturity amount is only right via the chain.
+  const byId = new Map(fds.map((x) => [x.id, x]));
+  const cache = new Map();
+  const due = fds
+    .map((f) => ({ f, c: mod.resolveChain(f, byId, now, cache) }))
+    // Active only - a matured FD has already paid out, so it isn't "upcoming".
+    // An active FD is never superseded by a child, so no supersede check needed.
+    .filter(({ c }) => c.effectiveStatus === 'active' && c.daysToMaturity != null && c.daysToMaturity <= FD_SOON_DAYS)
+    .sort((a, b2) => a.c.daysToMaturity - b2.c.daysToMaturity);
+  if (!due.length) return null;
+
+  const strip = el('div', { class: 'fd-soon' });
+  strip.appendChild(el('div', { class: 'fd-soon-head' }, [
+    el('span', { class: 'fd-soon-title', text: '⏰ Maturing this week' }),
+    el('span', { class: 'fd-soon-count', text: due.length + (due.length === 1 ? ' FD' : ' FDs') }),
+  ]));
+  const rail = el('div', { class: 'fd-soon-rail' });
+  due.forEach(({ f, c }) => {
+    const d = c.daysToMaturity;
+    // d is always >= 1 here: fd.js derives status purely from the date and treats
+    // maturity DAY itself as already 'matured' (the money has landed), so such an
+    // FD is filtered out above and moves to the FD page's Matured bucket. No
+    // "Today" case to handle - the user got the heads-up yesterday as "Tomorrow".
+    const dayTxt = d === 1 ? 'Tomorrow' : d + ' days left';
+    // Anything inside 2 days is worth the warning colour; the rest is just info.
+    const urgent = d <= 2;
+    const chip = el('button', { class: 'fd-soon-card' + (urgent ? ' is-urgent' : ''), type: 'button', onclick: () => openFdForm(f) }, [
+      el('span', { class: 'fd-soon-days', text: dayTxt }),
+      el('span', { class: 'fd-soon-bank', text: f.bank || 'Fixed Deposit' }),
+      el('span', { class: 'fd-soon-amt', text: fmtIntCur(c.maturityValue) }),
+      el('span', { class: 'fd-soon-meta' }, [
+        c.maturity || '',
+        f.emergencyFund ? el('span', { class: 'badge ef-badge mf-beat', text: 'EF' }) : document.createTextNode(''),
+      ]),
+    ]);
+    rail.appendChild(chip);
+  });
+  strip.appendChild(rail);
+  return strip;
+}
+
 function _homeCard(icon, title, sub, onclick) {
   // `icon` is usually an emoji string, but may be a DOM node (e.g. the metals
   // gold/silver-bar SVG) — append nodes, render strings as text.
