@@ -6,22 +6,33 @@ This is the inventory. Each entry: **what** + **where** + **why it's that way**.
 
 - **Hero + summary** (Total Invested / Total Earned, with the ⓘ breakdown sheet), then the three
   section cards: **Investment · Savings · Expense**.
-- **⏰ Coming up this week** — a horizontally-scrolling strip of money *arriving* in the next
-  `UPCOMING_DAYS` (7), sitting between the summary and the section cards. `_homeUpcomingStrip()` in
-  app.js. Two sources share one rail:
-  - **FD** — the deposit matures (principal + interest as one lump). Maturity amounts come from
-    `resolveChain()`, not `computeFd()` — an FD funded by rolled-in matured parents has a larger
-    effective deposit, so the chain is the only way to get its payout right.
-  - **BOND** — `computeBond().nextDue`, the next dated event on its schedule (interest + principal
-    for that row; the schedule's final row *is* the maturity lump, so that case is covered). A plain
-    **at-maturity bond has no schedule and therefore no `nextDue`** — for those the single payout
-    event is the maturity itself, handled as an explicit fallback. Sold and matured bonds are skipped.
-  - **Cards carry no instrument name** — just days left, the amount, and an **FD**/**BOND** badge.
-    The strip answers "what's landing and when", so every card is the same shape whatever its source;
-    the badge is the identifier and the two colours are deliberately distinct (accent vs amber).
-  - **A tap goes to the instrument's LIST page** (`setAppMode('fd')` / `openBond()`), *not* the
-    individual record's edit form — the next thing you want is the whole ladder in context.
-  - Sorted soonest first across both sources. Cards inside 2 days get a **warn-coloured** left accent.
+- **⏰ Coming Up** — a horizontally-scrolling strip of money/attention *arriving* soon, sitting
+  between the summary and the section cards. `_homeUpcomingStrip()` in app.js. Three sources share
+  one rail:
+  - **FD** — maturing within `UPCOMING_DAYS` (7): the deposit matures (principal + interest as one
+    lump). Maturity amounts come from `resolveChain()`, not `computeFd()` — an FD funded by rolled-in
+    matured parents has a larger effective deposit, so the chain is the only way to get its payout right.
+  - **BOND** — due within `UPCOMING_DAYS`: `computeBond().nextDue`, the next dated event on its
+    schedule (interest + principal for that row; the schedule's final row *is* the maturity lump, so
+    that case is covered). A plain **at-maturity bond has no schedule and therefore no `nextDue`** —
+    for those the single payout event is the maturity itself, an explicit fallback. Sold/matured skipped.
+  - **DIV** — stocks that have paid a dividend in **this calendar month** in some past year (their
+    `dividends` record's `months` list, from `dividend.js`) but have **nothing logged for the current
+    year yet** (`yearTotal(rec, curYear) <= 0`) — once you log this year's dividend the reminder drops
+    that stock, since there's nothing left to check. Sourced from `_eligibleDividendRecords(mod,
+    {write:false})`, the same read-only join Home's own live-stats block already uses, so it only
+    considers stocks currently held and toggled "Dividend available". Both markets combine into one
+    list — names only, no ₹/$, so India and US don't need separating here. No due date to sort by
+    (it covers the whole month), so it's pinned to sort **after** every dated FD/BOND item.
+  - **FD/BOND cards carry no instrument name** — just days left, the amount, and an **FD**/**BOND**
+    badge; the **DIV** card instead shows its badge (e.g. **"Dividend of September"**) over the
+    comma-separated stock names, since it has no single amount/date to show. Every card still reads as
+    the same *kind* of thing whatever its source; each badge colour is deliberately distinct (FD accent
+    blue, BOND amber, DIV teal).
+  - **A tap goes to the relevant LIST page** — `setAppMode('fd')` / `openBond()` / `openDividend()` —
+    *not* an individual record's edit form: the next thing you want is the whole list in context.
+  - FD/BOND sorted soonest first; DIV always last. Cards inside 2 days get a **warn-coloured** left
+    accent; the DIV card gets its own teal accent instead, since "soon" doesn't apply to it.
   - **Renders nothing at all when nothing is due** — no empty heading. Each source is independently
     try/catch-wrapped so one failing can't take out the other, and the whole call is wrapped again in
     `renderHome()` so it can never blank Home.
@@ -33,11 +44,13 @@ This is the inventory. Each entry: **what** + **where** + **why it's that way**.
     maturity day itself as already `matured`, so it moves to the FD page's Matured bucket instead (the
     user was warned the previous day as "Tomorrow"). A **bond** payout dated today legitimately can
     appear, which is why the "Today" label exists at all.
-  - **Two fixed rows per chip card**, ~118px minimum: row 1 is "N Days left" with the type badge
-    (**FD**/**BOND**) and **EF** badge top-right; row 2 is the amount with the maturity date bottom-right
-    (year dropped — "3 Sep" — since nothing here is more than a week out). A card with more to show
-    (an EF badge, a longer date) grows **wider**, never taller — every card stays exactly two lines
-    regardless of content (`white-space: nowrap`, no fixed/max width). Scrolls inside its own rail with
+  - **Two fixed rows per chip card**, ~118px minimum: for FD/BOND, row 1 is "N Days left" with the
+    type badge (**FD**/**BOND**) and **EF** badge top-right, row 2 is the amount with the maturity date
+    bottom-right (year dropped — "3 Sep" — since nothing here is more than a week out); for DIV, row 1
+    is the "Dividend of …" badge alone, row 2 is the stock-name list. Whatever a card needs to show, it
+    grows **wider**, never taller — every card stays exactly two lines regardless of content
+    (`white-space: nowrap`, no fixed/max width) — verified with a 5-name DIV card reaching 574px wide
+    while staying the same 54px tall as every FD/BOND card next to it. Scrolls inside its own rail with
     scroll-snap (same technique as `.portfolio-tabs`), so the page body never scrolls sideways.
   - **Edge fade on the trailing edge** once the rail actually overflows (`.can-scroll`), clearing again
     at full scroll (`.at-end`) — the cue that more cards exist off-screen, without implying it when they

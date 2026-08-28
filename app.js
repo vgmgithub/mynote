@@ -2558,16 +2558,58 @@ async function _homeUpcomingStrip() {
     }
   } catch (_) {}
 
+  // ---- Dividends: stocks that historically pay THIS calendar month ----
+  // `rec.months` is the user's own record of which months a stock has paid in
+  // (any past year, not this one) - see dividend.js. A stock qualifies when this
+  // month is in that list AND the CURRENT year's total on the record is still 0,
+  // i.e. nothing has been logged for it yet - once the user records this year's
+  // dividend the reminder drops it, since there's nothing left to check for.
+  try {
+    const mod = await import('./dividend.js');
+    const recs = await _eligibleDividendRecords(mod, { write: false });
+    if (recs.length) {
+      const nowDate = new Date(now);
+      const curMonAbbr = mod.MONTHS[nowDate.getMonth()];
+      const curYear = nowDate.getFullYear();
+      const names = recs
+        .filter((d) => (d.months || []).includes(curMonAbbr))
+        .filter((d) => mod.yearTotal(d, curYear) <= 0)
+        .map((d) => d.name)
+        .filter(Boolean);
+      if (names.length) {
+        const monthName = nowDate.toLocaleString('en-US', { month: 'long' });
+        // No real "days left" for a whole-month reminder - sorted to the end,
+        // after every dated FD/bond item, rather than competing with them.
+        items.push({ kind: 'DIV', days: UPCOMING_DAYS + 1000, names, monthLabel: 'Dividend of ' + monthName, go: () => openDividend() });
+      }
+    }
+  } catch (_) {}
+
   if (!items.length) return null;
   items.sort((a, b2) => a.days - b2.days);
 
   const strip = el('div', { class: 'due-soon' });
   strip.appendChild(el('div', { class: 'due-soon-head' }, [
-    el('span', { class: 'due-soon-title', text: '\u23f0 Coming up this week' }),
-    el('span', { class: 'due-soon-count', text: items.length + (items.length === 1 ? ' payout' : ' payouts') }),
+    el('span', { class: 'due-soon-title', text: '\u23f0 Coming Up' }),
+    el('span', { class: 'due-soon-count', text: items.length + (items.length === 1 ? ' item' : ' items') }),
   ]));
   const rail = el('div', { class: 'due-soon-rail' });
   items.forEach((it) => {
+    // Dividend reminder: no due date to count down to (it covers the whole
+    // month), so it gets its own two rows - the badge alone (top-right, same
+    // corner every other badge lives in) over the comma-separated stock names.
+    if (it.kind === 'DIV') {
+      rail.appendChild(el('button', { class: 'due-soon-card is-div', type: 'button', onclick: it.go }, [
+        el('div', { class: 'due-soon-row' }, [
+          el('span', { class: 'due-soon-days', text: '\ud83d\udcb0' }),
+          el('span', { class: 'badge mf-beat due-badge-div', text: it.monthLabel }),
+        ]),
+        el('div', { class: 'due-soon-row' }, [
+          el('span', { class: 'due-soon-names', text: it.names.join(', ') }),
+        ]),
+      ]));
+      return;
+    }
     const d = it.days;
     // An FD maturing today is already 'matured' per fd.js so it never reaches
     // here, but a bond payout dated today legitimately can - hence the Today case.

@@ -1460,14 +1460,23 @@ html[data-theme="light"] {
 }
 .due-soon-card:active { background: var(--card-2); }
 .due-soon-card.is-urgent { border-left-color: var(--warn); }
+.due-soon-card.is-div { border-left-color: #0d9488; }
 .due-soon-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .due-soon-days { font-size: 0.68rem; font-weight: 700; color: var(--accent); }
 .due-soon-card.is-urgent .due-soon-days { color: var(--warn); }
+.due-soon-card.is-div .due-soon-days { color: #0d9488; font-size: 0.8rem; }
 .due-soon-badges { display: flex; align-items: center; gap: 4px; }
 .due-soon-amt { font-size: 0.95rem; font-weight: 700; }
 .due-soon-date { font-size: 0.62rem; color: var(--muted); }
-/* Instrument-type badges. These are the card's only identifier, so the two read
-   as clearly different colours rather than two shades of the same one. */
+/* The dividend reminder's stock list - can legitimately be the widest thing in
+   the rail (several stock names), which is fine: cards grow wider, not taller. */
+.due-soon-names { font-size: 0.78rem; font-weight: 600; }
+/* Instrument-type badges. These are the card's only identifier, so each reads
+   as a clearly different colour rather than a shade of the others. */
 .badge.due-badge-fd { color: var(--accent); border-color: rgba(14,165,233,0.45); background: rgba(14,165,233,0.12); font-weight: 700; }
 .badge.due-badge-bond { color: #d97706; border-color: rgba(217,119,6,0.45); background: rgba(217,119,6,0.12); font-weight: 700; }
-@media (prefers-color-scheme: dark) { .badge.due-badge-bond { color: #fcd34d; } }
+.badge.due-badge-div { color: #0d9488; border-color: rgba(13,148,136,0.45); background: rgba(13,148,136,0.12); font-weight: 700; }
+@media (prefers-color-scheme: dark) {
+  .badge.due-badge-bond { color: #fcd34d; }
+  .badge.due-badge-div, .due-soon-card.is-div .due-soon-days { color: #5eead4; }
+}
