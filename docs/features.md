@@ -33,10 +33,12 @@ This is the inventory. Each entry: **what** + **where** + **why it's that way**.
     maturity day itself as already `matured`, so it moves to the FD page's Matured bucket instead (the
     user was warned the previous day as "Tomorrow"). A **bond** payout dated today legitimately can
     appear, which is why the "Today" label exists at all.
-  - **Small chip cards** (~104px, 3+ visible at once on a phone) so a growing list of due items stays
-    scannable rather than dominating Home. Days-left is abbreviated ("3d") and the date drops its year
-    ("3 Sep") to fit. Scrolls inside its own rail with scroll-snap (same technique as `.portfolio-tabs`),
-    so the page body never scrolls sideways.
+  - **Two fixed rows per chip card**, ~118px minimum: row 1 is "N Days left" with the type badge
+    (**FD**/**BOND**) and **EF** badge top-right; row 2 is the amount with the maturity date bottom-right
+    (year dropped — "3 Sep" — since nothing here is more than a week out). A card with more to show
+    (an EF badge, a longer date) grows **wider**, never taller — every card stays exactly two lines
+    regardless of content (`white-space: nowrap`, no fixed/max width). Scrolls inside its own rail with
+    scroll-snap (same technique as `.portfolio-tabs`), so the page body never scrolls sideways.
   - **Edge fade on the trailing edge** once the rail actually overflows (`.can-scroll`), clearing again
     at full scroll (`.at-end`) — the cue that more cards exist off-screen, without implying it when they
     don't. Recomputed on every scroll event. The width check runs via `setTimeout(fn, 0)`, not

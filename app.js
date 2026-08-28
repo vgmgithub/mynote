@@ -2571,17 +2571,23 @@ async function _homeUpcomingStrip() {
     const d = it.days;
     // An FD maturing today is already 'matured' per fd.js so it never reaches
     // here, but a bond payout dated today legitimately can - hence the Today case.
-    // Abbreviated ("3d") rather than "3 days left" so the card stays narrow -
-    // several of these need to fit a phone screen at once.
-    const dayTxt = d <= 0 ? 'Today' : d === 1 ? 'Tomorrow' : d + 'd';
+    const dayTxt = d <= 0 ? 'Today' : d === 1 ? 'Tomorrow' : d + ' Days left';
     // Anything inside 2 days is worth the warning colour; the rest is just info.
     const urgent = d <= 2;
+    // Two fixed rows - type/EF badge top-right beside "days left", maturity
+    // date bottom-right beside the amount - rather than letting the card grow
+    // TALLER as more badges/text show up. If a row's content needs more room,
+    // the card grows WIDER instead (see .due-soon-card white-space: nowrap).
     rail.appendChild(el('button', { class: 'due-soon-card' + (urgent ? ' is-urgent' : ''), type: 'button', onclick: it.go }, [
-      el('span', { class: 'due-soon-days', text: dayTxt }),
-      el('span', { class: 'due-soon-amt', text: fmtIntCur(it.amount) }),
-      el('span', { class: 'due-soon-meta' }, [
-        el('span', { class: 'badge mf-beat due-badge-' + it.kind.toLowerCase(), text: it.kind }),
-        it.ef ? el('span', { class: 'badge ef-badge mf-beat', text: 'EF' }) : document.createTextNode(''),
+      el('div', { class: 'due-soon-row' }, [
+        el('span', { class: 'due-soon-days', text: dayTxt }),
+        el('span', { class: 'due-soon-badges' }, [
+          el('span', { class: 'badge mf-beat due-badge-' + it.kind.toLowerCase(), text: it.kind }),
+          it.ef ? el('span', { class: 'badge ef-badge mf-beat', text: 'EF' }) : document.createTextNode(''),
+        ]),
+      ]),
+      el('div', { class: 'due-soon-row' }, [
+        el('span', { class: 'due-soon-amt', text: fmtIntCur(it.amount) }),
         el('span', { class: 'due-soon-date', text: _shortDayMon(it.date) }),
       ]),
     ]));
