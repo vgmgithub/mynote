@@ -2926,6 +2926,32 @@ function renderDivStocks(host, all, mod) {
   host.appendChild(seg);
 
   const rows = all.filter((d) => d.market === _divMarket);
+  const cur = mod.curOfMarket(_divMarket);
+
+  // Calculate stats for all markets
+  const inRows = all.filter((d) => d.market === 'in');
+  const usRows = all.filter((d) => d.market === 'us');
+  const inEarning = inRows.filter((rec) => mod.yearTotal(rec, curYear) > 0);
+  const usEarning = usRows.filter((rec) => mod.yearTotal(rec, curYear) > 0);
+  const inTotal = inEarning.reduce((sum, rec) => sum + (mod.yearTotal(rec, curYear) || 0), 0);
+  const usTotal = usEarning.reduce((sum, rec) => sum + (mod.yearTotal(rec, curYear) || 0), 0);
+
+  // Stats bar showing counts and totals per market
+  const statsCont = el('div', { class: 'div-stats-bar' }, [
+    el('div', { class: 'div-stat-item' }, [
+      el('div', { class: 'div-stat-label', text: 'India Stocks' }),
+      el('div', { class: 'div-stat-count', text: String(inEarning.length) }),
+      el('div', { class: 'div-stat-total', text: mod.fmtDiv(inTotal, 'INR') }),
+    ]),
+    el('div', { class: 'div-stat-sep' }),
+    el('div', { class: 'div-stat-item' }, [
+      el('div', { class: 'div-stat-label', text: 'US Stocks' }),
+      el('div', { class: 'div-stat-count', text: String(usEarning.length) }),
+      el('div', { class: 'div-stat-total', text: mod.fmtDiv(usTotal, 'USD') }),
+    ]),
+  ]);
+  host.appendChild(statsCont);
+
   if (!rows.length) {
     host.appendChild(el('div', { class: 'empty' }, [
       el('div', { class: 'e-icon', text: '💰' }),
@@ -2934,7 +2960,6 @@ function renderDivStocks(host, all, mod) {
     ]));
     return;
   }
-  const cur = mod.curOfMarket(_divMarket);
 
   // Helper to get most recent year total for sorting.
   const sortKey = (rec) => {
@@ -2969,26 +2994,37 @@ function _divCard(rec, mod, curYear, cur) {
   const months = mod.parseMonths(rec.months);
   const curTotal = mod.yearTotal(rec, curYear);
   const isUs = rec.market === 'us';
+  const recentYears = mod.yearsOf(rec).slice(0, 3); // Show top 3 years for clarity
   const breakdown = el('div', { class: 'div-years' });
-  mod.yearsOf(rec).forEach((y) => {
+
+  recentYears.forEach((y) => {
     const yr = (rec.years || []).find((r) => Number(r.year) === y) || {};
+    const yearTotal = mod.yearTotal(rec, y);
     const subTxt = isUs ? '' : `${Number(yr.units) || 0} × ${yr.perUnit != null && yr.perUnit !== '' ? mod.fmtDiv(Number(yr.perUnit), cur) : '—'}`;
-    breakdown.appendChild(el('div', { class: 'div-year-row' }, [
+    const isCurrentYear = y === curYear;
+    breakdown.appendChild(el('div', { class: 'div-year-row' + (isCurrentYear ? ' current-year' : '') }, [
       el('span', { class: 'div-year-k', text: String(y) }),
-      el('span', { class: 'div-year-v', text: mod.fmtDiv(mod.yearTotal(rec, y), cur) }),
+      el('span', { class: 'div-year-v', text: mod.fmtDiv(yearTotal, cur) }),
       el('span', { class: 'div-year-sub', text: subTxt }),
     ]));
   });
-  return el('div', { class: 'card', onclick: () => openDivForm(rec) }, [
+
+  const status = curTotal > 0 ? '✓ Active' : '○ Pending';
+  const statusClass = curTotal > 0 ? 'div-status-active' : 'div-status-pending';
+
+  return el('div', { class: 'card div-card-enhanced', onclick: () => openDivForm(rec) }, [
     el('div', { class: 'top' }, [
-      el('div', {}, [
-        el('div', { class: 'name', text: rec.name || 'Stock' }),
-        el('div', { class: 'cat', text: months.length ? '🗓️ ' + months.join(', ') : 'No payout months set' }),
+      el('div', { class: 'div-card-header' }, [
+        el('div', { class: 'div-card-name-section' }, [
+          el('div', { class: 'name', text: rec.name || 'Stock' }),
+          el('div', { class: 'div-card-status ' + statusClass, text: status }),
+        ]),
+        el('div', { class: 'card-right' }, [
+          el('div', { class: 'kv-val div-cur-total', text: mod.fmtDiv(curTotal, cur) }),
+          el('div', { class: 'kv-label', text: String(curYear) }),
+        ]),
       ]),
-      el('div', { class: 'card-right' }, [
-        el('div', { class: 'kv-val', text: mod.fmtDiv(curTotal, cur) }),
-        el('div', { class: 'kv-label', text: String(curYear) }),
-      ]),
+      el('div', { class: 'div-card-months', text: months.length ? '🗓️ ' + months.join(', ') : '— No payout months' }),
     ]),
     breakdown,
   ]);
