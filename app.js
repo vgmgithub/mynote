@@ -2994,41 +2994,31 @@ async function openAllocForm(year, focusCategory = null) {
     ]);
   });
 
-  const formContent = [
-    el('h2', { text: `Annual Allocation - ${year}` }),
-    el('p', { class: 'hint', text: 'Enter how much you allocate to each category for this year' }),
-    el('div', { class: 'alloc-form-sections' }, groupSections),
-    el('div', { class: 'sheet-btns' }, [
-      el('button', {
-        class: 'btn primary',
-        text: 'Save Allocations',
-        onclick: async () => {
-          const rec = { year, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
-          Object.keys(fields).forEach(key => {
-            rec[key] = Number(fields[key].value) || 0;
-          });
+  const save = async () => {
+    const rec = { year, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    Object.keys(fields).forEach(key => {
+      rec[key] = Number(fields[key].value) || 0;
+    });
 
-          if (curAlloc.id) rec.id = curAlloc.id;
-          await DB.put('allocations', rec);
-          closeModal();
-          _allocYear = year;
-          renderAllocation($('#expenseView'));
-          toast('Allocations saved for ' + year);
-        },
-      }),
-      el('button', {
-        class: 'btn ghost',
-        text: 'Cancel',
-        onclick: closeModal,
-      }),
+    if (curAlloc.id) rec.id = curAlloc.id;
+    await DB.put('allocations', rec);
+    closeModal();
+    _allocYear = year;
+    renderAllocation($('#expenseView'));
+    toast('Allocations saved for ' + year);
+  };
+
+  openModal(el('div', { class: 'sheet has-fixed-footer' }, [
+    el('div', { class: 'sheet-scroll' }, [
+      el('h2', { text: `Annual Allocation - ${year}` }),
+      el('p', { class: 'hint', text: 'Enter how much you allocate to each category for this year' }),
+      el('div', { class: 'alloc-form-sections' }, groupSections),
     ]),
-  ];
-
-  const host = $('#modalHost');
-  host.innerHTML = '';
-  formContent.forEach(node => host.appendChild(node));
-  host.classList.remove('hidden');
-  host.setAttribute('aria-hidden', 'false');
+    el('div', { class: 'sheet-footer' }, [el('div', { class: 'btn-row', style: 'flex-wrap:wrap' }, [
+      el('button', { class: 'btn primary', text: 'Save Allocations', onclick: save }),
+      el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }),
+    ])]),
+  ]));
 
   if (focusCategory && fields[focusCategory]) {
     fields[focusCategory].focus();
