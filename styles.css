@@ -264,10 +264,15 @@ main.swipe-in-left { animation: swipe-from-left 0.18s ease-out; }
 .div-yedit-head-us { grid-template-columns: 1.5fr 1fr 2rem; }
 .div-yedit-row-us { grid-template-columns: 1.5fr 1fr 2rem; }
 /* India dividend breakdown: per-month inputs with live calculation */
-.div-yedit-row-india { grid-template-columns: 1fr 1.2fr 2rem; }
-.div-year-india-data { display: flex; flex-direction: column; gap: 8px; padding: 8px; background: var(--card-2); border-radius: 6px; }
-.div-units-label { display: flex; align-items: center; gap: 6px; font-size: 0.72rem; font-weight: 600; color: var(--muted); }
-.div-units-label input { flex: 0 0 70px; }
+.div-yedit-row-india { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 6px; }
+.div-year-left-col { display: flex; flex-direction: column; gap: 8px; flex: 0 0 180px; }
+.div-year-right-col { flex: 1; }
+.div-units-group { display: flex; flex-direction: column; gap: 4px; padding: 8px; background: var(--card-2); border-radius: 6px; }
+.div-units-label { display: flex; align-items: center; gap: 4px; font-size: 0.72rem; font-weight: 600; color: var(--muted); }
+.div-units-label input { flex: 0 0 60px; padding: 4px; border: 1px solid var(--line); border-radius: 4px; }
+.div-units-label .btn { padding: 3px 6px; font-size: 0.65rem; }
+.div-fetch-info { font-size: 0.65rem; color: var(--muted); }
+.div-fetch-date { font-weight: 600; color: var(--accent); }
 .div-india-breakdown { display: flex; flex-direction: column; gap: 4px; }
 .div-month-input { display: flex; align-items: center; gap: 4px; font-size: 0.7rem; }
 .div-month-input span { flex: 0 0 42px; color: var(--muted); font-weight: 600; }

@@ -3162,14 +3162,41 @@ async function openDivForm(rec) {
         breakdownWrap.appendChild(summary);
       };
 
+      // Fetch button to get latest units from linked stock
+      const fetchBtn = el('button', {
+        class: 'btn ghost small', type: 'button', text: '↻ Fetch',
+        onclick: async () => {
+          if (!linkedStock) return;
+          const latest = await DB.get('stocks', rec.stockId).catch(() => null);
+          if (latest) {
+            uu.value = latest.units || '';
+            const now = new Date().toLocaleDateString('en-IN', { year: '2-digit', month: '2-digit', day: '2-digit' });
+            lastFetchedSpan.textContent = now;
+            updateTotal();  // recalculate if India
+          }
+        },
+      });
+
+      // Last fetched date display
+      const lastFetchedSpan = el('span', { class: 'div-fetch-date', text: '—' });
+
       ref = { yy, uu, yearMonths, monthlyInputs, removed: false };
       row = el('div', { class: 'div-yedit-row div-yedit-row-india' }, [
-        el('div', { class: 'div-year-input-group' }, [yy, monthsGrid]),
-        el('div', { class: 'div-year-india-data' }, [
-          el('label', { class: 'div-units-label' }, [
-            el('span', { text: 'Units' }),
-            uu,
+        el('div', { class: 'div-year-left-col' }, [
+          el('div', { class: 'div-year-input-group' }, [yy, monthsGrid]),
+          el('div', { class: 'div-units-group' }, [
+            el('label', { class: 'div-units-label' }, [
+              el('span', { text: 'Units' }),
+              uu,
+              fetchBtn,
+            ]),
+            el('div', { class: 'div-fetch-info', style: 'font-size:0.65rem; color:var(--muted); margin-top:2px' }, [
+              el('span', { text: 'Fetched: ' }),
+              lastFetchedSpan,
+            ]),
           ]),
+        ]),
+        el('div', { class: 'div-year-right-col' }, [
           breakdownWrap,
         ]),
         rm,
