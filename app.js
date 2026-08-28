@@ -2849,7 +2849,7 @@ async function renderAllocation(host) {
     el('button', {
       class: 'btn primary small',
       text: '+ Add Year',
-      onclick: () => openAllocForm(curYear),
+      onclick: () => openAllocForm(),
     }),
   ]);
   host.appendChild(header);
@@ -2858,7 +2858,7 @@ async function renderAllocation(host) {
     host.appendChild(el('div', { class: 'empty' }, [
       el('div', { class: 'e-icon', text: '🧭' }),
       el('p', { text: 'No allocations recorded yet.' }),
-      el('p', { class: 'hint', text: 'Click "Add Year" to start tracking how your income is allocated.' }),
+      el('p', { class: 'hint', text: 'Click "Add Year" to start tracking how your income is allocated — you can enter this year or any past year.' }),
     ]));
     return;
   }
@@ -2915,72 +2915,66 @@ async function renderAllocation(host) {
   }));
 }
 
-// Allocation form modal
-async function openAllocForm(year, focusCategory = null) {
+// Allocation form modal. `year` may be omitted (or null) — the year is
+// editable inside the form itself, so the same modal handles adding a brand
+// new year (including PAST years, to build up history for the step-up %
+// insight) as well as editing an existing one.
+async function openAllocForm(year = null, focusCategory = null) {
   const allAllocs = await DB.all('allocations');
-  const curAlloc = allAllocs.find(a => a.year === year) || {
-    year,
+  const curYear = new Date().getFullYear();
+  const allocYears = allAllocs.map(a => a.year).sort((a, b) => a - b);
+
+  // Default: edit the requested year, or if adding fresh, suggest the year
+  // right before the earliest one on record (nudges toward filling in more
+  // history) — or this year if nothing's recorded yet.
+  const startYear = year != null ? year
+    : allocYears.length ? allocYears[0] - 1
+    : curYear;
+
+  const blankAlloc = () => ({
     salary: 0, home: 0, houseExp: 0, card: 0, mf: 0,
     emergency: 0, fd: 0, indStock: 0, usStock: 0, metal: 0, savings: 0
-  };
+  });
 
   const numInput = (v, ph) => el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: v != null && v !== '' ? v : '', placeholder: ph });
   const fields = {};
+  const inputs = [];
 
   // Organize categories into groups
   const categoryGroups = [
-    {
-      group: 'Income',
-      icon: '💼',
-      categories: [
-        { key: 'salary', label: 'Salary', icon: '💰' },
-      ]
-    },
-    {
-      group: 'Fixed Expenses',
-      icon: '🏠',
-      categories: [
-        { key: 'home', label: 'Home', icon: '🏠' },
-        { key: 'houseExp', label: 'House Exp', icon: '🏡' },
-        { key: 'card', label: 'Card', icon: '💳' },
-      ]
-    },
-    {
-      group: 'Investments',
-      icon: '📈',
-      categories: [
-        { key: 'mf', label: 'MF', icon: '📈' },
-        { key: 'fd', label: 'FD', icon: '🏦' },
-        { key: 'indStock', label: 'Ind Stock', icon: '📊' },
-        { key: 'usStock', label: 'US Stock', icon: '🗽' },
-        { key: 'metal', label: 'Metal', icon: '⭐' },
-      ]
-    },
-    {
-      group: 'Contingency',
-      icon: '🛡️',
-      categories: [
-        { key: 'emergency', label: 'Emergency', icon: '🚨' },
-        { key: 'savings', label: 'Savings', icon: '💰' },
-      ]
-    },
+    { group: 'Income', icon: '💼', categories: [{ key: 'salary', label: 'Salary', icon: '💰' }] },
+    { group: 'Fixed Expenses', icon: '🏠', categories: [
+      { key: 'home', label: 'Home', icon: '🏠' },
+      { key: 'houseExp', label: 'House Exp', icon: '🏡' },
+      { key: 'card', label: 'Card', icon: '💳' },
+    ] },
+    { group: 'Investments', icon: '📈', categories: [
+      { key: 'mf', label: 'MF', icon: '📈' },
+      { key: 'fd', label: 'FD', icon: '🏦' },
+      { key: 'indStock', label: 'Ind Stock', icon: '📊' },
+      { key: 'usStock', label: 'US Stock', icon: '🗽' },
+      { key: 'metal', label: 'Metal', icon: '⭐' },
+    ] },
+    { group: 'Contingency', icon: '🛡️', categories: [
+      { key: 'emergency', label: 'Emergency', icon: '🚨' },
+      { key: 'savings', label: 'Savings', icon: '💰' },
+    ] },
   ];
 
-  const inputs = [];
   const groupSections = categoryGroups.map(grp => {
-    const groupCards = el('div', { class: 'alloc-form-group-cards' }, grp.categories.map(cat => {
-      const inp = numInput(curAlloc[cat.key], 'Amount');
+    const rows = el('div', { class: 'alloc-form-rows' }, grp.categories.map(cat => {
+      const inp = numInput(0, '0');
       fields[cat.key] = inp;
       inputs.push(inp);
 
-      return el('div', { class: 'alloc-form-card' }, [
-        el('div', { class: 'alloc-form-cat-header' }, [
-          el('span', { class: 'alloc-form-cat-icon', text: cat.icon }),
-          el('span', { class: 'alloc-form-cat-label', text: cat.label }),
+      return el('div', { class: 'alloc-form-row' }, [
+        el('div', { class: 'alloc-form-row-left' }, [
+          el('span', { class: 'alloc-form-row-icon', text: cat.icon }),
+          el('span', { class: 'alloc-form-row-label', text: cat.label }),
         ]),
-        el('div', { class: 'alloc-form-input-wrap' }, [
+        el('div', { class: 'alloc-form-row-input-wrap' }, [
           inp,
-          el('span', { class: 'alloc-form-currency', text: '₹' }),
+          el('span', { class: 'alloc-form-row-currency', text: '₹' }),
         ]),
       ]);
     }));
@@ -2990,28 +2984,60 @@ async function openAllocForm(year, focusCategory = null) {
         el('span', { class: 'alloc-form-section-icon', text: grp.icon }),
         el('h3', { class: 'alloc-form-section-title', text: grp.group }),
       ]),
-      groupCards,
+      rows,
     ]);
   });
 
-  const save = async () => {
-    const rec = { year, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
-    Object.keys(fields).forEach(key => {
-      rec[key] = Number(fields[key].value) || 0;
-    });
+  // Tracks the DB id of whatever year is currently loaded into the fields
+  // (null = this year has no saved record yet, so Save will insert).
+  let loadedId = null;
+  let loadedYear = startYear;
 
-    if (curAlloc.id) rec.id = curAlloc.id;
+  const existingBadge = el('span', { class: 'alloc-form-year-badge', text: '' });
+
+  const loadYear = (y) => {
+    loadedYear = y;
+    const existing = allAllocs.find(a => a.year === y);
+    const src = existing || blankAlloc();
+    loadedId = existing ? existing.id : null;
+    Object.keys(fields).forEach(key => { fields[key].value = src[key] || 0; });
+    existingBadge.textContent = existing ? '✎ Editing saved entry' : '＋ New entry';
+    existingBadge.classList.toggle('is-existing', !!existing);
+    title.textContent = `Annual Allocation — ${y}`;
+  };
+
+  const yearInput = el('input', {
+    type: 'number', inputmode: 'numeric', step: '1', value: startYear,
+    class: 'alloc-form-year-input',
+  });
+  yearInput.addEventListener('change', () => {
+    const y = parseInt(yearInput.value, 10);
+    if (Number.isFinite(y)) loadYear(y);
+  });
+
+  const title = el('h2', { text: `Annual Allocation — ${startYear}` });
+
+  const save = async () => {
+    const y = parseInt(yearInput.value, 10);
+    if (!Number.isFinite(y)) { toast('Enter a valid year'); return; }
+    const rec = { year: y, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    Object.keys(fields).forEach(key => { rec[key] = Number(fields[key].value) || 0; });
+    if (loadedId) rec.id = loadedId;
     await DB.put('allocations', rec);
     closeModal();
-    _allocYear = year;
+    _allocYear = y;
     renderAllocation($('#expenseView'));
-    toast('Allocations saved for ' + year);
+    toast('Allocations saved for ' + y);
   };
 
   openModal(el('div', { class: 'sheet has-fixed-footer' }, [
     el('div', { class: 'sheet-scroll' }, [
-      el('h2', { text: `Annual Allocation - ${year}` }),
-      el('p', { class: 'hint', text: 'Enter how much you allocate to each category for this year' }),
+      title,
+      el('div', { class: 'alloc-form-year-picker' }, [
+        el('label', { text: 'Year' }),
+        yearInput,
+        existingBadge,
+      ]),
       el('div', { class: 'alloc-form-sections' }, groupSections),
     ]),
     el('div', { class: 'sheet-footer' }, [el('div', { class: 'btn-row', style: 'flex-wrap:wrap' }, [
@@ -3019,6 +3045,8 @@ async function openAllocForm(year, focusCategory = null) {
       el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }),
     ])]),
   ]));
+
+  loadYear(startYear);
 
   if (focusCategory && fields[focusCategory]) {
     fields[focusCategory].focus();
@@ -3117,13 +3145,6 @@ async function renderDividend() {
 // ---- Stocks tab: India/US filter + grouping by current-year status ----
 function renderDivStocks(host, all, mod) {
   const curYear = new Date().getFullYear();
-  const seg = el('div', { class: 'seg trends-filter' }, [['in', 'India'], ['us', 'US']].map(([v, label]) =>
-    el('button', {
-      class: (_divMarket === v ? 'active' : ''), 'data-filter': v, text: label,
-      onclick: () => { if (_divMarket === v) return; _divMarket = v; renderDividend(); },
-    })));
-  host.appendChild(seg);
-
   const rows = all.filter((d) => d.market === _divMarket);
   const cur = mod.curOfMarket(_divMarket);
 
@@ -3135,15 +3156,22 @@ function renderDivStocks(host, all, mod) {
   const inTotal = inEarning.reduce((sum, rec) => sum + (mod.yearTotal(rec, curYear) || 0), 0);
   const usTotal = usEarning.reduce((sum, rec) => sum + (mod.yearTotal(rec, curYear) || 0), 0);
 
-  // Stats bar showing counts and totals per market
+  // Stats bar doubles as the India/US switch — tap a side to select that
+  // market instead of a separate tab row above it.
   const statsCont = el('div', { class: 'div-stats-bar' }, [
-    el('div', { class: 'div-stat-item' }, [
+    el('div', {
+      class: 'div-stat-item' + (_divMarket === 'in' ? ' active' : ''),
+      onclick: () => { if (_divMarket === 'in') return; _divMarket = 'in'; renderDividend(); },
+    }, [
       el('div', { class: 'div-stat-label', text: 'India Stocks' }),
       el('div', { class: 'div-stat-count', text: String(inEarning.length) }),
       el('div', { class: 'div-stat-total', text: mod.fmtDiv(inTotal, 'INR') }),
     ]),
     el('div', { class: 'div-stat-sep' }),
-    el('div', { class: 'div-stat-item' }, [
+    el('div', {
+      class: 'div-stat-item' + (_divMarket === 'us' ? ' active' : ''),
+      onclick: () => { if (_divMarket === 'us') return; _divMarket = 'us'; renderDividend(); },
+    }, [
       el('div', { class: 'div-stat-label', text: 'US Stocks' }),
       el('div', { class: 'div-stat-count', text: String(usEarning.length) }),
       el('div', { class: 'div-stat-total', text: mod.fmtDiv(usTotal, 'USD') }),
@@ -3365,37 +3393,42 @@ async function openDivForm(rec) {
       // India: show units + per-month breakdown with live total calculation.
       const uu = numInput(a, 'Units');
       const breakdownWrap = el('div', { class: 'div-india-breakdown' });
+      const monthInputsWrap = el('div', { class: 'div-india-month-inputs' });
 
-      const updateIndiaBreakdown = () => {
-        breakdownWrap.innerHTML = '';
-        const monthBtns = [];
-        const monthInputsList = [];
-
-        [...yearMonths].sort((m1, m2) => mod.MONTHS.indexOf(m1) - mod.MONTHS.indexOf(m2)).forEach((m) => {
-          const inp = numInput(monthlyInputs[m], m.slice(0, 3) + '/u');
-          monthlyInputs[m] = inp.value;
-          monthInputsList.push(inp);
-          const label = el('label', { class: 'div-month-input' }, [
-            el('span', { text: m + ':' }),
-            inp,
-          ]);
-          breakdownWrap.appendChild(label);
-          inp.addEventListener('change', () => { monthlyInputs[m] = inp.value; updateTotal(); });
-        });
-        updateTotal();
-      };
+      // Summary nodes are created ONCE and updated in place (textContent only)
+      // on every change — never recreated/re-appended. Recreating on each
+      // keystroke/fetch was appending a fresh copy on top of the old one every
+      // time instead of replacing it, so the calculation appeared to pile up.
+      const calcSpan = el('span', { class: 'div-breakdown-calc' });
+      const totalSpan = el('span', { class: 'div-breakdown-total' });
+      breakdownWrap.appendChild(monthInputsWrap);
+      breakdownWrap.appendChild(el('div', { class: 'div-breakdown-summary' }, [calcSpan, totalSpan]));
 
       const updateTotal = () => {
         const units = Number(uu.value) || 0;
         const perMonthVals = Object.values(monthlyInputs).map((v) => Number(v) || 0);
         const sum = perMonthVals.reduce((a, b) => a + b, 0);
         const yearTotal = units * sum;
-        const summary = el('div', { class: 'div-breakdown-summary' }, [
-          el('span', { class: 'div-breakdown-calc', text: perMonthVals.length ? perMonthVals.join(' + ') + ' = ' + sum.toFixed(2) : '—' }),
-          el('span', { class: 'div-breakdown-total', text: units + ' × ' + sum.toFixed(2) + ' = ' + mod.fmtDiv(yearTotal, 'INR') }),
-        ]);
-        breakdownWrap.appendChild(summary);
+        calcSpan.textContent = perMonthVals.length ? perMonthVals.join(' + ') + ' = ' + sum.toFixed(2) : '—';
+        totalSpan.textContent = units + ' × ' + sum.toFixed(2) + ' = ' + mod.fmtDiv(yearTotal, 'INR');
       };
+
+      const updateIndiaBreakdown = () => {
+        monthInputsWrap.innerHTML = '';
+        [...yearMonths].sort((m1, m2) => mod.MONTHS.indexOf(m1) - mod.MONTHS.indexOf(m2)).forEach((m) => {
+          const inp = numInput(monthlyInputs[m], m.slice(0, 3) + '/u');
+          monthlyInputs[m] = inp.value;
+          const label = el('label', { class: 'div-month-input' }, [
+            el('span', { text: m + ':' }),
+            inp,
+          ]);
+          monthInputsWrap.appendChild(label);
+          inp.addEventListener('change', () => { monthlyInputs[m] = inp.value; updateTotal(); });
+        });
+        updateTotal();
+      };
+
+      uu.addEventListener('change', updateTotal);
 
       // Last fetched date display
       const lastFetchedSpan = el('span', { class: 'div-fetch-date', text: '—' });
@@ -3572,15 +3605,6 @@ async function openDivForm(rec) {
     el('h2', { text: rec.name || 'Edit stock' }),
     el('p', { class: 'hint', text: (isUs ? 'US ($)' : 'India (₹)') + ' · name and market are set on the Stocks edit form.' }),
   ];
-
-  // Show pending notice for stocks without current year data — the row is
-  // already there, ready to fill in, no button click needed.
-  if (!hasCurYear) {
-    headerContent.push(el('div', { class: 'div-pending-notice' }, [
-      el('span', { text: '📋 Pending ' + curYear }),
-      el('span', { text: 'Fill in the ' + curYear + ' details below and tap Save.' }),
-    ]));
-  }
 
   headerContent.push(content);
 
