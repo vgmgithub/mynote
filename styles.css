@@ -245,15 +245,24 @@ main.swipe-in-left { animation: swipe-from-left 0.18s ease-out; }
 .div-month { }
 .div-month-cur { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
 .div-cal-row { padding: 4px 0; }
+/* Stocks tab: group headings for current-year status */
+.div-group-head { font-size: 0.85rem; font-weight: 700; color: var(--text); margin-top: 16px; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.3px; opacity: 0.9; }
+.div-group-head:first-child { margin-top: 0; }
 /* Form: month toggle grid + per-year editor rows */
 .div-mon-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .div-mon-btn { padding: 7px 0; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--muted); font-size: 0.74rem; }
 .div-mon-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
+/* Per-year month selector: compact single-letter buttons in a 3-col grid. Year input
+   + months grid sit side-by-side in .div-year-input-group. */
+.div-year-input-group { display: flex; flex-direction: column; gap: 6px; flex: 1; }
+.div-year-months { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; }
+.div-year-mon-btn { padding: 4px 0; border-radius: 4px; border: 1px solid var(--line); background: var(--card); color: var(--muted); font-size: 0.62rem; font-weight: 600; cursor: pointer; transition: all .1s ease; }
+.div-year-mon-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 .div-yedit-head { display: grid; grid-template-columns: 1fr 1fr 1fr 2rem; gap: 6px; color: var(--muted); font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 4px; }
 .div-yedit-row { display: grid; grid-template-columns: 1fr 1fr 1fr 2rem; gap: 6px; align-items: center; margin-bottom: 6px; }
 /* US years skip units/per-unit — one direct-amount column instead of two */
-.div-yedit-head-us { grid-template-columns: 1fr 1fr 2rem; }
-.div-yedit-row-us { grid-template-columns: 1fr 1fr 2rem; }
+.div-yedit-head-us { grid-template-columns: 1.5fr 1fr 2rem; }
+.div-yedit-row-us { grid-template-columns: 1.5fr 1fr 2rem; }
 .div-year-editor + .btn { margin-top: 2px; }
 /* Metals: price control row under the summary card */
 .metal-price-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 2px 10px; }

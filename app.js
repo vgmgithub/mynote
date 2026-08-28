@@ -2915,7 +2915,7 @@ async function renderDividend() {
   return renderDivStocks(host, all, mod);
 }
 
-// ---- Stocks tab: India/US filter + per-stock cards ----
+// ---- Stocks tab: India/US filter + grouping by current-year status ----
 function renderDivStocks(host, all, mod) {
   const curYear = new Date().getFullYear();
   const seg = el('div', { class: 'seg trends-filter' }, [['in', 'India'], ['us', 'US']].map(([v, label]) =>
@@ -2935,9 +2935,33 @@ function renderDivStocks(host, all, mod) {
     return;
   }
   const cur = mod.curOfMarket(_divMarket);
-  rows.sort((a, b2) => mod.yearTotal(b2, curYear) - mod.yearTotal(a, curYear));
+
+  // Helper to get most recent year total for sorting.
+  const sortKey = (rec) => {
+    const recentYear = mod.yearsOf(rec)[0];
+    return recentYear ? mod.yearTotal(rec, recentYear) : 0;
+  };
+
+  // Group by current-year status, sort each group by most recent year total (desc).
+  const withCurYear = rows.filter((rec) => mod.yearTotal(rec, curYear) > 0).sort((a, b2) => sortKey(b2) - sortKey(a));
+  const withoutCurYear = rows.filter((rec) => mod.yearTotal(rec, curYear) <= 0).sort((a, b2) => sortKey(b2) - sortKey(a));
+
   const wrap = el('section', { class: 'stock-list' });
-  rows.forEach((rec) => wrap.appendChild(_divCard(rec, mod, curYear, cur)));
+
+  // Stocks with current-year data.
+  if (withCurYear.length) {
+    const heading = el('h3', { class: 'div-group-head', text: '📊 Noted for ' + curYear });
+    wrap.appendChild(heading);
+    withCurYear.forEach((rec) => wrap.appendChild(_divCard(rec, mod, curYear, cur)));
+  }
+
+  // Stocks without current-year data.
+  if (withoutCurYear.length) {
+    const heading = el('h3', { class: 'div-group-head', text: '📋 Pending ' + curYear });
+    wrap.appendChild(heading);
+    withoutCurYear.forEach((rec) => wrap.appendChild(_divCard(rec, mod, curYear, cur)));
+  }
+
   host.appendChild(wrap);
 }
 
@@ -3051,40 +3075,52 @@ async function openDivForm(rec) {
   const linkedStock = !isUs ? await DB.get('stocks', rec.stockId).catch(() => null) : null;
   const currentUnits = linkedStock ? (Number(linkedStock.units) || 0) : '';
 
-  // Payout-month toggles (Jan–Dec).
-  const selMonths = new Set(mod.parseMonths(rec.months));
-  const monthsWrap = el('div', { class: 'div-mon-grid' }, mod.MONTHS.map((m) => {
-    const btn = el('button', { type: 'button', class: 'div-mon-btn' + (selMonths.has(m) ? ' active' : ''), text: m });
-    btn.addEventListener('click', () => {
-      if (selMonths.has(m)) { selMonths.delete(m); btn.classList.remove('active'); }
-      else { selMonths.add(m); btn.classList.add('active'); }
-    });
-    return btn;
-  }));
-
-  // Per-year rows. India: year / units / dividend-per-unit. US: year / direct
-  // dividend amount (no units — the user reads one figure off their broker).
+  // Per-year rows with embedded month toggles. India: year / months / units /
+  // dividend-per-unit. US: year / months / direct dividend amount (no units).
   const yearRowsWrap = el('div', { class: 'div-year-editor' });
   const yearRefs = [];
   const numInput = (v, ph) => el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: v != null && v !== '' ? v : '', placeholder: ph });
+
   const addYearRow = (year, a, b2) => {
     const yy = el('input', { type: 'number', inputmode: 'numeric', step: '1', value: year != null ? year : '', placeholder: 'Year' });
     const rm = el('button', { class: 'icon-btn', type: 'button', text: '×' });
+
+    // Per-year month toggles (compact 3-col grid).
+    const yearMonths = new Set();
+    const monthsGrid = el('div', { class: 'div-year-months' }, mod.MONTHS.map((m) => {
+      const btn = el('button', {
+        type: 'button', class: 'div-year-mon-btn', text: m.slice(0, 1),
+        title: m, 'data-month': m,
+      });
+      btn.addEventListener('click', () => {
+        if (yearMonths.has(m)) { yearMonths.delete(m); btn.classList.remove('active'); }
+        else { yearMonths.add(m); btn.classList.add('active'); }
+      });
+      return btn;
+    }));
+
     let row, ref;
     if (isUs) {
       const amt = numInput(a, 'Dividend amount');
-      ref = { yy, amt, removed: false };
-      row = el('div', { class: 'div-yedit-row div-yedit-row-us' }, [yy, amt, rm]);
+      ref = { yy, amt, yearMonths, removed: false };
+      row = el('div', { class: 'div-yedit-row div-yedit-row-us' }, [
+        el('div', { class: 'div-year-input-group' }, [yy, monthsGrid]),
+        amt, rm,
+      ]);
     } else {
       const uu = numInput(a, 'Units');
       const pp = numInput(b2, 'Div/unit');
-      ref = { yy, uu, pp, removed: false };
-      row = el('div', { class: 'div-yedit-row' }, [yy, uu, pp, rm]);
+      ref = { yy, uu, pp, yearMonths, removed: false };
+      row = el('div', { class: 'div-yedit-row' }, [
+        el('div', { class: 'div-year-input-group' }, [yy, monthsGrid]),
+        uu, pp, rm,
+      ]);
     }
     rm.addEventListener('click', () => { row.remove(); ref.removed = true; });
     yearRefs.push(ref);
     yearRowsWrap.appendChild(row);
   };
+
   const sortedYears = (rec.years || []).slice().sort((x, y) => Number(y.year) - Number(x.year));
   // A US year saved before the direct-amount change has no `amount` yet (old
   // units/perUnit shape) — show its computed total so the figure isn't lost.
@@ -3109,8 +3145,13 @@ async function openDivForm(rec) {
   };
 
   const save = async () => {
+    // Collect all unique months from all year rows.
+    const allMonths = new Set();
+    for (const r of yearRefs) {
+      if (!r.removed) r.yearMonths.forEach((m) => allMonths.add(m));
+    }
     const out = Object.assign({}, rec, {
-      months: [...selMonths].sort((a, b2) => mod.MONTHS.indexOf(a) - mod.MONTHS.indexOf(b2)),
+      months: [...allMonths].sort((a, b2) => mod.MONTHS.indexOf(a) - mod.MONTHS.indexOf(b2)),
       years: collectYears(),
       updatedAt: new Date().toISOString(),
     });
@@ -3119,11 +3160,11 @@ async function openDivForm(rec) {
   };
 
   const yearHead = isUs
-    ? el('div', { class: 'div-yedit-head div-yedit-head-us' }, [el('span', { text: 'Year' }), el('span', { text: 'Dividend amount' }), el('span')])
-    : el('div', { class: 'div-yedit-head' }, [el('span', { text: 'Year' }), el('span', { text: 'Units' }), el('span', { text: 'Div/unit' }), el('span')]);
+    ? el('div', { class: 'div-yedit-head div-yedit-head-us' }, [el('span', { text: 'Year & months' }), el('span', { text: 'Dividend amount' }), el('span')])
+    : el('div', { class: 'div-yedit-head' }, [el('span', { text: 'Year & months' }), el('span', { text: 'Units' }), el('span', { text: 'Div/unit' }), el('span')]);
   const content = el('div', {}, [
-    field('Payout months — tap the months it usually pays', monthsWrap),
-    field(isUs ? 'Per-year dividend amount' : 'Per-year units & dividend per unit', el('div', {}, [
+    field(isUs ? 'Per-year months & dividend amount' : 'Per-year months, units & dividend per unit', el('div', {}, [
+      el('p', { class: 'hint', style: 'margin:0 0 8px', text: 'Tap month initials to mark which months this year paid. Global months list updates from all years.' }),
       yearHead,
       yearRowsWrap,
       addYearBtn,
