@@ -3089,6 +3089,9 @@ async function openDivForm(rec) {
     const yearMonths = new Set();
     const monthlyInputs = {};  // {month: perUnitAmount} for India stocks
 
+    // Define updateIndiaBreakdown as a stub first (for India stocks to override later).
+    let updateIndiaBreakdown = () => {};
+
     const monthsGrid = el('div', { class: 'div-year-months' }, mod.MONTHS.map((m) => {
       const btn = el('button', {
         type: 'button', class: 'div-year-mon-btn', text: m.slice(0, 1),
@@ -3104,7 +3107,7 @@ async function openDivForm(rec) {
           monthlyInputs[m] = '';
           btn.classList.add('active');
         }
-        if (!isUs) updateIndiaBreakdown();
+        updateIndiaBreakdown();
       });
       return btn;
     }));
