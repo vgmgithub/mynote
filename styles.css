@@ -1570,8 +1570,9 @@ html[data-theme="light"] {
 .alloc-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
 .alloc-header h3 { margin: 0; font-size: 1rem; }
 .alloc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin: 16px 0; }
-.alloc-card { background: var(--card-2); border: 1px solid var(--line); border-radius: 12px; padding: 14px; cursor: pointer; transition: all 0.2s ease; }
-.alloc-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+/* Display-only now — editing is the single "Edit All Allocations" button
+   below, not a per-card tap — so no cursor/hover-lift affordance. */
+.alloc-card { background: var(--card-2); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
 .alloc-cat-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .alloc-icon { font-size: 1.2rem; }
 .alloc-label { font-size: 0.75rem; font-weight: 700; color: var(--muted); text-transform: uppercase; }

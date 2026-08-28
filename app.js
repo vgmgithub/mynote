@@ -2825,10 +2825,18 @@ async function renderHomeExpense() {
 
 // ---------- Allocation tracker (Expense → Allocation tab) ----------
 async function renderAllocation(host) {
+  // This is called again on every year-switch and after every save (not just
+  // on first entry to the tab, unlike most other renderX functions which are
+  // only ever called once per tab-open from an already-cleared host) — clear
+  // it every time or the whole section (header, year buttons, cards, total)
+  // piles up underneath its previous copy instead of replacing it.
+  host.innerHTML = '';
   const allAllocs = await DB.all('allocations').catch(() => []);
   const curYear = new Date().getFullYear();
   const allocYears = allAllocs.map(a => a.year).sort((a, b) => b - a);
-  const selectedYear = allocYears.length > 0 ? allocYears[0] : curYear;
+  // Respect whichever year the user last selected/saved (_allocYear) as long
+  // as it's still on record; otherwise fall back to the latest year.
+  const selectedYear = allocYears.includes(_allocYear) ? _allocYear : (allocYears.length > 0 ? allocYears[0] : curYear);
 
   const allocCategories = [
     { key: 'salary', label: 'Salary', icon: '💼' },
@@ -2884,7 +2892,9 @@ async function renderAllocation(host) {
     const stepUp = prevVal > 0 ? (((val - prevVal) / prevVal) * 100) : (val > 0 ? 100 : 0);
     const stepUpClass = stepUp > 5 ? 'step-up-pos' : stepUp < -5 ? 'step-up-neg' : 'step-up-flat';
 
-    const card = el('div', { class: 'alloc-card', onclick: () => openAllocForm(selectedYear, cat.key) }, [
+    // Display-only — editing happens through the single "Edit All Allocations"
+    // button below, not by tapping an individual category card.
+    const card = el('div', { class: 'alloc-card' }, [
       el('div', { class: 'alloc-cat-header' }, [
         el('span', { class: 'alloc-icon', text: cat.icon }),
         el('span', { class: 'alloc-label', text: cat.label }),
@@ -2919,7 +2929,7 @@ async function renderAllocation(host) {
 // editable inside the form itself, so the same modal handles adding a brand
 // new year (including PAST years, to build up history for the step-up %
 // insight) as well as editing an existing one.
-async function openAllocForm(year = null, focusCategory = null) {
+async function openAllocForm(year = null) {
   const allAllocs = await DB.all('allocations');
   const curYear = new Date().getFullYear();
   const allocYears = allAllocs.map(a => a.year).sort((a, b) => a - b);
@@ -3048,11 +3058,7 @@ async function openAllocForm(year = null, focusCategory = null) {
 
   loadYear(startYear);
 
-  if (focusCategory && fields[focusCategory]) {
-    fields[focusCategory].focus();
-  } else if (inputs.length > 0) {
-    inputs[0].focus();
-  }
+  if (inputs.length > 0) inputs[0].focus();
 }
 
 let _allocYear = new Date().getFullYear();
