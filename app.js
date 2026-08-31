@@ -5747,7 +5747,10 @@ async function renderCreditCards(host) {
 
   const thisYm = todayISO().slice(0, 7);
   const timelineEndYm = g.latestYm && g.latestYm > thisYm ? g.latestYm : thisYm;
-  const timelineYms = mod.monthRangeYm(CC_TIMELINE_START_YM, timelineEndYm);
+  // Latest month first — monthRangeYm builds ascending (oldest→newest, since
+  // that's the natural order for a fixed range), reversed here purely for
+  // display so the timeline reads latest-to-old left to right.
+  const timelineYms = mod.monthRangeYm(CC_TIMELINE_START_YM, timelineEndYm).reverse();
   const selYm = _ccSelectedYm && timelineYms.includes(_ccSelectedYm) ? _ccSelectedYm : (g.latestYm || thisYm);
   const selMonthly = g.monthly.find((m) => m.ym === selYm) || { ym: selYm, billed: 0, reimbursed: 0, toBePaid: 0, fullyPaid: false };
 

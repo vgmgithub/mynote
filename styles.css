@@ -1189,8 +1189,8 @@ body.locked { overflow: hidden; }
    month) layers UNDER cc-fully-paid (a ring + extra-bold text, once every
    card billed that month is marked settled) — two independent signals, so
    neither one's color should stomp the other's. */
-.cc-grid td.cc-heat-better { background: rgba(52,211,153,0.16); border-radius: 4px; }
-.cc-grid td.cc-heat-worse { background: rgba(248,113,113,0.16); border-radius: 4px; }
+.cc-grid td.cc-heat-better { background: rgba(52,211,153,0.4); border-radius: 4px; }
+.cc-grid td.cc-heat-worse { background: rgba(248,113,113,0.4); border-radius: 4px; }
 .cc-grid td.cc-heat-flat { background: transparent; }
 .cc-grid td.cc-fully-paid { font-weight: 800; box-shadow: inset 0 0 0 1px rgba(52,211,153,0.55); border-radius: 4px; }
 
