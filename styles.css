@@ -1185,18 +1185,44 @@ body.locked { overflow: hidden; }
 .cc-grid th.rowhead, .cc-grid th.corner { max-width: none; white-space: nowrap; font-weight: 600; }
 .cc-grid tr.cc-sum th.rowhead { color: var(--muted); font-weight: 700; }
 .cc-grid tr.cc-sum:first-of-type th, .cc-grid tr.cc-sum:first-of-type td { border-top: 2px solid var(--line); }
-/* "To be paid" cell once every card billed that month is marked paid via the
-   card list's "To Pay" button — green + bolder than the grid's usual 600. */
-.cc-grid td.cc-fully-paid { font-weight: 800; background: rgba(52,211,153,0.12); border-radius: 4px; }
+/* "To be paid" row: heatmap background from cc-heat-* (trend vs previous
+   month) layers UNDER cc-fully-paid (a ring + extra-bold text, once every
+   card billed that month is marked settled) — two independent signals, so
+   neither one's color should stomp the other's. */
+.cc-grid td.cc-heat-better { background: rgba(52,211,153,0.16); border-radius: 4px; }
+.cc-grid td.cc-heat-worse { background: rgba(248,113,113,0.16); border-radius: 4px; }
+.cc-grid td.cc-heat-flat { background: transparent; }
+.cc-grid td.cc-fully-paid { font-weight: 800; box-shadow: inset 0 0 0 1px rgba(52,211,153,0.55); border-radius: 4px; }
 
-/* Card list: "To Pay" action button (replaces the old static figure) and its
-   paid-confirmation counterpart once tapped. */
 .btn.warn { background: var(--warn); color: #3a2405; }
-.cc-pay-btn { min-height: 0; }
-.cc-paid-tag { color: var(--good); }
-/* Small inline confirmation next to a month row in the Details > Months editor
-   — paidOn isn't editable there, this just shows its current state. */
-.cc-row-paid-tag { flex: 0 0 auto; }
+
+/* Month timeline strip above the card list — tap a month to view/edit that
+   specific bill. Same bare horizontal-scroll-rail technique as
+   .due-soon-rail, just without its "more to scroll" fade (a month strip is
+   expected to run long, unlike a short due-soon list). */
+.cc-timeline-scroll { overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; margin: 4px 0 14px; }
+.cc-timeline-scroll::-webkit-scrollbar { display: none; }
+.cc-timeline { display: flex; gap: 6px; padding-bottom: 2px; }
+.cc-timeline-chip {
+  flex: 0 0 auto; padding: 7px 12px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--card-2); color: var(--muted);
+  font-size: 0.76rem; font-weight: 600; white-space: nowrap; cursor: pointer;
+}
+.cc-timeline-chip.is-current { border-color: var(--accent); }
+.cc-timeline-chip.active { background: var(--accent); border-color: var(--accent); color: #06243a; }
+
+/* Card list: this-month status, read-only (set from the card's own
+   Details > Months tab, not from here). */
+.cc-status-ontime { color: var(--good); font-weight: 700; }
+.cc-status-late { color: var(--bad); font-weight: 700; }
+.cc-status-unpaid { color: var(--warn); font-weight: 700; }
+
+/* Common per-month reimbursement box below the card list */
+.cc-reimb-card input {
+  width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--card-2); color: var(--text); font-size: 0.95rem;
+}
+.cc-reimb-card input:focus { outline: none; border-color: var(--accent); }
 
 /* "What makes up Total Invested" sheet */
 .brk-head { display: flex; justify-content: space-between; color: var(--muted); font-size: 0.68rem;
@@ -1323,6 +1349,15 @@ img.metal-bar-ico { width: 30px; height: 30px; object-fit: contain; display: blo
 .mf-txn-row input::placeholder { color: var(--muted); }
 .mf-txn-row .icon-btn { flex: 0 0 auto; color: var(--muted); border-radius: 8px; }
 .mf-txn-row .icon-btn:hover, .mf-txn-row .icon-btn:active { color: var(--bad); background: var(--card-2); }
+/* Credit card month editor's Ontime/Late Payment status dropdown — same
+   dark-theme treatment as .mf-txn-row input (selects don't inherit it). */
+.mf-txn-row select.cc-status-select {
+  flex: 0 0 auto; width: auto; min-width: 0;
+  background: var(--card-2); color: var(--text);
+  border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 10px; font-size: 0.8rem;
+}
+.mf-txn-row select.cc-status-select:focus { outline: none; border-color: var(--accent); }
 
 /* Buy/Sell summary caption + empty state above each transaction list */
 .mf-txn-pane { margin-top: 10px; }
