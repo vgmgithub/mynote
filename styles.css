@@ -205,6 +205,11 @@ main.swipe-in-left { animation: swipe-from-left 0.18s ease-out; }
 .meta-line { color: var(--muted); font-size: 0.74rem; margin-top: 3px; }
 .meta-line b { color: var(--text); font-weight: 600; }
 .meta-line.warn { color: var(--warn); font-weight: 600; }
+/* Stock card's "Since <year> · N yrs" line — deliberately much smaller than
+   the other meta-lines so it reads as a footnote, not primary info; only the
+   year itself is bold to still catch the eye. */
+.meta-line.since-year { font-size: 0.6rem; }
+.meta-line.since-year b { font-weight: 700; }
 /* Per-portfolio "prices updated" line under each Portfolios-card stat */
 .stat-upd { font-size: 0.58rem; color: var(--muted); margin-top: 2px; }
 .stat-upd.warn { color: var(--warn); font-weight: 600; }

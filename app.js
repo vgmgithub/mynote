@@ -628,7 +628,9 @@ function stockCard(s) {
     // reach years further back than one with existing dividend data.
     if (s.startYear) {
       const yrs = Math.max(1, new Date().getFullYear() - Number(s.startYear) + 1);
-      left.appendChild(el('div', { class: 'meta-line flat', text: 'Since ' + s.startYear + ' · ' + yrs + (yrs === 1 ? ' yr' : ' yrs') }));
+      left.appendChild(el('div', { class: 'meta-line since-year' }, [
+        'Since ', b(String(s.startYear)), ' · ' + yrs + (yrs === 1 ? ' yr' : ' yrs'),
+      ]));
     }
   }
 
