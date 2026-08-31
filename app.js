@@ -624,6 +624,12 @@ function stockCard(s) {
       else if (Number(s.units)) left.appendChild(el('div', { class: 'meta-line' }, [b(String(Number(s.units))), ' @ ' + fmtCur(s.buyPrice, cur), ' · set price']));
       else left.appendChild(el('div', { class: 'meta-line flat', text: 'Tap to add prices' }));
     }
+    // "Started (year)" from the form — also what the Dividends form uses to
+    // reach years further back than one with existing dividend data.
+    if (s.startYear) {
+      const yrs = Math.max(1, new Date().getFullYear() - Number(s.startYear) + 1);
+      left.appendChild(el('div', { class: 'meta-line flat', text: 'Since ' + s.startYear + ' · ' + yrs + (yrs === 1 ? ' yr' : ' yrs') }));
+    }
   }
 
   return el('div', { class: 'card', onclick: () => openStockForm(s) }, [el('div', { class: 'top' }, [left, right])]);
@@ -3355,10 +3361,12 @@ function renderDivCalendar(host, all, mod) {
 async function openDivForm(rec) {
   const mod = await import('./dividend.js');
   const isUs = rec.market === 'us';
-  // India only: current unit count from the linked stock, so a freshly-added
-  // year row starts pre-filled instead of blank (the units the record already
-  // has saved per past year are untouched - this only seeds NEW rows).
-  const linkedStock = !isUs ? await DB.get('stocks', rec.stockId).catch(() => null) : null;
+  // Fetched for both markets: India uses the current unit count so a
+  // freshly-added year row starts pre-filled instead of blank (past years'
+  // saved units are untouched — this only seeds NEW rows); both markets use
+  // `startYear` (see below) to reach further back than any year with
+  // existing dividend data — there's no "+ Add year" button any more.
+  const linkedStock = await DB.get('stocks', rec.stockId).catch(() => null);
   const currentUnits = linkedStock ? (Number(linkedStock.units) || 0) : '';
 
   // Per-year rows with embedded month toggles. India: year / months / units /
@@ -3536,9 +3544,20 @@ async function openDivForm(rec) {
   const usAmountOf = (y) => (y.amount != null ? y.amount : (y.units != null && y.perUnit != null ? (Number(y.units) || 0) * (Number(y.perUnit) || 0) : ''));
   const curYear = new Date().getFullYear();
 
-  // Collect all years, ensure current year is included
+  // Collect all years: every year with saved data, the current year, and —
+  // since there's no "+ Add year" button any more — every year from the
+  // linked stock's "Started (year)" field (set on the Stocks edit form)
+  // through the current year, so a stock held since e.g. 2020 can still
+  // have its 2020-2025 dividends entered even with nothing saved for them
+  // yet. Ignored if unset, later than this year, or absurdly early (a typo
+  // like "202" instead of "2020" would otherwise generate ~1800 empty rows).
   let allYears = sortedYears.map((y) => y.year);
   if (!allYears.includes(curYear)) allYears.push(curYear);
+  const rawStartYear = linkedStock && Number.isFinite(Number(linkedStock.startYear)) ? Number(linkedStock.startYear) : null;
+  const startYear = rawStartYear != null ? Math.min(Math.max(rawStartYear, curYear - 50), curYear) : null;
+  if (startYear) {
+    for (let y = startYear; y <= curYear; y++) allYears.push(y);
+  }
   allYears = [...new Set(allYears)].sort((a, b) => b - a); // unique, newest first
 
   // Whether this stock already had a current-year entry before opening the form
@@ -3578,15 +3597,19 @@ async function openDivForm(rec) {
     y.months ? y.months : (isUs ? [] : mod.parseMonths(rec.months)),
     isUs ? null : (y.perMonth || null),
   ));
-  if (!hasCurYear) {
-    // Brand new year, nothing saved for it yet — default its months to
-    // whatever the most recent prior year actually used (a reasonable guess
-    // that the stock keeps paying in the same months), falling back to the
-    // legacy record-level list if even that isn't available.
-    const priorMonths = (sortedYears[0] && sortedYears[0].months) ? sortedYears[0].months
-      : (isUs ? [] : mod.parseMonths(rec.months));
-    addYearRow(curYear, isUs ? '' : currentUnits, '', priorMonths, null);
-  }
+
+  // Every OTHER year in allYears (the current year, plus anything opened up
+  // by the stock's Started-year range) gets an empty row too, so it's
+  // reachable via the slider — there's no "+ Add year" button to create it
+  // on demand any more. Default months guess from the most recent prior
+  // year that actually has data (a reasonable bet the stock keeps paying in
+  // the same months), falling back to the legacy record-level list.
+  const yearsWithData = new Set(sortedYears.map((y) => y.year));
+  const priorMonths = (sortedYears[0] && sortedYears[0].months) ? sortedYears[0].months
+    : (isUs ? [] : mod.parseMonths(rec.months));
+  allYears.filter((y) => !yearsWithData.has(y)).sort((a, b) => a - b).forEach((y) => {
+    addYearRow(y, isUs ? '' : currentUnits, '', priorMonths, null);
+  });
 
   // Create slider navigation
   const showYear = (year) => {
@@ -7298,6 +7321,12 @@ function openStockForm(existing) {
   const units = numInput(s.units, '0');
   const buyPrice = numInput(s.buyPrice, '0');
   const currentPrice = numInput(s.currentPrice, '0');
+  // Which year this holding started — drives how many years the card shows
+  // ("Since 2020 · 7 yrs") and, for a dividend-tracked stock, how far back
+  // the Dividends form's year slider reaches (there's no "+ Add year" button
+  // there any more — see openDivForm — so this is the only way to reach a
+  // year further back than one with existing dividend data).
+  const startYear = el('input', { type: 'number', inputmode: 'numeric', step: '1', value: s.startYear != null ? s.startYear : '', placeholder: 'e.g. 2020' });
   const soldPrice = numInput(s.soldPrice, '0');
   const soldUnits = numInput(s.soldUnits, 'units sold');
   const soldDate = el('input', { type: 'date', value: s.soldDate || todayISO() });
@@ -7385,6 +7414,7 @@ function openStockForm(existing) {
       units: num(units.value),
       buyPrice: buyP,
       currentPrice: curP,
+      startYear: startYear.value !== '' ? (num(startYear.value) || null) : null,
       soldPrice: sold ? num(soldPrice.value) : null,
       soldUnits: sold ? num(soldUnits.value) : null,
       soldDate: sold ? (soldDate.value || todayISO()) : null,
@@ -7415,7 +7445,7 @@ function openStockForm(existing) {
     el('div', { class: 'field-row' }, [field('Category', category), field('Conviction', conviction)]),
     field('Status', status),
     el('div', { class: 'field-row' }, [field('Units held', units), field('Avg buy price', buyPrice)]),
-    field('Current price', currentPrice),
+    el('div', { class: 'field-row' }, [field('Current price', currentPrice), field('Started (year)', startYear)]),
     soldBlock,
     histBlock,
     field('Dividend available — shows this stock on the Dividends page', divSwitch),
