@@ -60,6 +60,9 @@ let _expSheetYm = null;      // month shown on the Expense tab; null = this mont
 // First month the monthly sheet covers. Nothing before this is reachable — the
 // sheet simply wasn't being kept then, so those months would be blank forever.
 const EXPENSE_START_YM = '2026-09';
+// The Tracker reaches further back than the monthly sheet: household spends
+// were being kept long before the sheet was, so its timeline starts here.
+const TRACKER_START_YM = '2024-09';
 // Which half of the Tracker tab is showing. Defaults to the category roll-up:
 // the entry list grows all month, and "where did it go" is the usual question.
 let _trkView = 'category';   // 'category' | 'entries'
@@ -3286,7 +3289,7 @@ async function renderSpendTracker(host, token) {
   // Timeline spans the tracker's start month through this one, plus any month
   // that already has entries (a back-dated spend outside the range must not
   // become unreachable).
-  const timelineYms = [...new Set(mod.monthRangeYm(EXPENSE_START_YM, thisYm).concat([...byYm.keys()], [thisYm]))]
+  const timelineYms = [...new Set(mod.monthRangeYm(TRACKER_START_YM, thisYm).concat([...byYm.keys()], [thisYm]))]
     .filter((k) => k <= thisYm).sort();
   if (!timelineYms.length) timelineYms.push(thisYm);
   if (!_trkYm || !timelineYms.includes(_trkYm)) _trkYm = timelineYms[timelineYms.length - 1];
@@ -3417,7 +3420,8 @@ async function renderSpendTracker(host, token) {
           class: 'icon-btn trk-del', type: 'button', text: '×', 'aria-label': 'Delete this spend',
           onclick: async (e) => {
             e.stopPropagation(); // the row opens the editor; the × must not
-            const billed = r.cardId != null;
+            // Only spends that actually reached a statement come back off one.
+            const billed = r.cardId != null && r.ym === _thisSpendYm();
             if (!window.confirm('Delete ' + fmtSheetCur(r.amount) + ' on ' + (r.category || '—') + '?'
               + (billed ? '\n\nIt will also come off that card\'s billed total for the month.' : ''))) return;
             if (billed) await _billSpendToCard(r.cardId, r.ym, -(Number(r.amount) || 0));
@@ -3451,6 +3455,17 @@ async function renderSpendTracker(host, token) {
 
   host.appendChild(el('p', { class: 'hint mf-foot', text: 'The kitty is the Allocation tab\'s House Exp doubled — the same figure from each of you. Every spend logged here comes off it. This tab always shows the current month; earlier months stay in the backup.' }));
 }
+
+// 'YYYY-MM' -> "Sep '26", for form copy that has no credit.js import to hand.
+const _spendMonthLabel = (k) => {
+  const m = /^(\d{4})-(\d{2})/.exec(k || '');
+  return m ? _SPEND_MONS[+m[2] - 1] + " '" + m[1].slice(2) : k;
+};
+
+// This month, as 'YYYY-MM'. Card statements are only touched for the CURRENT
+// month: an earlier month's bill has already been issued and very likely paid,
+// so back-filling a spend into it would rewrite a statement that is closed.
+const _thisSpendYm = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); };
 
 // Move `delta` onto a card's billed total for one month, creating the month row
 // if the card has none yet. Used with a positive delta when a card spend is
@@ -3649,10 +3664,26 @@ async function openSpendForm(budget, existing) {
     cardBtns.push(btn);
     return btn;
   }));
+  // Says so when the card WON'T be billed, rather than quietly not doing it:
+  // the picker still records which card paid, but an earlier month's statement
+  // is closed and isn't rewritten. Follows the date field, since changing the
+  // date is what moves a spend out of the current month.
+  const pastNote = el('p', { class: 'hint spend-card-note', style: 'margin:6px 0 0' });
+  const syncPastNote = () => {
+    const d = (dateInp.value || todayISO()).slice(0, 7);
+    const past = d !== _thisSpendYm();
+    pastNote.textContent = past
+      ? 'Recorded against the card, but ' + _spendMonthLabel(d) + ' is a closed month — its bill is left as it is.'
+      : '';
+    pastNote.classList.toggle('hidden', !past);
+  };
+  dateInp.addEventListener('change', syncPastNote);
+
   const cardField = field('Which card', cards.length
-    ? cardGrid
+    ? el('div', {}, [cardGrid, pastNote])
     : el('p', { class: 'hint', style: 'margin:0', text: 'No credit cards yet — add one on the Credit Card tab to bill spends to it.' }));
   cardField.classList.toggle('hidden', chosenMethod !== 'Card');
+  syncPastNote();
 
   const methodBtns = [];
   const methodRow = el('div', { class: 'seg spend-method' }, SPEND_METHODS.map((m) => {
@@ -3685,10 +3716,13 @@ async function openSpendForm(budget, existing) {
     // the previous version is unwound first. Done as reverse-then-apply rather
     // than a computed delta so the same two lines cover every combination —
     // including the same card and month, where the two writes simply net out.
-    if (editing && existing.cardId != null) {
+    // Both halves are gated on the CURRENT month, and on the same rule, so
+    // they stay in step: a month that was never billed is never unwound.
+    const curYm = _thisSpendYm();
+    if (editing && existing.cardId != null && existing.ym === curYm) {
       await _billSpendToCard(existing.cardId, existing.ym, -(Number(existing.amount) || 0));
     }
-    if (cardId != null) await _billSpendToCard(cardId, ym, amt);
+    if (cardId != null && ym === curYm) await _billSpendToCard(cardId, ym, amt);
     const rec = {
       ym, date: d, category: chosenCat, amount: amt,
       method: chosenMethod, cardId, note: note.value.trim() || null,
@@ -3697,7 +3731,7 @@ async function openSpendForm(budget, existing) {
     if (editing) rec.id = existing.id;
     await DB.put('spends', rec);
     closeModal();
-    toast((editing ? 'Updated ' : 'Added ') + fmtSheetCur(amt) + (cardId != null ? ' · billed to card' : ''));
+    toast((editing ? 'Updated ' : 'Added ') + fmtSheetCur(amt) + (cardId != null && ym === curYm ? ' · billed to card' : ''));
     renderHomeExpense();
   };
 
