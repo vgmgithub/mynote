@@ -3512,11 +3512,14 @@ async function openDivForm(rec) {
   const numInput = (v, ph) => el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: v != null && v !== '' ? v : '', placeholder: ph });
 
   let addYearRow = (year, a, b2, preSelectMonths = [], presetPerMonth = null) => {
-    // India only: the year is already shown (and changed) via the ◀ ▶ slider
-    // above, so a second, independently-editable year box on this row was
-    // redundant — kept in the DOM (collectYears() still reads its value) but
-    // hidden, so the month picker sits where it used to be.
-    const yy = el('input', { type: 'number', inputmode: 'numeric', step: '1', value: year != null ? year : '', placeholder: 'Year', class: isUs ? '' : 'hidden' });
+    // The year is already shown (and changed) via the ◀ ▶ slider above, whose
+    // range is built from the years that have entries plus the linked stock's
+    // "Started (year)" — so a second, independently-editable year box on this
+    // row was redundant, and typing into it could put a row on a year the
+    // slider can't reach. Kept in the DOM (collectYears() still reads its
+    // value) but hidden, so the month picker sits where it used to be. Both
+    // markets: US had it visible while it lacked a per-month editor.
+    const yy = el('input', { type: 'number', inputmode: 'numeric', step: '1', value: year != null ? year : '', placeholder: 'Year', class: 'hidden' });
     const rm = el('button', { class: 'icon-btn', type: 'button', text: '×' });
 
     // Per-year month toggles (compact 3-col grid).
