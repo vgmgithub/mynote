@@ -1842,10 +1842,31 @@ html[data-theme="light"] {
 }
 .fab.fab-spend:active { transform: translateY(1px); box-shadow: 0 4px 10px rgba(0,0,0,0.2); }
 .fab.fab-spend svg { width: 26px; height: 26px; display: block; }
-/* Timeline chip for a month that has spends — distinguishes "nothing logged"
-   from "not looked at yet" without competing with the selected state. */
-.cc-timeline-chip.has-data:not(.active) { color: var(--text); }
-.cc-timeline-chip.has-data::after { content: '·'; margin-left: 4px; opacity: 0.65; }
+/* Tracker timeline: three states that must be told apart at a glance —
+   an empty month, a month with spends in it, and the one being viewed.
+   Scoped to .trk-timeline so the Credit Card strip, which uses the same chip
+   class for its own paid/unpaid meaning, is left alone. */
+/* Empty: recedes. Nothing was spent, so there is nothing to come back to. */
+.trk-timeline .cc-timeline-chip { color: var(--muted); background: transparent; border-color: var(--line); font-weight: 600; }
+/* Filled: raised chip plus a dot under the label — the dot survives even when
+   the chip is also the selected one, so "has spends" never gets overwritten. */
+.trk-timeline .cc-timeline-chip.has-data { color: var(--text); background: var(--card-2); border-color: var(--line); padding-bottom: 9px; }
+.trk-timeline .cc-timeline-chip.has-data::after {
+  content: ''; position: absolute; left: 50%; bottom: 4px; transform: translateX(-50%);
+  width: 4px; height: 4px; border-radius: 50%; background: var(--accent); opacity: 0.85;
+}
+/* Selected: an accent ring around the chip and accent text, rather than a
+   solid fill — it has to outrank the filled state without shouting over the
+   month labels either side of it. */
+.trk-timeline .cc-timeline-chip.active,
+.trk-timeline .cc-timeline-chip.has-data.active {
+  background: var(--card); color: var(--accent); font-weight: 800;
+  border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--accent);
+}
+/* Current month, while some other month is being viewed: a faint outline, so
+   it can still be found without competing with the selection. */
+.trk-timeline .cc-timeline-chip.is-current:not(.active) { border-color: var(--accent); border-style: dashed; }
+.trk-timeline .cc-timeline-chip { position: relative; }
 /* Insights: one observation per row, tinted by whether it is a rise or a fall.
    Kept to a flat list rather than cards — they are read top to bottom once,
    not compared against each other. */

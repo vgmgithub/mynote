@@ -3313,7 +3313,7 @@ async function renderSpendTracker(host, token) {
   // the safe-area inset on notched devices.
   const appHeader = document.querySelector('.app-header');
   const timelineWrap = el('div', {
-    class: 'cc-timeline-scroll cc-timeline-sticky',
+    class: 'cc-timeline-scroll cc-timeline-sticky trk-timeline',
     style: 'top:' + (appHeader ? appHeader.offsetHeight : 0) + 'px',
   });
   // Newest first on screen. `timelineYms` itself stays ascending — the default
