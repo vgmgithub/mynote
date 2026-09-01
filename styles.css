@@ -1223,6 +1223,10 @@ body.locked { overflow: hidden; }
    (.cc-status-badge, reuses .badge.good) — from outside the editor, settled
    vs not is what matters; the Ontime/Late distinction stays in the editor. */
 .cc-status-badge { font-weight: 700; }
+/* Average-usage-vs-limit badge next to "Avg use ₹X" — always green, unlike
+   the month-specific "% used" badge above (which warns past 30%): this is a
+   steady long-term figure, not something to flag. */
+.cc-avg-util-badge { margin-left: 6px; font-weight: 700; }
 .cc-status-late { color: var(--bad); font-weight: 700; }
 .cc-status-unpaid { color: var(--warn); font-weight: 700; }
 

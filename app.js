@@ -5802,22 +5802,32 @@ async function renderCreditCards(host) {
   // limit, and its full month-by-month ledger with the status dropdown).
   const list = el('section', { class: 'stock-list' });
   g.rows.slice().sort((a, b2) => b2.c.averageUse - a.c.averageUse).forEach(({ card, c, cell }) => {
+    // This card's bill for the month currently selected on the timeline —
+    // computed early since both the catLine badge and the status below key
+    // off it.
+    const monthCell = cell(selYm);
+
     const catBits = [card.bank || 'Bank'];
     if (c.limit > 0) catBits.push('limit ' + fmtIntCur(c.limit));
     if (card.cycleStartDay && card.cycleEndDay) catBits.push('cycle ' + card.cycleStartDay + '–' + card.cycleEndDay);
     catBits.push(c.monthCount + (c.monthCount === 1 ? ' month' : ' months'));
     const catLine = el('div', { class: 'cat mf-catline', text: catBits.join(' · ') });
-    if (c.utilisationPct != null) {
-      const hot = c.utilisationPct >= 30;
-      catLine.appendChild(el('span', { class: 'badge mf-beat ' + (hot ? 'warn' : 'good'), text: c.utilisationPct.toFixed(0) + '% used' }));
+    // THIS MONTH's usage against the limit (not always-latest any more —
+    // it tracks whichever month is selected on the timeline above).
+    const monthUtilPct = c.limit > 0 && monthCell ? (monthCell.billed / c.limit) * 100 : null;
+    if (monthUtilPct != null) {
+      const hot = monthUtilPct >= 30;
+      catLine.appendChild(el('span', { class: 'badge mf-beat ' + (hot ? 'warn' : 'good'), text: monthUtilPct.toFixed(0) + '% used' }));
     }
+    // Average usage against the limit, across every month logged — a
+    // steady long-term figure, so it's always green rather than
+    // warn-at-a-threshold like the month-specific badge above.
+    const avgUtilPct = c.limit > 0 && c.averageUse > 0 ? (c.averageUse / c.limit) * 100 : null;
 
-    // This card's bill for the month currently selected on the timeline —
-    // read-only here; the actual status (Ontime/Late) is set on the card's
-    // own Details > Months tab, not from this list. "Ontime" reads here as
-    // a "Paid" badge instead — from the outside, the distinction that
-    // matters is settled vs not; Ontime-vs-Late detail stays in the editor.
-    const monthCell = cell(selYm);
+    // Ontime/Late is set on the card's own Details > Months tab, not from
+    // this list. "Ontime" reads here as a "Paid" badge instead — from the
+    // outside, the distinction that matters is settled vs not; Ontime-vs-Late
+    // detail stays in the editor.
     let statusEl;
     if (!monthCell) {
       statusEl = el('span', { class: 'value-emphasis flat', text: 'No bill this month' });
@@ -5841,7 +5851,10 @@ async function renderCreditCards(host) {
         ]),
       ]),
       el('div', { class: 'sub mf-sub2' }, [
-        el('span', {}, [el('div', {}, ['Avg use ', b(fmtIntCur(c.averageUse))])]),
+        el('span', {}, [el('div', {}, [
+          'Avg use ', b(fmtIntCur(c.averageUse)),
+          avgUtilPct != null ? el('span', { class: 'badge good cc-avg-util-badge', text: avgUtilPct.toFixed(0) + '% used' }) : document.createTextNode(''),
+        ])]),
         statusEl,
       ]),
     ]));
