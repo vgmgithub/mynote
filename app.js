@@ -2954,24 +2954,65 @@ async function renderExpenseSheet(host, token) {
   const perMonth = (key) => (alloc ? Number(alloc[key]) || 0 : 0);
   const planNote = alloc ? year + ' allocation' : 'no ' + year + ' allocation';
 
-  // ---- Month stepper ----
+  // ---- The committed (red) rows ----
+  // `source` is the live figure the owning surface reports for this month, or
+  // null for the two nothing else knows about. Every one of these carries an
+  // editable box holding a RUNNING TOTAL the user accumulates into — Fetch adds
+  // the source on top of whatever's already there, so pulling twice in a month
+  // records both. The row's headline number is that box.
+  const debitRows = [
+    { key: 'nextMonthDue', label: 'Next Month Due', source: Number(reimb && reimb.amount) || 0, note: 'card reimbursement' },
+    { key: 'emiEf', label: 'EMI / EF', source: ef ? Math.max(0, ef.c.cashInHand) : 0, note: 'emergency fund available' },
+    { key: 'loan', label: 'Loan', source: null, note: 'you enter' },
+    { key: 'home', label: 'Home', source: perMonth('home'), note: planNote },
+    { key: 'mf', label: 'Mutual Fund', source: perMonth('mf'), note: planNote },
+    { key: 'indStock', label: 'Ind Stock', source: perMonth('indStock'), note: planNote },
+    { key: 'usStock', label: 'US Stock', source: perMonth('usStock'), note: planNote },
+    { key: 'metal', label: 'Metal', source: perMonth('metal'), note: planNote },
+    { key: 'monthlyExpense', label: 'Monthly Expense', source: null, note: 'you enter' },
+  ];
+  const boxOf = (r) => Number(sheet[r.key]) || 0;
+
+  // ---- Month stepper + the shared Fetch ----
   const monthLabelEl = el('span', { class: 'msheet-month-label', text: mod.monthLabel(ym) });
   const step = (delta) => {
     const d = new Date(year, Number(ym.slice(5, 7)) - 1 + delta, 1);
     _expSheetYm = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
     renderHomeExpense();
   };
+
+  // Pulls every committed row that HAS a live source, adding it to that row's
+  // box. Loan and Monthly Expense have no source to pull, so they're left
+  // alone. Confirmed first because it's additive — running it twice by mistake
+  // would silently double the month, and there's no undo.
+  const fetchable = debitRows.filter((r) => r.source != null && r.source > 0);
+  const fetchAll = async () => {
+    if (!fetchable.length) { toast('Nothing to fetch for ' + mod.monthLabel(ym)); return; }
+    const lines = fetchable.map((r) => '  • ' + r.label + ':  ' + fmtIntCur(boxOf(r)) + ' + ' + fmtIntCur(r.source) + '  =  ' + fmtIntCur(boxOf(r) + r.source));
+    const ok = window.confirm(
+      'Add this month\'s figures into ' + mod.monthLabel(ym) + '?\n\n' + lines.join('\n')
+      + '\n\nThis ADDS to what each box already holds — running it again will add them a second time.'
+    );
+    if (!ok) return;
+    const patch = { ym, updatedAt: new Date().toISOString() };
+    fetchable.forEach((r) => { patch[r.key] = boxOf(r) + r.source; });
+    await DB.put('monthlySheet', Object.assign({}, sheet, patch));
+    toast('Fetched ' + fetchable.length + ' value' + (fetchable.length === 1 ? '' : 's'));
+    renderHomeExpense();
+  };
+
   host.appendChild(el('div', { class: 'msheet-head' }, [
-    el('button', { class: 'icon-btn', type: 'button', text: '◀', onclick: () => step(-1) }),
-    monthLabelEl,
-    el('button', { class: 'icon-btn', type: 'button', text: '▶', onclick: () => step(1) }),
+    el('div', { class: 'msheet-stepper' }, [
+      el('button', { class: 'icon-btn', type: 'button', text: '◀', onclick: () => step(-1) }),
+      monthLabelEl,
+      el('button', { class: 'icon-btn', type: 'button', text: '▶', onclick: () => step(1) }),
+    ]),
+    el('button', { class: 'btn ghost small msheet-fetch', type: 'button', text: '↻ Fetch', onclick: fetchAll }),
   ]));
 
   // ---- Rows ----
-  // A row is either derived (read-only value + where it came from) or typed
-  // (an input saved back to monthlySheet on blur).
   const table = el('div', { class: 'msheet' });
-  let credits = 0, debits = 0;
+  let credits = 0;
 
   const saveField = async (key, value) => {
     await DB.put('monthlySheet', Object.assign({}, sheet, {
@@ -2980,9 +3021,10 @@ async function renderExpenseSheet(host, token) {
     renderHomeExpense();
   };
 
-  const derivedRow = (label, amount, note, kind) => {
-    if (kind === 'credit') credits += amount; else debits += amount;
-    table.appendChild(el('div', { class: 'msheet-row msheet-' + kind }, [
+  // Green rows keep their original shape: one figure, no box.
+  const creditRow = (label, amount, note) => {
+    credits += amount;
+    table.appendChild(el('div', { class: 'msheet-row msheet-credit' }, [
       el('div', { class: 'msheet-label' }, [
         el('span', { text: label }),
         note ? el('span', { class: 'msheet-note', text: note }) : el('span'),
@@ -2990,10 +3032,9 @@ async function renderExpenseSheet(host, token) {
       el('span', { class: 'msheet-val', text: fmtIntCur(amount) }),
     ]));
   };
-
-  const typedRow = (label, key, kind) => {
+  const creditInputRow = (label, key) => {
     const amount = Number(sheet[key]) || 0;
-    if (kind === 'credit') credits += amount; else debits += amount;
+    credits += amount;
     const inp = el('input', {
       type: 'number', inputmode: 'decimal', step: 'any',
       value: amount !== 0 ? amount : '', placeholder: '0',
@@ -3002,7 +3043,7 @@ async function renderExpenseSheet(host, token) {
       const v = num(inp.value) || 0;
       if (v !== amount) saveField(key, v);
     });
-    table.appendChild(el('div', { class: 'msheet-row msheet-' + kind }, [
+    table.appendChild(el('div', { class: 'msheet-row msheet-credit' }, [
       el('div', { class: 'msheet-label' }, [
         el('span', { text: label }),
         el('span', { class: 'msheet-note', text: 'you enter' }),
@@ -3011,29 +3052,50 @@ async function renderExpenseSheet(host, token) {
     ]));
   };
 
-  derivedRow('In Hand', perMonth('salary'), planNote, 'credit');
-  typedRow('Virtual Bal', 'virtualBalance', 'credit');
+  creditRow('In Hand', perMonth('salary'), planNote);
+  creditInputRow('Virtual Bal', 'virtualBalance');
 
-  derivedRow('Next Month Due', Number(reimb && reimb.amount) || 0, 'card reimbursement', 'debit');
-  derivedRow('EMI / EF', ef ? Math.max(0, ef.c.cashInHand) : 0, 'emergency fund available', 'debit');
-  typedRow('Loan', 'loan', 'debit');
-  derivedRow('Home', perMonth('home'), planNote, 'debit');
-  derivedRow('Mutual Fund', perMonth('mf'), planNote, 'debit');
-  derivedRow('Ind Stock', perMonth('indStock'), planNote, 'debit');
-  derivedRow('US Stock', perMonth('usStock'), planNote, 'debit');
-  derivedRow('Metal', perMonth('metal'), planNote, 'debit');
-  typedRow('Monthly Expense', 'monthlyExpense', 'debit');
+  debitRows.forEach((r) => {
+    const boxVal = boxOf(r);
+    const inp = el('input', {
+      type: 'number', inputmode: 'decimal', step: 'any',
+      value: boxVal !== 0 ? boxVal : '', placeholder: '0',
+    });
+    inp.addEventListener('blur', () => {
+      const v = num(inp.value) || 0;
+      if (v !== boxVal) saveField(r.key, v);
+    });
+    // The note carries the source AMOUNT, not just where it came from: the
+    // headline is now the box, so without this the figure Available Balance
+    // actually subtracts wouldn't appear anywhere on screen.
+    const noteTxt = r.source != null ? r.note + ' · ' + fmtIntCur(r.source) : r.note;
+    table.appendChild(el('div', { class: 'msheet-row msheet-debit' }, [
+      el('div', { class: 'msheet-label' }, [
+        el('span', { text: r.label }),
+        el('span', { class: 'msheet-note', text: noteTxt }),
+      ]),
+      el('div', { class: 'msheet-stack' }, [
+        el('span', { class: 'msheet-val', text: fmtIntCur(boxVal) }),
+        el('div', { class: 'msheet-input' }, [inp]),
+      ]),
+    ]));
+  });
 
   host.appendChild(table);
 
   // ---- Closing balance ----
+  // Subtracts each row's SOURCE figure where it has one, and its box where it
+  // doesn't (Loan and Monthly Expense have nothing else to go on) — so the
+  // balance tracks what's actually committed this month, independent of how
+  // much has been accumulated into the boxes.
+  const debits = debitRows.reduce((s, r) => s + (r.source != null ? r.source : boxOf(r)), 0);
   const available = credits - debits;
   host.appendChild(el('div', { class: 'msheet-total' + (available < 0 ? ' is-neg' : '') }, [
     el('span', { class: 'msheet-total-label', text: 'Available Balance' }),
     el('span', { class: 'msheet-total-val', text: fmtIntCur(available) }),
   ]));
 
-  host.appendChild(el('p', { class: 'hint mf-foot', text: 'In Hand + Virtual Bal, less everything below it. The green rows are money available this month; the red rows are what\'s already committed. Anything marked "' + year + ' allocation" comes from the Allocation tab — edit it there, not here.' }));
+  host.appendChild(el('p', { class: 'hint mf-foot', text: 'Green rows are money available this month; red rows are what\'s already committed. Each red row\'s box is a running total you keep — ↻ Fetch adds this month\'s figure (the amount after the · in each row\'s caption) on top of what the box already holds. Available Balance uses those source figures, not the boxes, so it always reflects what\'s committed this month.' }));
 }
 
 // ---------- Allocation tracker (Expense → Allocation tab) ----------

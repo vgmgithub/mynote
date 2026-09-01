@@ -1712,8 +1712,14 @@ html[data-theme="light"] {
    split reads at a glance without needing a legend, then one emphasised
    closing balance underneath. Tints are alpha over the card so they hold up
    in both themes without a second set of tokens. */
-.msheet-head { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 2px 0 12px; }
+.msheet-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 2px 0 12px; }
+.msheet-stepper { display: flex; align-items: center; gap: 10px; }
 .msheet-month-label { font-weight: 700; font-size: 0.95rem; min-width: 74px; text-align: center; }
+.msheet-fetch { flex: 0 0 auto; white-space: nowrap; }
+/* Committed rows stack their running-total headline over the box that holds
+   it, right-aligned so both read down the same edge as the green rows' single
+   figure. */
+.msheet-stack { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
 .msheet { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
 .msheet-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
 .msheet-row:last-child { border-bottom: none; }
