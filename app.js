@@ -56,6 +56,15 @@ let _efTab = 'fund';         // 'fund' | 'targets' | 'loans' | 'log' | 'terms' (
 let _efLoanFilter = 'open';  // 'open' | 'closed' | 'all'
 // Expense view state (only used inside the Expense section page).
 let _expTab = 'cc';          // 'cc' | 'alloc' | 'spend' (bottom nav)
+let _expSheetYm = null;      // month shown on the Expense tab; null = this month
+// Every Expense render takes a ticket. Each tab's renderer loads its data
+// asynchronously, so two renders started close together (a fast tab switch, a
+// save that re-renders while a switch is in flight) both clear the host and
+// then both append — the loser's markup lands underneath the winner's and the
+// page shows two tabs stacked. Each renderer re-checks its ticket after its
+// awaits and bails if it's been superseded.
+let _expRenderToken = 0;
+const expRenderStale = (token) => token !== _expRenderToken;
 const MF_TYPES = ['Multi Cap', 'Flexi Cap', 'Large Cap', 'Mid Cap', 'Small Cap', 'Tax Saver', 'Technology', 'Pharma', 'Energy', 'International', 'Index', 'Debt', 'Hybrid'];
 const MF_STATUS = ['Investing', 'Investing On/Off', 'Investing Variable', 'Stopped', 'Sold'];
 
@@ -2822,17 +2831,129 @@ async function renderHomeExpense() {
   updateExpNavActive();
   $('#ccAddBtn').classList.toggle('hidden', _expTab !== 'cc');
 
-  if (_expTab === 'cc') { await renderCreditCards(host); return; }
-  if (_expTab === 'alloc') { await renderAllocation(host); return; }
-  host.appendChild(el('div', { class: 'empty' }, [
-    el('div', { class: 'e-icon', text: '🧾' }),
-    el('p', { text: 'Expense tracking coming soon.' }),
-    el('p', { class: 'hint', text: 'This tab will track day-to-day spending against the Allocation plan.' }),
+  const token = ++_expRenderToken;
+  if (_expTab === 'cc') { await renderCreditCards(host, token); return; }
+  if (_expTab === 'alloc') { await renderAllocation(host, token); return; }
+  await renderExpenseSheet(host, token);
+}
+
+// ---------- Monthly cash-flow sheet (Expense → Expense tab) ----------
+// One month at a time: what came in, what's committed out, what's left.
+//
+// Almost every row is READ LIVE from the surface that owns it rather than
+// re-entered here — Allocation owns the plan, Credit Card owns the month's
+// reimbursement, Emergency owns the fund. Only the three figures no other
+// surface knows (virtual balance, loan, this month's own spending) are typed
+// in, and those are the only ones stored (monthlySheet, keyed by month).
+//
+// Allocation is an ANNUAL plan, so its categories are shown here at 1/12 —
+// this sheet is a single month, and mixing a year's salary with one month's
+// card due would make the closing balance meaningless.
+async function renderExpenseSheet(host, token) {
+  const mod = await import('./credit.js');
+  const now = new Date();
+  const thisYm = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  const ym = _expSheetYm || thisYm;
+  const year = Number(ym.slice(0, 4));
+
+  const [allocs, reimb, sheetRow, ef] = await Promise.all([
+    DB.all('allocations').catch(() => []),
+    DB.get('ccReimbursements', ym).catch(() => null),
+    DB.get('monthlySheet', ym).catch(() => null),
+    efLoad().catch(() => null),
+  ]);
+  if (expRenderStale(token)) return;
+  const alloc = (allocs || []).find((a) => Number(a.year) === year) || null;
+  const sheet = sheetRow || {};
+
+  // Annual plan → this month's share.
+  const perMonth = (key) => (alloc ? (Number(alloc[key]) || 0) / 12 : 0);
+  const planNote = alloc ? '1/12 of ' + year + ' plan' : 'no ' + year + ' allocation';
+
+  // ---- Month stepper ----
+  const monthLabelEl = el('span', { class: 'msheet-month-label', text: mod.monthLabel(ym) });
+  const step = (delta) => {
+    const d = new Date(year, Number(ym.slice(5, 7)) - 1 + delta, 1);
+    _expSheetYm = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    renderHomeExpense();
+  };
+  host.appendChild(el('div', { class: 'msheet-head' }, [
+    el('button', { class: 'icon-btn', type: 'button', text: '◀', onclick: () => step(-1) }),
+    monthLabelEl,
+    el('button', { class: 'icon-btn', type: 'button', text: '▶', onclick: () => step(1) }),
   ]));
+
+  // ---- Rows ----
+  // A row is either derived (read-only value + where it came from) or typed
+  // (an input saved back to monthlySheet on blur).
+  const table = el('div', { class: 'msheet' });
+  let credits = 0, debits = 0;
+
+  const saveField = async (key, value) => {
+    await DB.put('monthlySheet', Object.assign({}, sheet, {
+      ym, [key]: value, updatedAt: new Date().toISOString(),
+    }));
+    renderHomeExpense();
+  };
+
+  const derivedRow = (label, amount, note, kind) => {
+    if (kind === 'credit') credits += amount; else debits += amount;
+    table.appendChild(el('div', { class: 'msheet-row msheet-' + kind }, [
+      el('div', { class: 'msheet-label' }, [
+        el('span', { text: label }),
+        note ? el('span', { class: 'msheet-note', text: note }) : el('span'),
+      ]),
+      el('span', { class: 'msheet-val', text: fmtIntCur(amount) }),
+    ]));
+  };
+
+  const typedRow = (label, key, kind) => {
+    const amount = Number(sheet[key]) || 0;
+    if (kind === 'credit') credits += amount; else debits += amount;
+    const inp = el('input', {
+      type: 'number', inputmode: 'decimal', step: 'any',
+      value: amount !== 0 ? amount : '', placeholder: '0',
+    });
+    inp.addEventListener('blur', () => {
+      const v = num(inp.value) || 0;
+      if (v !== amount) saveField(key, v);
+    });
+    table.appendChild(el('div', { class: 'msheet-row msheet-' + kind }, [
+      el('div', { class: 'msheet-label' }, [
+        el('span', { text: label }),
+        el('span', { class: 'msheet-note', text: 'you enter' }),
+      ]),
+      el('div', { class: 'msheet-input' }, [inp]),
+    ]));
+  };
+
+  derivedRow('In Hand', perMonth('salary'), planNote, 'credit');
+  typedRow('Virtual Bal', 'virtualBalance', 'credit');
+
+  derivedRow('Next Month Due', Number(reimb && reimb.amount) || 0, 'card reimbursement', 'debit');
+  derivedRow('EMI / EF', ef ? Math.max(0, ef.c.cashInHand) : 0, 'emergency fund available', 'debit');
+  typedRow('Loan', 'loan', 'debit');
+  derivedRow('Home', perMonth('home'), planNote, 'debit');
+  derivedRow('Mutual Fund', perMonth('mf'), planNote, 'debit');
+  derivedRow('Ind Stock', perMonth('indStock'), planNote, 'debit');
+  derivedRow('US Stock', perMonth('usStock'), planNote, 'debit');
+  derivedRow('Metal', perMonth('metal'), planNote, 'debit');
+  typedRow('Monthly Expense', 'monthlyExpense', 'debit');
+
+  host.appendChild(table);
+
+  // ---- Closing balance ----
+  const available = credits - debits;
+  host.appendChild(el('div', { class: 'msheet-total' + (available < 0 ? ' is-neg' : '') }, [
+    el('span', { class: 'msheet-total-label', text: 'Available Balance' }),
+    el('span', { class: 'msheet-total-val', text: fmtIntCur(available) }),
+  ]));
+
+  host.appendChild(el('p', { class: 'hint mf-foot', text: 'In Hand + Virtual Bal, less everything below it. The green rows are money available this month; the red rows are what\'s already committed. Anything marked "1/12 of ' + year + ' plan" comes from the Allocation tab — edit it there, not here.' }));
 }
 
 // ---------- Allocation tracker (Expense → Allocation tab) ----------
-async function renderAllocation(host) {
+async function renderAllocation(host, token) {
   // This is called again on every year-switch and after every save (not just
   // on first entry to the tab, unlike most other renderX functions which are
   // only ever called once per tab-open from an already-cleared host) — clear
@@ -2840,6 +2961,7 @@ async function renderAllocation(host) {
   // piles up underneath its previous copy instead of replacing it.
   host.innerHTML = '';
   const allAllocs = await DB.all('allocations').catch(() => []);
+  if (expRenderStale(token)) return;
   const curYear = new Date().getFullYear();
   const allocYears = allAllocs.map(a => a.year).sort((a, b) => b - a);
   // Respect whichever year the user last selected/saved (_allocYear) as long
@@ -2884,7 +3006,7 @@ async function renderAllocation(host) {
     el('button', {
       class: (y === selectedYear ? 'active' : ''),
       text: String(y),
-      onclick: () => { _allocYear = y; renderAllocation(host); },
+      onclick: () => { _allocYear = y; renderHomeExpense(); },
     })
   ));
   host.appendChild(yearSeg);
@@ -3046,7 +3168,7 @@ async function openAllocForm(year = null) {
     await DB.put('allocations', rec);
     closeModal();
     _allocYear = y;
-    renderAllocation($('#expenseView'));
+    renderHomeExpense();
     toast('Allocations saved for ' + y);
   };
 
@@ -5789,7 +5911,7 @@ let _ccSelectedYm = null;
 // right position instantly, not visibly slide there.
 let _ccTimelineClicked = false;
 
-async function renderCreditCards(host) {
+async function renderCreditCards(host, token) {
   // Called again on every timeline click (via renderHomeExpense, which
   // clears first) — but also defensively cleared here, the same lesson the
   // Allocation tab's duplication bug taught: never trust the caller alone.
@@ -5799,6 +5921,7 @@ async function renderCreditCards(host) {
     DB.all('creditCards').then((r) => r || []),
     DB.all('ccReimbursements').then((r) => r || []).catch(() => []),
   ]);
+  if (expRenderStale(token)) return;
 
   if (!cards.length) {
     host.appendChild(el('div', { class: 'empty' }, [

@@ -1,7 +1,7 @@
 // IndexedDB data layer. All data lives on this device only.
 export const DB = (function () {
   const NAME = 'mynote-stocks';
-  const VERSION = 13;
+  const VERSION = 14;
   let dbp = null;
 
   function open() {
@@ -115,6 +115,16 @@ export const DB = (function () {
         if (!db.objectStoreNames.contains('ccReimbursements')) {
           db.createObjectStore('ccReimbursements', { keyPath: 'ym' });
         }
+        // Monthly cash-flow sheet (Expense → Expense tab). One row per MONTH
+        // holding only the figures that CAN'T be derived from another surface:
+        // virtual balance, loan outgo and the month's own spending. Everything
+        // else on that sheet (in-hand, home, MF, stocks, metal, card due,
+        // EMI/EF) is read live from Allocation / Credit Card / Emergency, so
+        // storing it here too would just let the two drift apart. keyPath IS
+        // the month string, same as ccReimbursements. Added in v14.
+        if (!db.objectStoreNames.contains('monthlySheet')) {
+          db.createObjectStore('monthlySheet', { keyPath: 'ym' });
+        }
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
@@ -172,7 +182,7 @@ export const DB = (function () {
       // `feed` is best-effort: very old backups (v2 export) won't have it, and
       // the store may not exist if the user is mid-upgrade. Don't fail the
       // whole export over a missing store.
-      const [stocks, snapshots, monthly, meta, feed, funds, fds, dividends, metals, bonds, emergency, bankSavings, creditCards, allocations, ccReimbursements] = await Promise.all([
+      const [stocks, snapshots, monthly, meta, feed, funds, fds, dividends, metals, bonds, emergency, bankSavings, creditCards, allocations, ccReimbursements, monthlySheet] = await Promise.all([
         this.all('stocks'),
         this.all('snapshots'),
         this.all('monthly'),
@@ -188,6 +198,7 @@ export const DB = (function () {
         this.all('creditCards').catch(() => []),
         this.all('allocations').catch(() => []),
         this.all('ccReimbursements').catch(() => []),
+        this.all('monthlySheet').catch(() => []),
       ]);
       return {
         app: 'mynote-stocks',
@@ -208,6 +219,7 @@ export const DB = (function () {
         creditCards,
         allocations,
         ccReimbursements,
+        monthlySheet,
       };
     },
     // Replace all data with the contents of a previously exported object.
@@ -231,6 +243,7 @@ export const DB = (function () {
         this.clear('creditCards').catch(() => {}),
         this.clear('allocations').catch(() => {}),
         this.clear('ccReimbursements').catch(() => {}),
+        this.clear('monthlySheet').catch(() => {}),
       ]);
       const tasks = [];
       (data.stocks || []).forEach((s) => tasks.push(this.put('stocks', s)));
@@ -249,6 +262,7 @@ export const DB = (function () {
       (data.creditCards || []).forEach((c) => tasks.push(this.put('creditCards', c).catch(() => {})));
       (data.allocations || []).forEach((a) => tasks.push(this.put('allocations', a).catch(() => {})));
       (data.ccReimbursements || []).forEach((r) => tasks.push(this.put('ccReimbursements', r).catch(() => {})));
+      (data.monthlySheet || []).forEach((r) => tasks.push(this.put('monthlySheet', r).catch(() => {})));
       await Promise.all(tasks);
     },
   };

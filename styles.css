@@ -1661,6 +1661,29 @@ html[data-theme="light"] {
 .alloc-total-label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 6px; }
 .alloc-total-value { font-size: 1.4rem; font-weight: 700; color: var(--accent); margin-bottom: 4px; }
 .alloc-total-stepup { font-size: 0.85rem; color: var(--good); font-weight: 700; }
+/* Monthly cash-flow sheet (Expense → Expense tab). Two tinted bands — green
+   for what's available this month, red for what's already committed — so the
+   split reads at a glance without needing a legend, then one emphasised
+   closing balance underneath. Tints are alpha over the card so they hold up
+   in both themes without a second set of tokens. */
+.msheet-head { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 2px 0 12px; }
+.msheet-month-label { font-weight: 700; font-size: 0.95rem; min-width: 74px; text-align: center; }
+.msheet { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.msheet-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.msheet-row:last-child { border-bottom: none; }
+.msheet-credit { background: rgba(52, 211, 153, 0.16); }
+.msheet-debit { background: rgba(248, 113, 113, 0.13); }
+.msheet-label { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.msheet-label > span:first-child { font-weight: 600; font-size: 0.86rem; }
+.msheet-note { font-size: 0.64rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.3px; }
+.msheet-val { font-weight: 700; font-size: 0.92rem; white-space: nowrap; }
+.msheet-input input { width: 104px; text-align: right; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); font-size: 0.88rem; font-weight: 700; }
+.msheet-total { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 12px 0 4px; padding: 14px 16px; border-radius: 12px; background: linear-gradient(135deg, var(--card) 0%, var(--card-2) 100%); border: 1px solid var(--good); }
+.msheet-total.is-neg { border-color: var(--bad); }
+.msheet-total-label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; font-weight: 700; }
+.msheet-total-val { font-size: 1.3rem; font-weight: 800; color: var(--good); }
+.msheet-total.is-neg .msheet-total-val { color: var(--bad); }
+
 .sheet-form h2 { margin: 0 0 8px; font-size: 1.2rem; font-weight: 700; }
 .sheet-btns { display: flex; gap: 8px; margin-top: 20px; }
 .sheet-btns button { flex: 1; }
