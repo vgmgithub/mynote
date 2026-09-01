@@ -60,6 +60,9 @@ let _expSheetYm = null;      // month shown on the Expense tab; null = this mont
 // First month the monthly sheet covers. Nothing before this is reachable — the
 // sheet simply wasn't being kept then, so those months would be blank forever.
 const EXPENSE_START_YM = '2026-09';
+// Which half of the Tracker tab is showing. Defaults to the category roll-up:
+// the entry list grows all month, and "where did it go" is the usual question.
+let _trkView = 'category';   // 'category' | 'entries'
 // Every Expense render takes a ticket. Each tab's renderer loads its data
 // asynchronously, so two renders started close together (a fast tab switch, a
 // save that re-renders while a switch is in flight) both clear the host and
@@ -3324,7 +3327,17 @@ async function renderSpendTracker(host, token) {
   });
   const cats = [...byCat.entries()].sort((a, b2) => b2[1].total - a[1].total);
 
-  host.appendChild(el('h3', { class: 'div-group-head', text: '📊 By category' }));
+  // Category roll-up and the raw entries are two views of the same month, not
+  // two things to read together — and the entry list grows all month, so
+  // stacking them buried the roll-up further every day. Segmented, defaulting
+  // to the roll-up: "where did it go" is the question being asked most.
+  const views = [['category', '📊 By category'], ['entries', '🧾 Entries (' + spends.length + ')']];
+  host.appendChild(el('div', { class: 'seg trk-seg' }, views.map(([v, label]) =>
+    el('button', {
+      type: 'button', class: _trkView === v ? 'active' : '', text: label,
+      onclick: () => { if (_trkView === v) return; _trkView = v; renderHomeExpense(); },
+    }))));
+
   const catWrap = el('div', { class: 'msheet' });
   cats.forEach(([name, c]) => {
     const pct = spent > 0 ? (c.total / spent) * 100 : 0;
@@ -3336,10 +3349,7 @@ async function renderSpendTracker(host, token) {
       el('span', { class: 'msheet-val', text: fmtSheetCur(c.total) }),
     ]));
   });
-  host.appendChild(catWrap);
-
   // ---- Every entry, newest first ----
-  host.appendChild(el('h3', { class: 'div-group-head', text: '🧾 Entries' }));
   const list = el('div', { class: 'msheet' });
   spends.forEach((r) => {
     list.appendChild(el('div', { class: 'msheet-row trk-entry' }, [
@@ -3366,7 +3376,7 @@ async function renderSpendTracker(host, token) {
       ]),
     ]));
   });
-  host.appendChild(list);
+  host.appendChild(_trkView === 'entries' ? list : catWrap);
 
   host.appendChild(el('p', { class: 'hint mf-foot', text: 'The kitty is the Allocation tab\'s House Exp doubled — the same figure from each of you. Every spend logged here comes off it. This tab always shows the current month; earlier months stay in the backup.' }));
 }

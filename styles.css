@@ -1825,3 +1825,6 @@ html[data-theme="light"] {
 .spend-card-btn.active .spend-card-radio { border-color: var(--accent); background: var(--accent); box-shadow: inset 0 0 0 2px var(--card); }
 .spend-card-name { min-width: 0; overflow-wrap: anywhere; }
 @media (max-width: 330px) { .spend-card-grid { grid-template-columns: repeat(2, 1fr); } }
+/* Roll-up vs raw entries — two views of the same month, switched not stacked. */
+.trk-seg { margin: 4px 0 12px; }
+.trk-seg button { flex: 1; }
