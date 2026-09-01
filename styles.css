@@ -1880,3 +1880,41 @@ html[data-theme="light"] {
 .trk-insight.is-warn .trk-insight-head { color: var(--bad); }
 .trk-insight.is-good .trk-insight-head { color: var(--good); }
 .trk-insight-sub { font-size: 0.68rem; color: var(--muted); margin-top: 2px; }
+
+/* ---- Tracker: grouped category roll-up ---- */
+/* One hue per group, set as --g and inherited by everything inside it, so a
+   group's header rule, dots and bars all move together from one declaration.
+   Fixed hues rather than theme tokens: these have to stay distinguishable
+   FROM EACH OTHER, which a palette that shifts with the theme cannot promise. */
+.trk-g-fixed     { --g: #6366f1; }
+.trk-g-home      { --g: #14b8a6; }
+.trk-g-grocery   { --g: #f59e0b; }
+.trk-g-lifestyle { --g: #a855f7; }
+.trk-g-other     { --g: #64748b; }
+
+.trk-groups { display: flex; flex-direction: column; gap: 10px; }
+.trk-group { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--card); }
+/* The group's colour appears as a rule down its left edge — present on every
+   row of the group without repeating a swatch on each one. */
+.trk-group-head {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 9px 12px; background: var(--card-2);
+  border-bottom: 1px solid var(--line); border-left: 3px solid var(--g);
+}
+.trk-group-name { flex: 1; min-width: 0; font-size: 0.66rem; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase; color: var(--g); }
+.trk-group-total { font-size: 0.86rem; font-weight: 800; }
+.trk-group-pct { font-size: 0.62rem; font-weight: 700; color: var(--muted); min-width: 30px; text-align: right; }
+
+.trk-cats { display: flex; flex-direction: column; }
+.trk-cat { padding: 9px 12px 10px; border-bottom: 1px solid var(--line); border-left: 3px solid transparent; }
+.trk-cat:last-child { border-bottom: none; }
+.trk-cat-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.trk-cat-name { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 0.83rem; font-weight: 600; }
+.trk-cat-dot { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--g); }
+.trk-cat-amt { font-size: 0.88rem; font-weight: 700; white-space: nowrap; }
+/* Bar and its figure share a line, so a category costs two lines however long
+   its name is — a list of fifteen stays the same height it would at five. */
+.trk-cat-bottom { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.trk-cat-track { flex: 1; height: 4px; border-radius: 999px; background: var(--card-2); overflow: hidden; }
+.trk-cat-fill { display: block; height: 100%; border-radius: 999px; background: var(--g); opacity: 0.85; }
+.trk-cat-meta { flex: 0 0 auto; font-size: 0.6rem; font-weight: 600; color: var(--muted); min-width: 52px; text-align: right; }

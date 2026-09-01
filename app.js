@@ -3260,6 +3260,18 @@ const SPEND_CATEGORIES = [
   { group: 'Other', items: ['Prev Bill Bal / Misc'] },
 ];
 const SPEND_METHODS = ['UPI', 'Card', 'Cash'];
+// Category -> its picker group, and that group's colour class. Built from the
+// same list the form uses, so a category can never drift into a group the
+// picker doesn't show. Anything unrecognised (a category retired from the list
+// but still sitting in old months) lands in Other rather than disappearing.
+const _SPEND_GROUP_OF = (() => {
+  const m = new Map();
+  SPEND_CATEGORIES.forEach((g) => g.items.forEach((n) => m.set(n, g.group)));
+  return m;
+})();
+const _spendGroupOf = (name) => _SPEND_GROUP_OF.get(name) || 'Other';
+const _spendGroupClass = (group) => 'trk-g-' + String(group).toLowerCase().replace(/[^a-z]/g, '');
+
 
 async function renderSpendTracker(host, token) {
   const mod = await import('./credit.js');
@@ -3396,15 +3408,55 @@ async function renderSpendTracker(host, token) {
       onclick: () => { if (_trkView === v) return; _trkView = v; renderHomeExpense(); },
     }))));
 
-  const catWrap = el('div', { class: 'msheet' });
+  // Grouped the same way the spend form groups them, so the roll-up reads in
+  // the same shape the categories were picked in. Each group carries a colour,
+  // which is what makes a long list scannable — the eye finds "that's all
+  // grocery" without reading a single label.
+  //
+  // Groups are ordered by spend, not by the picker's order: the question this
+  // view answers is where the money went, so the biggest block belongs first.
+  const grouped = new Map();
   cats.forEach(([name, c]) => {
-    const pct = spent > 0 ? (c.total / spent) * 100 : 0;
-    catWrap.appendChild(el('div', { class: 'msheet-row trk-cat-row' }, [
-      el('div', { class: 'msheet-label' }, [
-        el('span', { text: name }),
-        el('span', { class: 'msheet-note', text: c.count + (c.count === 1 ? ' entry · ' : ' entries · ') + pct.toFixed(0) + '% of spend' }),
+    const g = _spendGroupOf(name);
+    if (!grouped.has(g)) grouped.set(g, { total: 0, rows: [] });
+    const bucket = grouped.get(g);
+    bucket.total = round2(bucket.total + c.total);
+    bucket.rows.push([name, c]);
+  });
+  const groupList = [...grouped.entries()].sort((a, b2) => b2[1].total - a[1].total);
+
+  const catWrap = el('div', { class: 'trk-groups' });
+  groupList.forEach(([gname, g]) => {
+    const gpct = spent > 0 ? (g.total / spent) * 100 : 0;
+    const rows = el('div', { class: 'trk-cats' });
+    g.rows.forEach(([name, c]) => {
+      const pct = spent > 0 ? (c.total / spent) * 100 : 0;
+      rows.appendChild(el('div', { class: 'trk-cat' }, [
+        el('div', { class: 'trk-cat-top' }, [
+          el('span', { class: 'trk-cat-name' }, [
+            el('span', { class: 'trk-cat-dot' }),
+            el('span', { text: name }),
+          ]),
+          el('span', { class: 'trk-cat-amt', text: fmtSheetCur(c.total) }),
+        ]),
+        el('div', { class: 'trk-cat-bottom' }, [
+          // Share of the WHOLE month, not of its group — a bar that filled up
+          // inside its group would make a small group's top row look like the
+          // month's biggest expense.
+          el('span', { class: 'trk-cat-track' }, [
+            el('span', { class: 'trk-cat-fill', style: 'width:' + Math.max(2, pct).toFixed(1) + '%' }),
+          ]),
+          el('span', { class: 'trk-cat-meta', text: c.count + '× · ' + pct.toFixed(0) + '%' }),
+        ]),
+      ]));
+    });
+    catWrap.appendChild(el('section', { class: 'trk-group ' + _spendGroupClass(gname) }, [
+      el('div', { class: 'trk-group-head' }, [
+        el('span', { class: 'trk-group-name', text: gname }),
+        el('span', { class: 'trk-group-total', text: fmtSheetCur(g.total) }),
+        el('span', { class: 'trk-group-pct', text: gpct.toFixed(0) + '%' }),
       ]),
-      el('span', { class: 'msheet-val', text: fmtSheetCur(c.total) }),
+      rows,
     ]));
   });
   // ---- Every entry, newest first ----
