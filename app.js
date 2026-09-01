@@ -5753,17 +5753,29 @@ async function renderCreditCards(host) {
   const timelineYms = mod.monthRangeYm(CC_TIMELINE_START_YM, timelineEndYm).reverse();
   const selYm = _ccSelectedYm && timelineYms.includes(_ccSelectedYm) ? _ccSelectedYm : (g.latestYm || thisYm);
   const selMonthly = g.monthly.find((m) => m.ym === selYm) || { ym: selYm, billed: 0, reimbursed: 0, toBePaid: 0, fullyPaid: false };
+  const fullyPaidByYm = new Map(g.monthly.map((m) => [m.ym, m.fullyPaid]));
 
   // ---- Month timeline — tap a month to view/edit that specific bill ----
   const timelineWrap = el('div', { class: 'cc-timeline-scroll' });
   const timelineRow = el('div', { class: 'cc-timeline' }, timelineYms.map((ym) => el('button', {
     type: 'button',
-    class: 'cc-timeline-chip' + (ym === selYm ? ' active' : '') + (ym === thisYm ? ' is-current' : ''),
+    class: 'cc-timeline-chip'
+      + (ym === selYm ? ' active' : '')
+      + (ym === thisYm ? ' is-current' : '')
+      + (fullyPaidByYm.get(ym) ? ' is-paid' : ''),
     text: mod.monthLabel(ym),
     onclick: () => { if (ym === selYm) return; _ccSelectedYm = ym; renderHomeExpense(); },
   })));
   timelineWrap.appendChild(timelineRow);
   host.appendChild(timelineWrap);
+  // Keep the selected chip in view instead of the whole strip snapping back
+  // to its start on every re-render (a fresh render means a fresh scroll
+  // container, so scrollLeft resets to 0 unless we actively correct it).
+  // 'nearest' is a no-op when the chip's already visible — true on first
+  // load, since the default selection (latest month) is the leftmost chip —
+  // and only scrolls when a click brought an off-screen chip into play.
+  const activeChip = timelineRow.querySelector('.cc-timeline-chip.active');
+  if (activeChip) activeChip.scrollIntoView({ inline: 'nearest', block: 'nearest' });
 
   // Summary: the SELECTED month's figures (not always "latest"), so the
   // summary and timeline never disagree about which month is on screen.
@@ -5801,14 +5813,16 @@ async function renderCreditCards(host) {
     }
 
     // This card's bill for the month currently selected on the timeline —
-    // read-only here; the status (Ontime/Late) is set on the card's own
-    // Details > Months tab, not from this list.
+    // read-only here; the actual status (Ontime/Late) is set on the card's
+    // own Details > Months tab, not from this list. "Ontime" reads here as
+    // a "Paid" badge instead — from the outside, the distinction that
+    // matters is settled vs not; Ontime-vs-Late detail stays in the editor.
     const monthCell = cell(selYm);
     let statusEl;
     if (!monthCell) {
       statusEl = el('span', { class: 'value-emphasis flat', text: 'No bill this month' });
     } else if (monthCell.status === 'ontime') {
-      statusEl = el('span', { class: 'value-emphasis cc-status-ontime', text: '✓ Ontime' });
+      statusEl = el('span', { class: 'badge good cc-status-badge', text: '✓ Paid' });
     } else if (monthCell.status === 'late') {
       statusEl = el('span', { class: 'value-emphasis cc-status-late', text: '⚠ Late payment' });
     } else {

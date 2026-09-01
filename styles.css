@@ -1210,10 +1210,19 @@ body.locked { overflow: hidden; }
 }
 .cc-timeline-chip.is-current { border-color: var(--accent); }
 .cc-timeline-chip.active { background: var(--accent); border-color: var(--accent); color: #06243a; }
+/* Fully paid — every card billed that month has a status set. A green ring
+   so it's visible whether or not the chip is also the active selection
+   (which already owns the accent background); tinted fill only when it
+   ISN'T selected, so the two states never compete for the same background. */
+.cc-timeline-chip.is-paid { border-color: var(--good); }
+.cc-timeline-chip.is-paid:not(.active) { background: rgba(52,211,153,0.18); color: var(--good); }
+.cc-timeline-chip.is-paid.active { box-shadow: inset 0 0 0 2px var(--good); }
 
 /* Card list: this-month status, read-only (set from the card's own
-   Details > Months tab, not from here). */
-.cc-status-ontime { color: var(--good); font-weight: 700; }
+   Details > Months tab, not from here). Ontime shows as a "Paid" badge
+   (.cc-status-badge, reuses .badge.good) — from outside the editor, settled
+   vs not is what matters; the Ontime/Late distinction stays in the editor. */
+.cc-status-badge { font-weight: 700; }
 .cc-status-late { color: var(--bad); font-weight: 700; }
 .cc-status-unpaid { color: var(--warn); font-weight: 700; }
 
