@@ -1828,3 +1828,6 @@ html[data-theme="light"] {
 /* Roll-up vs raw entries — two views of the same month, switched not stacked. */
 .trk-seg { margin: 4px 0 12px; }
 .trk-seg button { flex: 1; }
+/* Entry rows open the editor; the delete × inside them stops the click. */
+.trk-entry.is-tappable { cursor: pointer; }
+.trk-entry.is-tappable:active { background: var(--card-2); }

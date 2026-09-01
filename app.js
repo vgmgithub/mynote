@@ -3352,7 +3352,7 @@ async function renderSpendTracker(host, token) {
   // ---- Every entry, newest first ----
   const list = el('div', { class: 'msheet' });
   spends.forEach((r) => {
-    list.appendChild(el('div', { class: 'msheet-row trk-entry' }, [
+    list.appendChild(el('div', { class: 'msheet-row trk-entry is-tappable', onclick: () => openSpendForm(budget, r) }, [
       el('div', { class: 'msheet-label' }, [
         el('span', { text: r.category || '—' }),
         el('span', { class: 'msheet-note', text: _spendDayLabel(r.date) + ' · '
@@ -3363,7 +3363,8 @@ async function renderSpendTracker(host, token) {
         el('span', { class: 'msheet-val', text: fmtSheetCur(r.amount) }),
         el('button', {
           class: 'icon-btn trk-del', type: 'button', text: '×', 'aria-label': 'Delete this spend',
-          onclick: async () => {
+          onclick: async (e) => {
+            e.stopPropagation(); // the row opens the editor; the × must not
             const billed = r.cardId != null;
             if (!window.confirm('Delete ' + fmtSheetCur(r.amount) + ' on ' + (r.category || '—') + '?'
               + (billed ? '\n\nIt will also come off that card\'s billed total for the month.' : ''))) return;
@@ -3415,21 +3416,22 @@ function _spendDayLabel(iso) {
 
 // Add one spend: category, amount, how it was paid. Deliberately that short —
 // this gets opened several times a day, and anything longer stops being used.
-async function openSpendForm(budget) {
-  let chosenCat = null;
-  let chosenMethod = 'UPI';
-  let chosenCardId = null;
+async function openSpendForm(budget, existing) {
+  const editing = !!(existing && existing.id != null);
+  let chosenCat = editing ? existing.category : null;
+  let chosenMethod = editing ? (existing.method || 'UPI') : 'UPI';
+  let chosenCardId = editing ? (existing.cardId != null ? existing.cardId : null) : null;
 
   const cards = (await DB.all('creditCards').catch(() => [])) || [];
-  const amount = el('input', { type: 'number', inputmode: 'decimal', step: 'any', placeholder: '0' });
-  const dateInp = el('input', { type: 'date', value: todayISO() });
-  const note = el('input', { type: 'text', placeholder: 'Optional note' });
+  const amount = el('input', { type: 'number', inputmode: 'decimal', step: 'any', placeholder: '0', value: editing ? existing.amount : '' });
+  const dateInp = el('input', { type: 'date', value: editing ? (existing.date || todayISO()) : todayISO() });
+  const note = el('input', { type: 'text', placeholder: 'Optional note', value: editing && existing.note ? existing.note : '' });
 
   const catBtns = [];
   const catGrid = el('div', {}, SPEND_CATEGORIES.map((g) => el('div', { class: 'spend-cat-group' }, [
     el('div', { class: 'spend-cat-group-label', text: g.group }),
     el('div', { class: 'spend-cat-grid' }, g.items.map((name) => {
-      const btn = el('button', { class: 'spend-cat-btn', type: 'button', text: name });
+      const btn = el('button', { class: 'spend-cat-btn' + (name === chosenCat ? ' active' : ''), type: 'button', text: name });
       btn.addEventListener('click', () => {
         chosenCat = name;
         catBtns.forEach((x) => x.classList.toggle('active', x === btn));
@@ -3446,7 +3448,7 @@ async function openSpendForm(budget) {
   // goes rather than being typed in from scratch at the end of it.
   const cardBtns = [];
   const cardGrid = el('div', { class: 'spend-card-grid' }, cards.map((c) => {
-    const btn = el('button', { class: 'spend-card-btn', type: 'button' }, [
+    const btn = el('button', { class: 'spend-card-btn' + (c.id === chosenCardId ? ' active' : ''), type: 'button' }, [
       el('span', { class: 'spend-card-radio' }),
       el('span', { class: 'spend-card-name', text: c.name || 'Card' }),
     ]);
@@ -3460,7 +3462,7 @@ async function openSpendForm(budget) {
   const cardField = field('Which card', cards.length
     ? cardGrid
     : el('p', { class: 'hint', style: 'margin:0', text: 'No credit cards yet — add one on the Credit Card tab to bill spends to it.' }));
-  cardField.classList.add('hidden');
+  cardField.classList.toggle('hidden', chosenMethod !== 'Card');
 
   const methodBtns = [];
   const methodRow = el('div', { class: 'seg spend-method' }, SPEND_METHODS.map((m) => {
@@ -3487,20 +3489,31 @@ async function openSpendForm(budget) {
     const d = (dateInp.value || todayISO()).slice(0, 10);
     const ym = d.slice(0, 7);
     const cardId = chosenMethod === 'Card' ? chosenCardId : null;
+    // On an edit the OLD billing is taken back off before the new one goes on.
+    // Editing can change the amount, the card, the month or drop the card
+    // entirely, and each of those leaves the wrong figure on a statement unless
+    // the previous version is unwound first. Done as reverse-then-apply rather
+    // than a computed delta so the same two lines cover every combination —
+    // including the same card and month, where the two writes simply net out.
+    if (editing && existing.cardId != null) {
+      await _billSpendToCard(existing.cardId, existing.ym, -(Number(existing.amount) || 0));
+    }
     if (cardId != null) await _billSpendToCard(cardId, ym, amt);
-    await DB.put('spends', {
+    const rec = {
       ym, date: d, category: chosenCat, amount: amt,
       method: chosenMethod, cardId, note: note.value.trim() || null,
-      createdAt: nowIso, updatedAt: nowIso,
-    });
+      createdAt: editing ? (existing.createdAt || nowIso) : nowIso, updatedAt: nowIso,
+    };
+    if (editing) rec.id = existing.id;
+    await DB.put('spends', rec);
     closeModal();
-    toast('Added ' + fmtSheetCur(amt) + (cardId != null ? ' · billed to card' : ''));
+    toast((editing ? 'Updated ' : 'Added ') + fmtSheetCur(amt) + (cardId != null ? ' · billed to card' : ''));
     renderHomeExpense();
   };
 
   openModal(el('div', { class: 'sheet has-fixed-footer' }, [
     el('div', { class: 'sheet-scroll' }, [
-      el('h2', { text: 'Add spend' }),
+      el('h2', { text: editing ? 'Edit spend' : 'Add spend' }),
       el('p', { class: 'hint', text: budget > 0 ? 'Comes off the ' + fmtSheetCur(budget) + ' household kitty.' : 'No House Exp allocation set yet — this is still logged.' }),
       field('Category', catGrid),
       el('div', { class: 'field-row' }, [field('Amount', amount), field('Date', dateInp)]),
