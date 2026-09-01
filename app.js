@@ -5960,6 +5960,22 @@ async function renderCreditCards(host) {
   }
 
   host.appendChild(el('p', { class: 'hint mf-foot', text: 'Credit card bills are money going out, so nothing here counts toward Home\'s Total Invested. Log each card\'s statement as "Billed", set the combined monthly reimbursement below the card list, and mark each card Ontime/Late on its own Details > Months tab once paid.' }));
+
+  // Swipe gestures: left swipe → next month (forward in time), right swipe → previous month
+  let touchStartX = 0;
+  const swipeThreshold = 50;
+  host.addEventListener('touchstart', (e) => { touchStartX = e.touches[0].clientX; }, false);
+  host.addEventListener('touchend', (e) => {
+    const touchEndX = e.changedTouches[0].clientX;
+    const diff = touchStartX - touchEndX;
+    if (Math.abs(diff) < swipeThreshold) return; // too small, ignore
+    // Swipe left (diff > 0) → next month (forward), swipe right (diff < 0) → previous month (backward)
+    const nextIdx = diff > 0 ? timelineYms.indexOf(selYm) + 1 : timelineYms.indexOf(selYm) - 1;
+    if (nextIdx < 0 || nextIdx >= timelineYms.length) return; // out of bounds
+    _ccSelectedYm = timelineYms[nextIdx];
+    _ccTimelineClicked = true;
+    renderHomeExpense();
+  }, false);
 }
 
 // Per-card month ledger: one row per statement month, holding what was billed

@@ -1252,6 +1252,7 @@ body.locked { overflow: hidden; }
 .cc-card-list { padding-bottom: 0; }
 
 /* Common per-month reimbursement box below the card list */
+.cc-reimb-card { margin-top: 10px; }
 .cc-reimb-card input {
   width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px;
   background: var(--card-2); color: var(--text); font-size: 0.95rem;
