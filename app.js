@@ -63,6 +63,8 @@ const EXPENSE_START_YM = '2026-09';
 // Which half of the Tracker tab is showing. Defaults to the category roll-up:
 // the entry list grows all month, and "where did it go" is the usual question.
 let _trkView = 'category';   // 'category' | 'entries'
+let _trkYm = null;           // month shown on the Tracker tab; null = this month
+let _trkTimelineClicked = false;
 // Every Expense render takes a ticket. Each tab's renderer loads its data
 // asynchronously, so two renders started close together (a fast tab switch, a
 // save that re-renders while a switch is in flight) both clear the host and
@@ -1631,6 +1633,10 @@ function applyAppMode(mode) {
   $('#efAddBtn').classList.toggle('hidden', !isEF || _efTab === 'fund' || _efTab === 'terms');
   $('#bankSavAddBtn').classList.toggle('hidden', !isBankSav);
   $('#ccAddBtn').classList.toggle('hidden', !isExpense || _expTab !== 'cc');
+  // Reachable from Home as well as the Tracker tab: logging a spend is the
+  // most frequent thing done in the app, and burying it three taps deep is how
+  // a tracker stops being kept up to date.
+  $('#spendAddBtn').classList.toggle('hidden', !(isHome || (isExpense && _expTab === 'tracker')));
   if (!isMetal) $('#metalAddBtn').classList.add('hidden'); // renderMetal shows it on Gold/Silver only
   $('#backBtn').classList.toggle('hidden', isHome);
   $('#appTitle').innerHTML = isHome ? '' : (isInvestment ? 'Investment' : isSavings ? 'Savings' : isExpense ? 'Expense' : isMF ? 'Mutual&nbsp;Funds' : isFD ? 'Fixed&nbsp;Deposits' : isDiv ? 'Dividends' : isMetal ? 'Metals' : isBond ? 'Bonds' : isEF ? 'Emergency&nbsp;Fund' : isBankSav ? 'Bank&nbsp;Savings' : 'MyNotes');
@@ -1763,7 +1769,7 @@ function buildExpBottomNav() {
   if (nav.childElementCount) { updateExpNavActive(); return; }
   nav.innerHTML = '';
   [['cc', '💳', 'Credit Card'], ['alloc', '🧭', 'Allocation'], ['spend', '🧾', 'Expense'], ['tracker', '📍', 'Tracker']].forEach(([v, ico, label]) => {
-    nav.appendChild(el('button', { 'data-view': v, onclick: () => { if (_expTab === v) return; _expTab = v; renderHomeExpense(); $('#ccAddBtn').classList.toggle('hidden', _expTab !== 'cc'); } },
+    nav.appendChild(el('button', { 'data-view': v, onclick: () => { if (_expTab === v) return; _expTab = v; renderHomeExpense(); } },
       [el('span', { class: 'bn-ico', text: ico }), label]));
   });
   updateExpNavActive();
@@ -2917,6 +2923,7 @@ async function renderHomeExpense() {
   host.innerHTML = '';
   updateExpNavActive();
   $('#ccAddBtn').classList.toggle('hidden', _expTab !== 'cc');
+  $('#spendAddBtn').classList.toggle('hidden', _expTab !== 'tracker');
 
   const token = ++_expRenderToken;
   if (_expTab === 'cc') { await renderCreditCards(host, token); return; }
@@ -3254,32 +3261,77 @@ const SPEND_METHODS = ['UPI', 'Card', 'Cash'];
 async function renderSpendTracker(host, token) {
   const mod = await import('./credit.js');
   const now = new Date();
-  const ym = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
-  const year = now.getFullYear();
+  const thisYm = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
 
-  const [allocs, rows, cards] = await Promise.all([
+  // Every month is loaded, not just the selected one: the insights below
+  // compare against previous months, so they need the whole history anyway —
+  // and a household's spend rows are a few hundred a year, not a scale where
+  // one read per month would pay for itself.
+  const [allocs, allSpends, cards] = await Promise.all([
     DB.all('allocations').catch(() => []),
-    DB.byIndex('spends', 'ym', ym).catch(() => []),
+    DB.all('spends').catch(() => []),
     DB.all('creditCards').catch(() => []),
   ]);
   if (expRenderStale(token)) return;
-  const alloc = (allocs || []).find((a) => Number(a.year) === year) || null;
   const cardName = new Map((cards || []).map((c) => [c.id, c.name || 'Card']));
+
+  const byYm = new Map();
+  (allSpends || []).forEach((r) => {
+    const k = String(r.ym || '').slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(k)) return;
+    if (!byYm.has(k)) byYm.set(k, []);
+    byYm.get(k).push(r);
+  });
+
+  // Timeline spans the tracker's start month through this one, plus any month
+  // that already has entries (a back-dated spend outside the range must not
+  // become unreachable).
+  const timelineYms = [...new Set(mod.monthRangeYm(EXPENSE_START_YM, thisYm).concat([...byYm.keys()], [thisYm]))]
+    .filter((k) => k <= thisYm).sort();
+  if (!timelineYms.length) timelineYms.push(thisYm);
+  if (!_trkYm || !timelineYms.includes(_trkYm)) _trkYm = timelineYms[timelineYms.length - 1];
+  const ym = _trkYm;
+  const year = Number(ym.slice(0, 4));
+  const alloc = (allocs || []).find((a) => Number(a.year) === year) || null;
 
   // The kitty is the House Exp allocation DOUBLED: the same figure goes in from
   // each of us, so what the household actually has to spend is twice the line
   // on the Allocation tab.
   const share = alloc ? Number(alloc.houseExp) || 0 : 0;
   const budget = round2(share * 2);
-  const spends = (rows || []).slice().sort((a, b2) => String(b2.date || '').localeCompare(String(a.date || '')) || (b2.id - a.id));
-  const spent = round2(spends.reduce((s, r) => s + (Number(r.amount) || 0), 0));
+  const totalOf = (k) => round2((byYm.get(k) || []).reduce((s, r) => s + (Number(r.amount) || 0), 0));
+  const spends = (byYm.get(ym) || []).slice().sort((a, b2) => String(b2.date || '').localeCompare(String(a.date || '')) || (b2.id - a.id));
+  const spent = totalOf(ym);
   const left = round2(budget - spent);
 
-  // ---- Header: the month, and the one button that matters ----
-  host.appendChild(el('div', { class: 'msheet-head' }, [
-    el('div', { class: 'msheet-stepper' }, [el('span', { class: 'msheet-month-label', text: mod.monthLabel(ym) })]),
-    el('button', { class: 'btn primary small', type: 'button', text: '+ Add spend', onclick: () => openSpendForm(budget) }),
-  ]));
+  // ---- Month timeline, same as the Credit Card tab ----
+  // Fixed under the app header while the rest scrolls, so the month picker
+  // stays reachable. Header height is measured, not hardcoded — it varies with
+  // the safe-area inset on notched devices.
+  const appHeader = document.querySelector('.app-header');
+  const timelineWrap = el('div', {
+    class: 'cc-timeline-scroll cc-timeline-sticky',
+    style: 'top:' + (appHeader ? appHeader.offsetHeight : 0) + 'px',
+  });
+  const timelineRow = el('div', { class: 'cc-timeline' }, timelineYms.map((k) => el('button', {
+    type: 'button',
+    class: 'cc-timeline-chip'
+      + (k === ym ? ' active' : '')
+      + (k === thisYm ? ' is-current' : '')
+      + (totalOf(k) > 0 ? ' has-data' : ''),
+    text: mod.monthLabel(k),
+    onclick: () => { if (k === ym) return; _trkYm = k; _trkTimelineClicked = true; renderHomeExpense(); },
+  })));
+  timelineWrap.appendChild(timelineRow);
+  host.appendChild(timelineWrap);
+  // A fresh render is a fresh scroll container, so scrollLeft resets to 0 —
+  // pull the selected chip back to centre. Animated only when the render came
+  // from a click, so it doesn't slide for no reason on load.
+  const activeChip = timelineRow.querySelector('.cc-timeline-chip.active');
+  const behavior = _trkTimelineClicked ? 'smooth' : 'auto';
+  _trkTimelineClicked = false;
+  if (activeChip) activeChip.scrollIntoView({ inline: 'center', block: 'nearest', behavior });
+
 
   // ---- Kitty / spent / left ----
   host.appendChild(el('div', { class: 'trk-summary' }, [
@@ -3379,6 +3431,24 @@ async function renderSpendTracker(host, token) {
   });
   host.appendChild(_trkView === 'entries' ? list : catWrap);
 
+  // ---- Insights: this month read against the ones before it ----
+  // Only under the category view — they're commentary on that roll-up, and the
+  // entries list is already long.
+  if (_trkView === 'category') {
+    const insights = _trackerInsights(ym, timelineYms, byYm, byCat, spent, totalOf);
+    if (insights.length) {
+      host.appendChild(el('h3', { class: 'div-group-head', text: '💡 Insights' }));
+      host.appendChild(el('div', { class: 'trk-insights' }, insights.map((it) =>
+        el('div', { class: 'trk-insight' + (it.tone ? ' is-' + it.tone : '') }, [
+          el('span', { class: 'trk-insight-ico', text: it.icon }),
+          el('div', { class: 'trk-insight-body' }, [
+            el('div', { class: 'trk-insight-head', text: it.head }),
+            el('div', { class: 'trk-insight-sub', text: it.sub }),
+          ]),
+        ]))));
+    }
+  }
+
   host.appendChild(el('p', { class: 'hint mf-foot', text: 'The kitty is the Allocation tab\'s House Exp doubled — the same figure from each of you. Every spend logged here comes off it. This tab always shows the current month; earlier months stay in the backup.' }));
 }
 
@@ -3407,11 +3477,131 @@ async function _billSpendToCard(cardId, ym, delta) {
   } catch (_) { /* a spend must still save even if the card write fails */ }
 }
 
+// What this month's spending says when read against the months before it.
+// Returns only the observations that actually have data behind them — an
+// insight panel that pads itself out with "no change" lines stops being read.
+//
+// Deliberately plain arithmetic on months already in memory: no projection
+// models, no thresholds tuned to one household. Each line states a number the
+// user could verify by hand, which is the only kind worth trusting here.
+function _trackerInsights(ym, timelineYms, byYm, byCat, spent, totalOf) {
+  const out = [];
+  const fmtDelta = (n) => (n >= 0 ? '+' : '−') + fmtSheetCur(Math.abs(n)).replace('₹', '₹');
+  const monLabel = (k) => {
+    const m = /^(\d{4})-(\d{2})/.exec(k || '');
+    return m ? _SPEND_MONS[+m[2] - 1] : k;
+  };
+
+  // Calendar previous month, whether or not it has entries — "nothing last
+  // month" is itself worth knowing, so it isn't skipped over silently.
+  const d = new Date(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)) - 2, 1);
+  const prevYm = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  const prevTotal = totalOf(prevYm);
+  const prevRows = byYm.get(prevYm) || [];
+
+  // ---- 1. Against last month ----
+  if (prevTotal > 0) {
+    const diff = round2(spent - prevTotal);
+    const pct = Math.abs(Math.round((diff / prevTotal) * 100));
+    out.push({
+      icon: diff > 0 ? '📈' : diff < 0 ? '📉' : '➖',
+      tone: diff > 0 ? 'warn' : diff < 0 ? 'good' : '',
+      head: diff === 0
+        ? 'Same as ' + monLabel(prevYm)
+        : fmtDelta(diff) + ' vs ' + monLabel(prevYm) + ' (' + pct + '%)',
+      sub: monLabel(prevYm) + ' came to ' + fmtSheetCur(prevTotal) + '; this month is ' + fmtSheetCur(spent) + '.',
+    });
+  }
+
+  // ---- 2. Against the running average of earlier months ----
+  const earlier = timelineYms.filter((k) => k < ym).map((k) => totalOf(k)).filter((t) => t > 0);
+  if (earlier.length >= 2) {
+    const avg = round2(earlier.reduce((s, t) => s + t, 0) / earlier.length);
+    const diff = round2(spent - avg);
+    out.push({
+      icon: '⚖️',
+      tone: diff > 0 ? 'warn' : 'good',
+      head: fmtDelta(diff) + ' vs your ' + earlier.length + '-month average',
+      sub: 'You normally spend about ' + fmtSheetCur(avg) + ' a month.',
+    });
+  }
+
+  // ---- 3. Categories that moved most against last month ----
+  if (prevRows.length) {
+    const prevCat = new Map();
+    prevRows.forEach((r) => {
+      const k = r.category || 'Prev Bill Bal / Misc';
+      prevCat.set(k, round2((prevCat.get(k) || 0) + (Number(r.amount) || 0)));
+    });
+    const names = new Set([...byCat.keys(), ...prevCat.keys()]);
+    const moves = [...names].map((n) => ({
+      name: n,
+      now: (byCat.get(n) || { total: 0 }).total,
+      was: prevCat.get(n) || 0,
+    })).map((m) => Object.assign(m, { diff: round2(m.now - m.was) }));
+
+    const up = moves.filter((m) => m.diff > 0).sort((a, b2) => b2.diff - a.diff)[0];
+    const down = moves.filter((m) => m.diff < 0).sort((a, b2) => a.diff - b2.diff)[0];
+    if (up) {
+      out.push({
+        icon: '🔺', tone: 'warn',
+        head: up.name + ' up ' + fmtSheetCur(up.diff),
+        sub: fmtSheetCur(up.was) + ' in ' + monLabel(prevYm) + ' → ' + fmtSheetCur(up.now) + ' now.',
+      });
+    }
+    if (down) {
+      out.push({
+        icon: '🔻', tone: 'good',
+        head: down.name + ' down ' + fmtSheetCur(Math.abs(down.diff)),
+        sub: fmtSheetCur(down.was) + ' in ' + monLabel(prevYm) + ' → ' + fmtSheetCur(down.now) + ' now.',
+      });
+    }
+    // Something being spent on for the first time is worth surfacing on its
+    // own — it won't top the "moved most" list while it's still small.
+    const fresh = moves.filter((m) => m.was === 0 && m.now > 0).sort((a, b2) => b2.now - a.now)[0];
+    if (fresh && (!up || fresh.name !== up.name)) {
+      out.push({
+        icon: '🆕', tone: '',
+        head: 'New this month: ' + fresh.name,
+        sub: fmtSheetCur(fresh.now) + ', with nothing in ' + monLabel(prevYm) + '.',
+      });
+    }
+  }
+
+  // ---- 4. Where the money actually goes ----
+  const top = [...byCat.entries()].sort((a, b2) => b2[1].total - a[1].total)[0];
+  if (top && spent > 0) {
+    const pct = Math.round((top[1].total / spent) * 100);
+    if (pct >= 30) {
+      out.push({
+        icon: '🎯', tone: '',
+        head: top[0] + ' is ' + pct + '% of the month',
+        sub: fmtSheetCur(top[1].total) + ' of ' + fmtSheetCur(spent) + ' went there.',
+      });
+    }
+  }
+
+  return out;
+}
+
 // "12 Sep" — short, since the rows already sit under one month.
 const _SPEND_MONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 function _spendDayLabel(iso) {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
   return m ? String(+m[3]) + ' ' + _SPEND_MONS[+m[2] - 1] : '—';
+}
+
+// Opens the spend form from the FAB, wherever that FAB happens to be. Works out
+// the kitty itself rather than being handed it, since on Home there is no
+// tracker render to pass it in. Uses the month the Tracker is showing when
+// that's where we are, and this month everywhere else.
+async function openSpendQuick() {
+  const now = new Date();
+  const onTracker = state.appMode === 'expense' && _expTab === 'tracker' && _trkYm;
+  const ym = onTracker ? _trkYm : (now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0'));
+  const allocs = await DB.all('allocations').catch(() => []);
+  const alloc = (allocs || []).find((a) => Number(a.year) === Number(ym.slice(0, 4))) || null;
+  openSpendForm(round2((alloc ? Number(alloc.houseExp) || 0 : 0) * 2));
 }
 
 // Add one spend: category, amount, how it was paid. Deliberately that short —
@@ -9483,6 +9673,7 @@ function bind() {
   $('#efAddBtn').addEventListener('click', () => efAddForTab());
   $('#bankSavAddBtn').addEventListener('click', () => openBankSavForm(null));
   $('#ccAddBtn').addEventListener('click', () => openCreditCardForm(null));
+  $('#spendAddBtn').addEventListener('click', openSpendQuick);
   $('#backBtn').addEventListener('click', goHome);
   $('#menuBtn').addEventListener('click', openMenu);
   const onSearch = debounce(renderList, 120);

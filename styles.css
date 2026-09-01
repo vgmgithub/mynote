@@ -1831,3 +1831,22 @@ html[data-theme="light"] {
 /* Entry rows open the editor; the delete × inside them stops the click. */
 .trk-entry.is-tappable { cursor: pointer; }
 .trk-entry.is-tappable:active { background: var(--card-2); }
+/* An emoji FAB needs no bold/oversized glyph treatment the way "+" does. */
+.fab.fab-spend { font-size: 1.35rem; font-weight: 400; line-height: 1; }
+/* Timeline chip for a month that has spends — distinguishes "nothing logged"
+   from "not looked at yet" without competing with the selected state. */
+.cc-timeline-chip.has-data:not(.active) { color: var(--text); }
+.cc-timeline-chip.has-data::after { content: '·'; margin-left: 4px; opacity: 0.65; }
+/* Insights: one observation per row, tinted by whether it is a rise or a fall.
+   Kept to a flat list rather than cards — they are read top to bottom once,
+   not compared against each other. */
+.trk-insights { display: flex; flex-direction: column; gap: 6px; }
+.trk-insight { display: flex; gap: 9px; align-items: flex-start; padding: 9px 11px; border-radius: 10px; background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--line); }
+.trk-insight.is-warn { border-left-color: var(--bad); }
+.trk-insight.is-good { border-left-color: var(--good); }
+.trk-insight-ico { flex: 0 0 auto; font-size: 0.95rem; line-height: 1.25; }
+.trk-insight-body { min-width: 0; }
+.trk-insight-head { font-size: 0.8rem; font-weight: 700; }
+.trk-insight.is-warn .trk-insight-head { color: var(--bad); }
+.trk-insight.is-good .trk-insight-head { color: var(--good); }
+.trk-insight-sub { font-size: 0.68rem; color: var(--muted); margin-top: 2px; }
