@@ -3316,7 +3316,10 @@ async function renderSpendTracker(host, token) {
     class: 'cc-timeline-scroll cc-timeline-sticky',
     style: 'top:' + (appHeader ? appHeader.offsetHeight : 0) + 'px',
   });
-  const timelineRow = el('div', { class: 'cc-timeline' }, timelineYms.map((k) => el('button', {
+  // Newest first on screen. `timelineYms` itself stays ascending — the default
+  // selection takes the last entry, and the insights compare against earlier
+  // months — so only the render order is flipped.
+  const timelineRow = el('div', { class: 'cc-timeline' }, timelineYms.slice().reverse().map((k) => el('button', {
     type: 'button',
     class: 'cc-timeline-chip'
       + (k === ym ? ' active' : '')
