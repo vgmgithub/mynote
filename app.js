@@ -2898,6 +2898,8 @@ async function renderAllocation(host) {
     const val = curAlloc ? (curAlloc[cat.key] || 0) : 0;
     const prevVal = prevAlloc ? (prevAlloc[cat.key] || 0) : 0;
     const stepUp = prevVal > 0 ? (((val - prevVal) / prevVal) * 100) : (val > 0 ? 100 : 0);
+    // Hide cards with both amount and percentage at 0
+    if (val === 0 && stepUp === 0) return;
     const stepUpClass = stepUp > 5 ? 'step-up-pos' : stepUp < -5 ? 'step-up-neg' : 'step-up-flat';
 
     // Display-only — editing happens through the single "Edit All Allocations"
