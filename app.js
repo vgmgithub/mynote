@@ -3251,9 +3251,13 @@ function _divCard(rec, mod, curYear, cur) {
     const isCurrentYear = y === curYear;
     // This year's own payout months (falls back to nothing for records
     // saved before per-year months existed — the calc/total still show).
+    // Each chip carries that month's own figure when one was entered, so the
+    // card shows what actually landed in each month, not just which months paid.
     const yrMonths = Array.isArray(yr.months) ? yr.months : [];
-    const chips = el('div', { class: 'div-year-month-chips' }, yrMonths.map((m) =>
-      el('span', { class: 'div-month-chip', text: m })));
+    const chips = el('div', { class: 'div-year-month-chips' }, yrMonths.map((m) => {
+      const v = yr.perMonth ? Number(yr.perMonth[m]) : null;
+      return el('span', { class: 'div-month-chip', text: v ? m + ' ' + mod.fmtDiv(v, cur) : m });
+    }));
 
     breakdown.appendChild(el('div', { class: 'div-year-entry' + (isCurrentYear ? ' current-year' : '') }, [
       el('div', { class: 'div-year-entry-top' }, [
@@ -3389,10 +3393,12 @@ async function openDivForm(rec) {
 
     // Per-year month toggles (compact 3-col grid).
     const yearMonths = new Set();
-    const monthlyInputs = {};  // {month: perUnitAmount} for India stocks
+    // {month: amount} — per-unit for India, the received figure for US.
+    const monthlyInputs = {};
 
-    // Define updateIndiaBreakdown as a stub first (for India stocks to override later).
-    let updateIndiaBreakdown = () => {};
+    // Stub, replaced below by the market's own breakdown renderer. Declared
+    // here because the month-toggle handlers close over it.
+    let updateBreakdown = () => {};
 
     const monthsGrid = el('div', { class: 'div-year-months' }, mod.MONTHS.map((m) => {
       // Pre-select months from the record (for existing years) or from user's selection
@@ -3415,19 +3421,63 @@ async function openDivForm(rec) {
           monthlyInputs[m] = '';
           btn.classList.add('active');
         }
-        updateIndiaBreakdown();
+        updateBreakdown();
       });
       return btn;
     }));
 
     let row, ref;
     if (isUs) {
-      const amt = numInput(a, 'Dividend amount');
-      ref = { yy, amt, yearMonths, removed: false };
+      // Same per-month breakdown as India, minus the units column — a US
+      // dividend is read straight off the broker as one figure per month, so
+      // the year total is just the sum of those boxes.
+      const breakdownWrap = el('div', { class: 'div-india-breakdown' });
+      const monthInputsWrap = el('div', { class: 'div-india-month-inputs' });
+      const calcSpan = el('span', { class: 'div-breakdown-calc' });
+      const totalSpan = el('span', { class: 'div-breakdown-total' });
+      breakdownWrap.appendChild(monthInputsWrap);
+      breakdownWrap.appendChild(el('div', { class: 'div-breakdown-summary' }, [calcSpan, totalSpan]));
+
+      const updateTotal = () => {
+        const vals = Object.values(monthlyInputs).map((v) => Number(v) || 0);
+        const sum = vals.reduce((x, y) => x + y, 0);
+        calcSpan.textContent = vals.length ? vals.join(' + ') : '—';
+        totalSpan.textContent = mod.fmtDiv(sum, 'USD');
+      };
+
+      updateBreakdown = () => {
+        monthInputsWrap.innerHTML = '';
+        [...yearMonths].sort((m1, m2) => mod.MONTHS.indexOf(m1) - mod.MONTHS.indexOf(m2)).forEach((m) => {
+          const inp = numInput(monthlyInputs[m], m.slice(0, 3));
+          monthlyInputs[m] = inp.value;
+          monthInputsWrap.appendChild(el('label', { class: 'div-month-input' }, [
+            el('span', { text: m + ':' }),
+            inp,
+          ]));
+          inp.addEventListener('change', () => { monthlyInputs[m] = inp.value; updateTotal(); });
+        });
+        updateTotal();
+      };
+
+      ref = { yy, yearMonths, monthlyInputs, removed: false };
       row = el('div', { class: 'div-yedit-row div-yedit-row-us' }, [
         el('div', { class: 'div-year-input-group' }, [yy, monthsGrid]),
-        amt, rm,
+        breakdownWrap,
+        rm,
       ]);
+
+      // Restore what was actually saved per month. Older rows only have a flat
+      // year amount (`a`) — spread it evenly as a best-effort starting point.
+      if (presetPerMonth) {
+        Object.keys(presetPerMonth).forEach((m) => {
+          if (yearMonths.has(m)) monthlyInputs[m] = presetPerMonth[m];
+        });
+      } else if (a != null && a !== '' && yearMonths.size > 0) {
+        const per = (Number(a) || 0) / yearMonths.size;
+        [...yearMonths].forEach((m) => { monthlyInputs[m] = per; });
+      }
+
+      updateBreakdown();
     } else {
       // India: show units + per-month breakdown with live total calculation.
       const uu = numInput(a, 'Units');
@@ -3452,16 +3502,14 @@ async function openDivForm(rec) {
         totalSpan.textContent = units + ' × ' + sum.toFixed(2) + ' = ' + mod.fmtDiv(yearTotal, 'INR');
       };
 
-      // Reassigns the outer `let updateIndiaBreakdown` stub — must NOT be
-      // `const` here. The month-button click handler above (outside this
-      // India-only block) closes over that OUTER binding; a `const` here
-      // would shadow it with a separate variable the click handler never
-      // sees, so clicking a month would keep calling the do-nothing stub
-      // forever — toggling a month wouldn't add/remove its box or
-      // recalculate anything, despite the button's own active state still
-      // visibly changing. (This is exactly the bug reported: unchecking a
-      // month didn't remove its text box or refresh the total.)
-      updateIndiaBreakdown = () => {
+      // Reassigns the outer `let updateBreakdown` stub — must NOT be `const`
+      // here. The month-button click handler above (outside this market-
+      // specific block) closes over that OUTER binding; a `const` here would
+      // shadow it with a separate variable the click handler never sees, so
+      // clicking a month would keep calling the do-nothing stub forever —
+      // toggling a month wouldn't add/remove its box or recalculate anything,
+      // despite the button's own active state still visibly changing.
+      updateBreakdown = () => {
         monthInputsWrap.innerHTML = '';
         [...yearMonths].sort((m1, m2) => mod.MONTHS.indexOf(m1) - mod.MONTHS.indexOf(m2)).forEach((m) => {
           const inp = numInput(monthlyInputs[m], m.slice(0, 3) + '/u');
@@ -3537,7 +3585,7 @@ async function openDivForm(rec) {
       }
 
       // Initial render.
-      updateIndiaBreakdown();
+      updateBreakdown();
     }
     rm.addEventListener('click', () => { row.remove(); ref.removed = true; });
     yearRefs.push(ref);
@@ -3599,7 +3647,7 @@ async function openDivForm(rec) {
     isUs ? usAmountOf(y) : y.units,
     isUs ? undefined : y.perUnit,
     y.months ? y.months : (isUs ? [] : mod.parseMonths(rec.months)),
-    isUs ? null : (y.perMonth || null),
+    y.perMonth || null,
   ));
 
   // Every OTHER year in allYears (the current year, plus anything opened up
@@ -3652,7 +3700,20 @@ async function openDivForm(rec) {
       // doesn't get overwritten by another year's selection on next open.
       const yearMonthsArr = [...r.yearMonths].sort((m1, m2) => mod.MONTHS.indexOf(m1) - mod.MONTHS.indexOf(m2));
       if (isUs) {
-        map.set(y, { year: y, amount: r.amt.value === '' ? null : num(r.amt.value), months: yearMonthsArr });
+        // Per-month figures are the source of truth; `amount` is their sum,
+        // kept so the older flat-amount readers keep working.
+        let perMonth = null, amount = null;
+        if (r.monthlyInputs && Object.keys(r.monthlyInputs).length > 0) {
+          perMonth = {};
+          let sum = 0;
+          Object.keys(r.monthlyInputs).forEach((m) => {
+            const v = Number(r.monthlyInputs[m]) || 0;
+            perMonth[m] = v;
+            sum += v;
+          });
+          amount = sum;
+        }
+        map.set(y, { year: y, amount, months: yearMonthsArr, perMonth });
       } else {
         // India: keep the exact per-month breakdown (so reopening restores
         // what was actually typed, not an evenly-split guess) alongside the
@@ -3691,10 +3752,10 @@ async function openDivForm(rec) {
   };
 
   const yearHead = isUs
-    ? el('div', { class: 'div-yedit-head div-yedit-head-us' }, [el('span', { text: 'Year & months' }), el('span', { text: 'Dividend amount' }), el('span')])
+    ? el('div', { class: 'div-yedit-head div-yedit-head-us' }, [el('span', { text: 'Year & months' }), el('span', { text: 'Dividend per month' }), el('span')])
     : el('div', { class: 'div-yedit-head' }, [el('span', { text: 'Year & months' }), el('span', { text: 'Units' }), el('span', { text: 'Div/unit' }), el('span')]);
   const content = el('div', {}, [
-    field(isUs ? 'Per-year months & dividend amount' : 'Per-year months, units & dividend per unit', el('div', {}, [
+    field(isUs ? 'Per-year months & dividend received' : 'Per-year months, units & dividend per unit', el('div', {}, [
       el('p', { class: 'hint', style: 'margin:0 0 8px', text: 'Tap month initials to mark which months this year paid. Global months list updates from all years.' }),
       yearHead,
       yearRowsWrap,

@@ -12,10 +12,12 @@
 //     months:['Feb','May'],                       // historical payout months
 //     years:[...],                                 // per calendar year, shape below
 //     createdAt, updatedAt }
-// India years: { year:2026, units:25, perUnit:14.5 } — total = units * perUnit
-//   (units differ year to year, so both are tracked instead of one static count).
-// US years:    { year:2026, amount:0.30 } — total = amount (entered directly; no
-//   per-unit math, since the user just reads one dividend figure off their broker).
+// India years: { year:2026, units:25, perUnit:14.5, months:[...], perMonth:{Feb:7.2,...} }
+//   — total = units * perUnit, where perUnit is the SUM of perMonth (units differ
+//   year to year, so both are tracked instead of one static count).
+// US years:    { year:2026, months:[...], perMonth:{Feb:0.12,...} } — total = SUM of
+//   perMonth. No units math: the user reads one dividend figure per month off their
+//   broker. Older rows carry a flat `amount` (or units/perUnit) instead — see yearTotal().
 // Currency = INR when market==='in', else USD. India (₹) and US ($) are never
 // summed together — analysis is always per-market.
 
@@ -62,15 +64,17 @@ export function parseMonths(input) {
 
 export const monthsToStr = (arr) => (arr || []).join(', ');
 
-// Total dividend for one calendar year on a record. US years store a direct
-// amount (no units/per-unit math); India years store units * perUnit. A US
-// year entered before the direct-amount change still has the old units/perUnit
-// shape (no `amount` yet) — fall back to that math so old data isn't zeroed
-// out; it self-heals to the `amount` shape the next time that year is saved.
+// Total dividend for one calendar year on a record. US years hold a per-month
+// breakdown that simply SUMS (no units math — the user reads one figure per
+// month off their broker); India years hold units * (sum of per-month
+// per-unit amounts). Older US years saved before the per-month breakdown fall
+// back to a flat `amount`, and older still to units*perUnit — both self-heal
+// to the perMonth shape the next time that year is saved.
 export function yearTotal(rec, year) {
   const y = (rec.years || []).find((r) => Number(r.year) === Number(year));
   if (!y) return 0;
   if (rec.market === 'us') {
+    if (y.perMonth) return Object.values(y.perMonth).reduce((s, v) => s + (Number(v) || 0), 0);
     if (y.amount != null) return Number(y.amount) || 0;
     return (Number(y.units) || 0) * (Number(y.perUnit) || 0);
   }

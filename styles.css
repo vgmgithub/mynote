@@ -265,9 +265,10 @@ main.swipe-in-left { animation: swipe-from-left 0.18s ease-out; }
 .div-year-mon-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 .div-yedit-head { display: grid; grid-template-columns: 1fr 1fr 1fr 2rem; gap: 6px; color: var(--muted); font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 4px; }
 .div-yedit-row { display: grid; grid-template-columns: 1fr 1fr 1fr 2rem; gap: 6px; align-items: center; margin-bottom: 6px; }
-/* US years skip units/per-unit — one direct-amount column instead of two */
+/* US years skip units/per-unit — the month picker and a per-month breakdown
+   side by side, so the row tops-aligns rather than centring a tall stack. */
 .div-yedit-head-us { grid-template-columns: 1.5fr 1fr 2rem; }
-.div-yedit-row-us { grid-template-columns: 1.5fr 1fr 2rem; }
+.div-yedit-row-us { grid-template-columns: 1.5fr 1fr 2rem; align-items: start; }
 /* India dividend breakdown: per-month inputs with live calculation */
 .div-yedit-row-india { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 6px; }
 .div-year-left-col { display: flex; flex-direction: column; gap: 8px; flex: 0 0 180px; }
