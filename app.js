@@ -55,7 +55,7 @@ let _bondSort = 'maturity';  // 'maturity' | 'amount' | 'rate'
 let _efTab = 'fund';         // 'fund' | 'targets' | 'loans' | 'log' | 'terms' (bottom nav)
 let _efLoanFilter = 'open';  // 'open' | 'closed' | 'all'
 // Expense view state (only used inside the Expense section page).
-let _expTab = 'cc';          // 'cc' | 'alloc' | 'spend' (bottom nav)
+let _expTab = 'cc';          // 'cc' | 'alloc' | 'spend' | 'tracker' (bottom nav)
 let _expSheetYm = null;      // month shown on the Expense tab; null = this month
 // First month the monthly sheet covers. Nothing before this is reachable — the
 // sheet simply wasn't being kept then, so those months would be blank forever.
@@ -1759,7 +1759,7 @@ function buildExpBottomNav() {
   const nav = $('#expBottomNav');
   if (nav.childElementCount) { updateExpNavActive(); return; }
   nav.innerHTML = '';
-  [['cc', '💳', 'Credit Card'], ['alloc', '🧭', 'Allocation'], ['spend', '🧾', 'Expense']].forEach(([v, ico, label]) => {
+  [['cc', '💳', 'Credit Card'], ['alloc', '🧭', 'Allocation'], ['spend', '🧾', 'Expense'], ['tracker', '📍', 'Tracker']].forEach(([v, ico, label]) => {
     nav.appendChild(el('button', { 'data-view': v, onclick: () => { if (_expTab === v) return; _expTab = v; renderHomeExpense(); $('#ccAddBtn').classList.toggle('hidden', _expTab !== 'cc'); } },
       [el('span', { class: 'bn-ico', text: ico }), label]));
   });
@@ -2918,6 +2918,7 @@ async function renderHomeExpense() {
   const token = ++_expRenderToken;
   if (_expTab === 'cc') { await renderCreditCards(host, token); return; }
   if (_expTab === 'alloc') { await renderAllocation(host, token); return; }
+  if (_expTab === 'tracker') { await renderSpendTracker(host, token); return; }
   await renderExpenseSheet(host, token);
 }
 
@@ -3184,6 +3185,216 @@ async function renderExpenseSheet(host, token) {
   ]));
 
   host.appendChild(el('p', { class: 'hint mf-foot', text: 'Available Balance = (In Hand + Virtual Bal) − every red row. Each box takes a running total you can add to: type "2000+5000" and the figure above shows the sum. ↻ Fetch appends this month\'s figure (the amount after the · in a row\'s caption) as another term. In Hand starts from the Allocation salary — type over it for a month that differed, or clear it to go back to the plan.' }));
+}
+
+// ---------- Daily spend tracker (Expense → Tracker tab) ----------
+// The household kitty for THIS month: what the budget is, what's gone, what's
+// left. One row per spend (see db.js `spends`), rolled up by category here.
+//
+// Categories are fixed rather than free text — the whole point is that the same
+// grocery run lands in the same bucket every time, which typing can't promise.
+// Grouped only for the picker's sake; the group isn't stored, so regrouping
+// later can't strand existing rows.
+const SPEND_CATEGORIES = [
+  { group: 'Fixed', items: ['Rent', 'Electricity', 'Internet', 'Water', 'GAS', 'Brigade'] },
+  { group: 'Home', items: ['Bruno Food', 'Plants / Aquarium', 'Urban/House', 'Medicine'] },
+  { group: 'Grocery', items: ['Online Grocery', 'Flipkart Grocery', 'Amazon Grocery', 'Local Shop', 'Milk', 'Non veg', 'Fruits'] },
+  { group: 'Lifestyle', items: ['Dining', 'App Subscription', 'Cinema'] },
+  { group: 'Other', items: ['Prev Bill Bal / Misc'] },
+];
+const SPEND_METHODS = ['UPI', 'Card', 'Cash'];
+
+async function renderSpendTracker(host, token) {
+  const mod = await import('./credit.js');
+  const now = new Date();
+  const ym = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  const year = now.getFullYear();
+
+  const [allocs, rows] = await Promise.all([
+    DB.all('allocations').catch(() => []),
+    DB.byIndex('spends', 'ym', ym).catch(() => []),
+  ]);
+  if (expRenderStale(token)) return;
+  const alloc = (allocs || []).find((a) => Number(a.year) === year) || null;
+
+  // The kitty is the House Exp allocation DOUBLED: the same figure goes in from
+  // each of us, so what the household actually has to spend is twice the line
+  // on the Allocation tab.
+  const share = alloc ? Number(alloc.houseExp) || 0 : 0;
+  const budget = round2(share * 2);
+  const spends = (rows || []).slice().sort((a, b2) => String(b2.date || '').localeCompare(String(a.date || '')) || (b2.id - a.id));
+  const spent = round2(spends.reduce((s, r) => s + (Number(r.amount) || 0), 0));
+  const left = round2(budget - spent);
+
+  // ---- Header: the month, and the one button that matters ----
+  host.appendChild(el('div', { class: 'msheet-head' }, [
+    el('div', { class: 'msheet-stepper' }, [el('span', { class: 'msheet-month-label', text: mod.monthLabel(ym) })]),
+    el('button', { class: 'btn primary small', type: 'button', text: '+ Add spend', onclick: () => openSpendForm(budget) }),
+  ]));
+
+  // ---- Kitty / spent / left ----
+  host.appendChild(el('div', { class: 'trk-summary' }, [
+    el('div', { class: 'trk-sum-cell' }, [
+      el('div', { class: 'trk-sum-label', text: 'Kitty' }),
+      el('div', { class: 'trk-sum-val', text: fmtSheetCur(budget) }),
+      el('div', { class: 'trk-sum-note', text: share > 0 ? fmtSheetCur(share) + ' × 2' : 'set House Exp for ' + year }),
+    ]),
+    el('div', { class: 'trk-sum-cell' }, [
+      el('div', { class: 'trk-sum-label', text: 'Spent' }),
+      el('div', { class: 'trk-sum-val', text: fmtSheetCur(spent) }),
+      el('div', { class: 'trk-sum-note', text: spends.length + (spends.length === 1 ? ' entry' : ' entries') }),
+    ]),
+    el('div', { class: 'trk-sum-cell trk-left' + (left < 0 ? ' is-neg' : '') }, [
+      el('div', { class: 'trk-sum-label', text: 'Left' }),
+      el('div', { class: 'trk-sum-val', text: fmtSheetCur(left) }),
+      el('div', { class: 'trk-sum-note', text: budget > 0 ? Math.round((spent / budget) * 100) + '% used' : '—' }),
+    ]),
+  ]));
+
+  if (budget > 0) {
+    const pct = Math.min(100, Math.max(0, (spent / budget) * 100));
+    host.appendChild(el('div', { class: 'trk-bar' }, [
+      el('div', { class: 'trk-bar-fill' + (spent > budget ? ' is-over' : ''), style: 'width:' + pct.toFixed(1) + '%' }),
+    ]));
+  }
+
+  if (!spends.length) {
+    host.appendChild(el('div', { class: 'empty' }, [
+      el('div', { class: 'e-icon', text: '📍' }),
+      el('p', { text: 'Nothing logged for ' + mod.monthLabel(ym) + ' yet.' }),
+      el('p', { class: 'hint', text: share > 0 ? 'Tap "+ Add spend" each time money leaves the household kitty.' : 'Set House Exp on the Allocation tab first — the kitty is that figure doubled.' }),
+    ]));
+    return;
+  }
+
+  // ---- Rolled up by category, biggest first ----
+  const byCat = new Map();
+  spends.forEach((r) => {
+    const k = r.category || 'Prev Bill Bal / Misc';
+    const cur = byCat.get(k) || { total: 0, count: 0 };
+    cur.total = round2(cur.total + (Number(r.amount) || 0));
+    cur.count++;
+    byCat.set(k, cur);
+  });
+  const cats = [...byCat.entries()].sort((a, b2) => b2[1].total - a[1].total);
+
+  host.appendChild(el('h3', { class: 'div-group-head', text: '📊 By category' }));
+  const catWrap = el('div', { class: 'msheet' });
+  cats.forEach(([name, c]) => {
+    const pct = spent > 0 ? (c.total / spent) * 100 : 0;
+    catWrap.appendChild(el('div', { class: 'msheet-row trk-cat-row' }, [
+      el('div', { class: 'msheet-label' }, [
+        el('span', { text: name }),
+        el('span', { class: 'msheet-note', text: c.count + (c.count === 1 ? ' entry · ' : ' entries · ') + pct.toFixed(0) + '% of spend' }),
+      ]),
+      el('span', { class: 'msheet-val', text: fmtSheetCur(c.total) }),
+    ]));
+  });
+  host.appendChild(catWrap);
+
+  // ---- Every entry, newest first ----
+  host.appendChild(el('h3', { class: 'div-group-head', text: '🧾 Entries' }));
+  const list = el('div', { class: 'msheet' });
+  spends.forEach((r) => {
+    list.appendChild(el('div', { class: 'msheet-row trk-entry' }, [
+      el('div', { class: 'msheet-label' }, [
+        el('span', { text: r.category || '—' }),
+        el('span', { class: 'msheet-note', text: _spendDayLabel(r.date) + ' · ' + (r.method || 'UPI') + (r.note ? ' · ' + r.note : '') }),
+      ]),
+      el('div', { class: 'trk-entry-right' }, [
+        el('span', { class: 'msheet-val', text: fmtSheetCur(r.amount) }),
+        el('button', {
+          class: 'icon-btn trk-del', type: 'button', text: '×', 'aria-label': 'Delete this spend',
+          onclick: async () => {
+            if (!window.confirm('Delete ' + fmtSheetCur(r.amount) + ' on ' + (r.category || '—') + '?')) return;
+            await DB.del('spends', r.id);
+            toast('Deleted');
+            renderHomeExpense();
+          },
+        }),
+      ]),
+    ]));
+  });
+  host.appendChild(list);
+
+  host.appendChild(el('p', { class: 'hint mf-foot', text: 'The kitty is the Allocation tab\'s House Exp doubled — the same figure from each of you. Every spend logged here comes off it. This tab always shows the current month; earlier months stay in the backup.' }));
+}
+
+// "12 Sep" — short, since the rows already sit under one month.
+const _SPEND_MONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function _spendDayLabel(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
+  return m ? String(+m[3]) + ' ' + _SPEND_MONS[+m[2] - 1] : '—';
+}
+
+// Add one spend: category, amount, how it was paid. Deliberately that short —
+// this gets opened several times a day, and anything longer stops being used.
+function openSpendForm(budget) {
+  let chosenCat = null;
+  let chosenMethod = 'UPI';
+
+  const amount = el('input', { type: 'number', inputmode: 'decimal', step: 'any', placeholder: '0' });
+  const dateInp = el('input', { type: 'date', value: todayISO() });
+  const note = el('input', { type: 'text', placeholder: 'Optional note' });
+
+  const catBtns = [];
+  const catGrid = el('div', {}, SPEND_CATEGORIES.map((g) => el('div', { class: 'spend-cat-group' }, [
+    el('div', { class: 'spend-cat-group-label', text: g.group }),
+    el('div', { class: 'spend-cat-grid' }, g.items.map((name) => {
+      const btn = el('button', { class: 'spend-cat-btn', type: 'button', text: name });
+      btn.addEventListener('click', () => {
+        chosenCat = name;
+        catBtns.forEach((x) => x.classList.toggle('active', x === btn));
+        amount.focus();
+      });
+      catBtns.push(btn);
+      return btn;
+    })),
+  ])));
+
+  const methodBtns = [];
+  const methodRow = el('div', { class: 'seg spend-method' }, SPEND_METHODS.map((m) => {
+    const btn = el('button', { type: 'button', class: m === chosenMethod ? 'active' : '', text: m });
+    btn.addEventListener('click', () => {
+      chosenMethod = m;
+      methodBtns.forEach((x) => x.classList.toggle('active', x === btn));
+    });
+    methodBtns.push(btn);
+    return btn;
+  }));
+
+  const save = async () => {
+    if (!chosenCat) { toast('Pick a category'); return; }
+    const amt = round2(num(amount.value) || 0);
+    if (!(amt > 0)) { toast('Enter an amount'); return; }
+    const nowIso = new Date().toISOString();
+    // Filed under the month of the DATE CHOSEN, not today's — logging
+    // yesterday's spend just after midnight must not land it in the wrong month.
+    const d = (dateInp.value || todayISO()).slice(0, 10);
+    await DB.put('spends', {
+      ym: d.slice(0, 7), date: d, category: chosenCat, amount: amt,
+      method: chosenMethod, note: note.value.trim() || null,
+      createdAt: nowIso, updatedAt: nowIso,
+    });
+    closeModal();
+    toast('Added ' + fmtSheetCur(amt));
+    renderHomeExpense();
+  };
+
+  openModal(el('div', { class: 'sheet has-fixed-footer' }, [
+    el('div', { class: 'sheet-scroll' }, [
+      el('h2', { text: 'Add spend' }),
+      el('p', { class: 'hint', text: budget > 0 ? 'Comes off the ' + fmtSheetCur(budget) + ' household kitty.' : 'No House Exp allocation set yet — this is still logged.' }),
+      field('Category', catGrid),
+      el('div', { class: 'field-row' }, [field('Amount', amount), field('Date', dateInp)]),
+      field('Paid by', methodRow),
+      field('Note', note),
+    ]),
+    el('div', { class: 'sheet-footer' }, [el('div', { class: 'btn-row' }, [
+      el('button', { class: 'btn primary', text: 'Save', onclick: save }),
+      el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }),
+    ])]),
+  ]));
 }
 
 // ---------- Allocation tracker (Expense → Allocation tab) ----------

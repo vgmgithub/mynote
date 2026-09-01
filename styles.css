@@ -1779,3 +1779,34 @@ html[data-theme="light"] {
 .alloc-form-row-input-wrap { position: relative; flex: 0 0 110px; }
 .alloc-form-row-input-wrap input { width: 100%; padding: 6px 22px 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); font-size: 0.85rem; font-weight: 600; text-align: right; }
 .alloc-form-row-currency { position: absolute; right: 7px; top: 50%; transform: translateY(-50%); font-size: 0.7rem; color: var(--muted); font-weight: 600; pointer-events: none; }
+
+/* ---- Daily spend tracker (Expense → Tracker tab) ---- */
+/* Kitty / Spent / Left across one strip: three figures that only mean anything
+   read together, so they get equal weight rather than a headline and footnotes. */
+.trk-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 2px 0 10px; }
+.trk-sum-cell { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px; min-width: 0; }
+.trk-sum-label { font-size: 0.62rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; font-weight: 700; }
+.trk-sum-val { font-size: 1rem; font-weight: 800; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.trk-sum-note { font-size: 0.6rem; color: var(--muted); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.trk-left { border-color: var(--good); }
+.trk-left .trk-sum-val { color: var(--good); }
+.trk-left.is-neg { border-color: var(--bad); }
+.trk-left.is-neg .trk-sum-val { color: var(--bad); }
+/* How much of the kitty is gone, at a glance — turns red only once it's
+   actually overspent, not merely close. */
+.trk-bar { height: 6px; border-radius: 999px; background: var(--card-2); border: 1px solid var(--line); overflow: hidden; margin: 0 0 14px; }
+.trk-bar-fill { height: 100%; background: var(--good); border-radius: 999px; transition: width 0.25s ease; }
+.trk-bar-fill.is-over { background: var(--bad); }
+.trk-cat-row { background: var(--card); }
+.trk-entry { background: var(--card); }
+.trk-entry-right { display: flex; align-items: center; gap: 6px; }
+.trk-del { opacity: 0.5; font-size: 1rem; line-height: 1; }
+.trk-del:hover { opacity: 1; color: var(--bad); }
+/* Category picker: tap targets, not a dropdown. A dropdown hides the options
+   behind an extra tap, and this form is opened several times a day. */
+.spend-cat-group { margin-bottom: 10px; }
+.spend-cat-group-label { font-size: 0.6rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; font-weight: 700; margin-bottom: 5px; }
+.spend-cat-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+.spend-cat-btn { font-size: 0.72rem; font-weight: 600; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--card-2); color: var(--text); cursor: pointer; }
+.spend-cat-btn.active { border-color: var(--accent); background: var(--card); color: var(--accent); font-weight: 700; box-shadow: inset 0 0 0 1px var(--accent); }
+.spend-method button { flex: 1; }
