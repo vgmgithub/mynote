@@ -325,15 +325,23 @@ main.swipe-in-left { animation: swipe-from-left 0.18s ease-out; }
    broken that layout the moment this became a 2-line flex-column row. */
 .div-year-entry { display: flex; flex-direction: column; gap: 5px; padding: 4px 0; font-size: 0.7rem; }
 .div-year-entry.current-year { background: rgba(56,189,248,0.08); padding: 6px 8px; margin: 0 -8px; border-radius: 4px; font-weight: 600; }
-.div-year-entry-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+/* Year / total / month-chips / calc all on ONE line — a stock usually pays in
+   about three months, so a second row per year was mostly empty space. Wraps
+   rather than overflowing when a year does have many payout months. */
+.div-year-entry-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .div-year-entry-k { color: var(--muted); flex: 0 0 35px; }
 .div-year-entry-v { font-weight: 700; color: var(--text); }
-.div-year-entry-calc { font-size: 0.62rem; color: var(--muted); flex: 1; text-align: right; }
+.div-year-entry-calc { font-size: 0.62rem; color: var(--muted); margin-left: auto; text-align: right; }
 /* Per-year payout-month chips — this year's own months, from our per-year
    months fix (not the record-level consolidated list above). */
 .div-year-month-chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .div-month-chip { font-size: 0.6rem; font-weight: 600; padding: 2px 7px; border-radius: 999px; background: var(--card-2); border: 1px solid var(--line); color: var(--muted); }
 .div-month-chip.upcoming { background: rgba(56,189,248,0.14); border-color: rgba(56,189,248,0.4); color: var(--accent); font-weight: 700; }
+/* A chip carrying that month's own figure: name plain, amount in a blue pill.
+   Only the amount-bearing variant tightens its right padding — the plain chips
+   on the card's consolidated months line keep the symmetric padding above. */
+.div-month-chip.has-amt { display: inline-flex; align-items: center; gap: 5px; padding-right: 3px; }
+.div-chip-amt { background: rgba(56,189,248,0.16); border: 1px solid rgba(56,189,248,0.38); color: var(--accent); border-radius: 999px; padding: 1px 6px; font-weight: 700; }
 /* Metals: price control row under the summary card */
 .metal-price-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 2px 10px; }
 .metal-price-row .hint { margin: 0; }

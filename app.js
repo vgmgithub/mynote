@@ -3378,16 +3378,22 @@ function _divCard(rec, mod, curYear, cur) {
     const yrMonths = Array.isArray(yr.months) ? yr.months : [];
     const chips = el('div', { class: 'div-year-month-chips' }, yrMonths.map((m) => {
       const v = yr.perMonth ? Number(yr.perMonth[m]) : null;
-      return el('span', { class: 'div-month-chip', text: v ? m + ' ' + mod.fmtDiv(v, cur) : m });
+      // Month name plain, its own figure in a blue pill beside it — a stock
+      // typically pays in only ~3 months, so these ride on the year's line
+      // rather than taking a second row each.
+      return el('span', { class: 'div-month-chip' + (v ? ' has-amt' : '') }, [
+        el('span', { text: m }),
+        v ? el('span', { class: 'div-chip-amt', text: mod.fmtDiv(v, cur) }) : document.createTextNode(''),
+      ]);
     }));
 
     breakdown.appendChild(el('div', { class: 'div-year-entry' + (isCurrentYear ? ' current-year' : '') }, [
       el('div', { class: 'div-year-entry-top' }, [
         el('span', { class: 'div-year-entry-k', text: String(y) }),
         el('span', { class: 'div-year-entry-v', text: mod.fmtDiv(yearTotal, cur) }),
+        chips,
         el('span', { class: 'div-year-entry-calc', text: calcTxt }),
       ]),
-      chips,
     ]));
   });
 
