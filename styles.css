@@ -1734,6 +1734,18 @@ html[data-theme="light"] {
 .msheet-note { font-size: 0.64rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.3px; }
 .msheet-val { font-weight: 700; font-size: 0.92rem; white-space: nowrap; }
 .msheet-input input { width: 104px; text-align: right; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); font-size: 0.88rem; font-weight: 700; }
+/* Green rows: the headline figure is itself the field. Styled as the value
+   (same weight and size as .msheet-val) rather than as an input, with a dashed
+   rule underneath as the only hint that it takes typing — a full box here would
+   read as a second, separate number next to the ones the red rows show. */
+.msheet-val-input {
+  width: 128px; text-align: right; font-weight: 700; font-size: 0.92rem;
+  color: var(--text); background: transparent;
+  border: none; border-bottom: 1px dashed var(--line);
+  border-radius: 0; padding: 2px 2px 3px;
+}
+.msheet-val-input::placeholder { color: var(--text); opacity: 0.55; font-weight: 700; }
+.msheet-val-input:focus { outline: none; border-bottom-color: var(--accent); }
 .msheet-total { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 12px 0 4px; padding: 14px 16px; border-radius: 12px; background: linear-gradient(135deg, var(--card) 0%, var(--card-2) 100%); border: 1px solid var(--good); }
 .msheet-total.is-neg { border-color: var(--bad); }
 .msheet-total-label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; font-weight: 700; }

@@ -3012,6 +3012,7 @@ async function renderExpenseSheet(host, token) {
     { key: 'usStock', label: 'US Stock', source: perMonth('usStock'), note: planNote },
     { key: 'metal', label: 'Metal', source: perMonth('metal'), note: planNote },
     { key: 'monthlyExpense', label: 'Monthly Expense', source: null, note: 'you enter' },
+    { key: 'otherExpense', label: 'Other Expense', source: null, note: 'you enter' },
   ];
   // Boxes are stored as text ("2000+5000"), but earlier months were written as
   // plain numbers — String() covers both, and sumExpr reads either. Normalised
@@ -3099,18 +3100,22 @@ async function renderExpenseSheet(host, token) {
     renderHomeExpense();
   };
 
-  // Green rows: an editable box, same as the red ones. `fallback` is the figure
-  // to show when nothing has been entered for this month yet — In Hand starts
-  // from the Allocation salary but is overridable, since actual take-home moves
-  // around (a bonus, a deduction) while the plan stays put.
+  // Green rows carry no second box: the headline figure IS the field. They hold
+  // one plain number (no "+" accumulation — nothing fetches into them), so a
+  // separate box under a read-only total would just be the same number twice.
+  // `fallback` is what shows when nothing has been entered for this month — In
+  // Hand starts from the Allocation salary but is overridable, since actual
+  // take-home moves around (a bonus, a deduction) while the plan stays put.
   const creditInputRow = (label, key, note, fallback) => {
     const stored = sheet[key];
     const hasOwn = stored != null && String(stored).trim() !== '';
     const amount = hasOwn ? Number(stored) || 0 : (fallback || 0);
     credits += amount;
     const inp = el('input', {
+      class: 'msheet-val-input',
       type: 'number', inputmode: 'decimal', step: 'any',
-      value: hasOwn ? amount : '', placeholder: fallback ? String(round2(fallback)) : '0',
+      value: hasOwn ? amount : '', placeholder: fmtSheetCur(fallback || 0),
+      'aria-label': label,
     });
     inp.addEventListener('blur', () => {
       const raw = inp.value.trim();
@@ -3123,10 +3128,7 @@ async function renderExpenseSheet(host, token) {
         el('span', { text: label }),
         el('span', { class: 'msheet-note', text: note }),
       ]),
-      el('div', { class: 'msheet-stack' }, [
-        el('span', { class: 'msheet-val', text: fmtSheetCur(amount) }),
-        el('div', { class: 'msheet-input' }, [inp]),
-      ]),
+      inp,
     ]));
   };
 
