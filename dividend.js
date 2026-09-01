@@ -86,6 +86,35 @@ export function yearsOf(rec) {
   return (rec.years || []).map((r) => Number(r.year)).filter((n) => Number.isFinite(n)).sort((a, b) => b - a);
 }
 
+// Every month this stock has ever been recorded as paying in. Pooled from the
+// record-level list AND each year's own months, rather than trusting the
+// record-level field alone: that field is rebuilt from whatever year rows the
+// editor had on screen, so a year the editor now filters out (see
+// visibleYears) would quietly drop its months from it on the next save.
+export function payoutMonthsOf(rec) {
+  const pays = new Set(parseMonths(rec && rec.months));
+  ((rec && rec.years) || []).forEach((y) => {
+    (Array.isArray(y.months) ? y.months : []).forEach((m) => pays.add(m));
+  });
+  return pays;
+}
+
+// Is this month's dividend still outstanding? True when the stock pays in
+// `mon` and nothing has been recorded against THAT MONTH of `year` yet.
+//
+// Deliberately per-month, not per-year: a stock paying quarterly has money
+// logged for the year by its second payout, so a year-total check would hide
+// every later month of that year — which is exactly what it did.
+export function isMonthPending(rec, year, mon) {
+  if (!payoutMonthsOf(rec).has(mon)) return false;
+  const y = ((rec && rec.years) || []).find((r) => Number(r.year) === Number(year));
+  if (!y) return true; // nothing recorded for the year at all
+  if (y.perMonth) return !(Number(y.perMonth[mon]) > 0);
+  // Rows saved before the per-month breakdown existed carry only a year total,
+  // so that all-or-nothing signal is the best available for them.
+  return !(yearTotal(rec, year) > 0);
+}
+
 // Years worth showing/offering for a record, newest first. A year before the
 // linked stock's "Started (year)" is dropped — the stock wasn't held then, so
 // it can't have paid. UNLESS that year actually carries a figure: older

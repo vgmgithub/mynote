@@ -2581,11 +2581,10 @@ async function _homeUpcomingStrip() {
   } catch (_) {}
 
   // ---- Dividends: stocks that historically pay THIS calendar month ----
-  // `rec.months` is the user's own record of which months a stock has paid in
-  // (any past year, not this one) - see dividend.js. A stock qualifies when this
-  // month is in that list AND the CURRENT year's total on the record is still 0,
-  // i.e. nothing has been logged for it yet - once the user records this year's
-  // dividend the reminder drops it, since there's nothing left to check for.
+  // A stock qualifies when it pays in this month and nothing has been recorded
+  // against THIS MONTH of the current year yet - see dividend.js
+  // isMonthPending. Logging that month's figure drops it from the reminder,
+  // since there's nothing left to check for.
   //
   // India and US get SEPARATE cards. They're different currencies and different
   // brokers, so they're two different things to go and check - one merged card
@@ -2598,9 +2597,7 @@ async function _homeUpcomingStrip() {
       const curMonAbbr = mod.MONTHS[nowDate.getMonth()];
       const curYear = nowDate.getFullYear();
       const monthName = nowDate.toLocaleString('en-US', { month: 'long' });
-      const due = recs
-        .filter((d) => (d.months || []).includes(curMonAbbr))
-        .filter((d) => mod.yearTotal(d, curYear) <= 0);
+      const due = recs.filter((d) => mod.isMonthPending(d, curYear, curMonAbbr));
       // Market named in words, not a 🇺🇸/🇮🇳 flag: regional-indicator pairs don't
       // render as flags on Windows, where they fall back to the bare letters —
       // "us Dividend of September" reads as the pronoun.
