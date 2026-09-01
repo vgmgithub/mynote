@@ -161,6 +161,7 @@ export function computeCredit(cards, reimbursements) {
   const grandBilled = monthly.reduce((s, m) => s + m.billed, 0);
   const grandReimbursed = monthly.reduce((s, m) => s + m.reimbursed, 0);
   const billedMonths = monthly.filter((m) => m.billed > 0).length;
+  const grandToBePaid = Math.max(0, grandBilled - grandReimbursed);
 
   return {
     yms,
@@ -169,10 +170,10 @@ export function computeCredit(cards, reimbursements) {
     cardCount: rows.length,
     grandBilled,
     grandReimbursed,
-    grandToBePaid: Math.max(0, grandBilled - grandReimbursed),
-    // Average across MONTHS (not cards) — "what does this whole wallet cost in
-    // a typical month".
-    averagePerMonth: billedMonths > 0 ? grandBilled / billedMonths : 0,
+    grandToBePaid,
+    // Average across MONTHS (not cards) — "what does this whole wallet
+    // actually cost in a typical month" (To Be Paid, not raw Billed).
+    averagePerMonth: monthly.length > 0 ? monthly.reduce((s, m) => s + m.toBePaid, 0) / monthly.length : 0,
     latestYm: yms.length ? yms[yms.length - 1] : null,
     latestBilled: monthly.length ? monthly[monthly.length - 1].billed : 0,
     totalLimit: rows.reduce((s, r) => s + r.c.limit, 0),
