@@ -2983,15 +2983,23 @@ async function renderExpenseSheet(host, token) {
   const ym = _expSheetYm;
   const year = Number(ym.slice(0, 4));
 
-  const [allocs, reimb, sheetRow, ef] = await Promise.all([
+  const [allocs, reimb, sheetRow, ef, spendRows] = await Promise.all([
     DB.all('allocations').catch(() => []),
     DB.get('ccReimbursements', ym).catch(() => null),
     DB.get('monthlySheet', ym).catch(() => null),
     efLoad().catch(() => null),
+    DB.byIndex('spends', 'ym', ym).catch(() => []),
   ]);
   if (expRenderStale(token)) return;
   const alloc = (allocs || []).find((a) => Number(a.year) === year) || null;
   const sheet = sheetRow || {};
+
+  // What the Tracker tab has left in the household kitty for this month —
+  // House Exp doubled, less everything logged against it. Feeds the Monthly
+  // Expense row so the two surfaces can't disagree about the same figure.
+  const kitty = round2((alloc ? Number(alloc.houseExp) || 0 : 0) * 2);
+  const kittySpent = round2((spendRows || []).reduce((s, r) => s + (Number(r.amount) || 0), 0));
+  const kittyLeft = round2(kitty - kittySpent);
 
   // Allocation figures are already monthly — used as entered.
   const perMonth = (key) => (alloc ? Number(alloc[key]) || 0 : 0);
@@ -3012,7 +3020,12 @@ async function renderExpenseSheet(host, token) {
     { key: 'indStock', label: 'Ind Stock', source: perMonth('indStock'), note: planNote },
     { key: 'usStock', label: 'US Stock', source: perMonth('usStock'), note: planNote },
     { key: 'metal', label: 'Metal', source: perMonth('metal'), note: planNote },
-    { key: 'monthlyExpense', label: 'Monthly Expense', source: null, note: 'you enter' },
+    // `single` rows are one editable figure with no accumulation box: nothing
+    // fetches into them, so there'd be no list of terms to keep. Monthly
+    // Expense defaults to whatever the Tracker has left in the kitty, and is
+    // overridable for a month that didn't work out that way.
+    { key: 'monthlyExpense', label: 'Monthly Expense', source: null, single: true, fallback: kittyLeft,
+      note: kitty > 0 ? 'tracker balance · ' + fmtSheetCur(kittyLeft) : 'you enter' },
     { key: 'otherExpense', label: 'Other Expense', source: null, note: 'you enter' },
   ];
   // Boxes are stored as text ("2000+5000"), but earlier months were written as
@@ -3020,7 +3033,12 @@ async function renderExpenseSheet(host, token) {
   // on the way out so a box written before term-rounding existed (the emergency
   // fund's cash arrives as 140600.25999999999) reads back at 2dp.
   const exprOf = (r) => normaliseExpr(sheet[r.key]);
-  const boxOf = (r) => sumExpr(exprOf(r));
+  // A `single` row holds one plain number and falls back to its derived figure
+  // when nothing has been entered; the rest sum their expression.
+  const hasOwnVal = (r) => sheet[r.key] != null && String(sheet[r.key]).trim() !== '';
+  const boxOf = (r) => (r.single
+    ? (hasOwnVal(r) ? round2(Number(sheet[r.key]) || 0) : round2(r.fallback || 0))
+    : sumExpr(exprOf(r)));
 
   // ---- Month stepper + the shared Fetch ----
   // Steps within the known range only. While the range IS one month (the sheet
@@ -3139,6 +3157,32 @@ async function renderExpenseSheet(host, token) {
   debitRows.forEach((r) => {
     const expr = exprOf(r);
     const boxVal = boxOf(r);
+    // `single` rows edit their headline figure directly — same shape as the
+    // green rows, since with nothing fetching into them a box under a
+    // read-only total would just be the number twice.
+    if (r.single) {
+      const own = hasOwnVal(r);
+      const inp = el('input', {
+        class: 'msheet-val-input',
+        type: 'number', inputmode: 'decimal', step: 'any',
+        value: own ? boxVal : '', placeholder: fmtSheetCur(r.fallback || 0),
+        'aria-label': r.label,
+      });
+      inp.addEventListener('blur', () => {
+        const raw = inp.value.trim();
+        // Cleared means "follow the tracker again", not zero.
+        const v = raw === '' ? null : round2(num(raw) || 0);
+        if (v !== (own ? boxVal : null)) saveField(r.key, v);
+      });
+      table.appendChild(el('div', { class: 'msheet-row msheet-debit' }, [
+        el('div', { class: 'msheet-label' }, [
+          el('span', { text: r.label }),
+          el('span', { class: 'msheet-note', text: r.note }),
+        ]),
+        inp,
+      ]));
+      return;
+    }
     // type=text, not number: a number input rejects "2000+5000" outright and
     // reports an empty value for it. inputmode=text keeps a usable keyboard on
     // mobile (the decimal pad has no "+" key).
@@ -3184,7 +3228,7 @@ async function renderExpenseSheet(host, token) {
     el('span', { class: 'msheet-total-val', text: fmtSheetCur(available) }),
   ]));
 
-  host.appendChild(el('p', { class: 'hint mf-foot', text: 'Available Balance = (In Hand + Virtual Bal) − every red row. Each box takes a running total you can add to: type "2000+5000" and the figure above shows the sum. ↻ Fetch appends this month\'s figure (the amount after the · in a row\'s caption) as another term. In Hand starts from the Allocation salary — type over it for a month that differed, or clear it to go back to the plan.' }));
+  host.appendChild(el('p', { class: 'hint mf-foot', text: 'Available Balance = (In Hand + Virtual Bal) − every red row. Each box takes a running total you can add to: type "2000+5000" and the figure above shows the sum. ↻ Fetch appends this month\'s figure (the amount after the · in a row\'s caption) as another term. In Hand starts from the Allocation salary and Monthly Expense from the Tracker balance left in the kitty — type over either for a month that differed, or clear it to follow the source again.' }));
 }
 
 // ---------- Daily spend tracker (Expense → Tracker tab) ----------
@@ -3210,12 +3254,14 @@ async function renderSpendTracker(host, token) {
   const ym = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
   const year = now.getFullYear();
 
-  const [allocs, rows] = await Promise.all([
+  const [allocs, rows, cards] = await Promise.all([
     DB.all('allocations').catch(() => []),
     DB.byIndex('spends', 'ym', ym).catch(() => []),
+    DB.all('creditCards').catch(() => []),
   ]);
   if (expRenderStale(token)) return;
   const alloc = (allocs || []).find((a) => Number(a.year) === year) || null;
+  const cardName = new Map((cards || []).map((c) => [c.id, c.name || 'Card']));
 
   // The kitty is the House Exp allocation DOUBLED: the same figure goes in from
   // each of us, so what the household actually has to spend is twice the line
@@ -3299,14 +3345,19 @@ async function renderSpendTracker(host, token) {
     list.appendChild(el('div', { class: 'msheet-row trk-entry' }, [
       el('div', { class: 'msheet-label' }, [
         el('span', { text: r.category || '—' }),
-        el('span', { class: 'msheet-note', text: _spendDayLabel(r.date) + ' · ' + (r.method || 'UPI') + (r.note ? ' · ' + r.note : '') }),
+        el('span', { class: 'msheet-note', text: _spendDayLabel(r.date) + ' · '
+          + (r.method || 'UPI') + (r.cardId != null && cardName.has(r.cardId) ? ' (' + cardName.get(r.cardId) + ')' : '')
+          + (r.note ? ' · ' + r.note : '') }),
       ]),
       el('div', { class: 'trk-entry-right' }, [
         el('span', { class: 'msheet-val', text: fmtSheetCur(r.amount) }),
         el('button', {
           class: 'icon-btn trk-del', type: 'button', text: '×', 'aria-label': 'Delete this spend',
           onclick: async () => {
-            if (!window.confirm('Delete ' + fmtSheetCur(r.amount) + ' on ' + (r.category || '—') + '?')) return;
+            const billed = r.cardId != null;
+            if (!window.confirm('Delete ' + fmtSheetCur(r.amount) + ' on ' + (r.category || '—') + '?'
+              + (billed ? '\n\nIt will also come off that card\'s billed total for the month.' : ''))) return;
+            if (billed) await _billSpendToCard(r.cardId, r.ym, -(Number(r.amount) || 0));
             await DB.del('spends', r.id);
             toast('Deleted');
             renderHomeExpense();
@@ -3320,6 +3371,31 @@ async function renderSpendTracker(host, token) {
   host.appendChild(el('p', { class: 'hint mf-foot', text: 'The kitty is the Allocation tab\'s House Exp doubled — the same figure from each of you. Every spend logged here comes off it. This tab always shows the current month; earlier months stay in the backup.' }));
 }
 
+// Move `delta` onto a card's billed total for one month, creating the month row
+// if the card has none yet. Used with a positive delta when a card spend is
+// logged and a negative one when it's deleted, so the Credit Card tab always
+// reflects the spends that are actually on record — a spend removed here must
+// not leave the statement inflated.
+//
+// Only `billed` is touched: `status`/`paidOn` say whether the bill was settled,
+// which adding a purchase mid-month tells us nothing about.
+async function _billSpendToCard(cardId, ym, delta) {
+  try {
+    const card = await DB.get('creditCards', cardId);
+    if (!card) return;
+    const months = Array.isArray(card.months) ? card.months.slice() : [];
+    const ix = months.findIndex((m) => String(m.ym).slice(0, 7) === ym);
+    if (ix >= 0) {
+      months[ix] = Object.assign({}, months[ix], { billed: round2(Math.max(0, (Number(months[ix].billed) || 0) + delta)) });
+    } else if (delta > 0) {
+      months.push({ ym, billed: round2(delta), status: null, paidOn: null });
+    } else {
+      return; // nothing to take away from
+    }
+    await DB.put('creditCards', Object.assign({}, card, { months, updatedAt: new Date().toISOString() }));
+  } catch (_) { /* a spend must still save even if the card write fails */ }
+}
+
 // "12 Sep" — short, since the rows already sit under one month.
 const _SPEND_MONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 function _spendDayLabel(iso) {
@@ -3329,10 +3405,12 @@ function _spendDayLabel(iso) {
 
 // Add one spend: category, amount, how it was paid. Deliberately that short —
 // this gets opened several times a day, and anything longer stops being used.
-function openSpendForm(budget) {
+async function openSpendForm(budget) {
   let chosenCat = null;
   let chosenMethod = 'UPI';
+  let chosenCardId = null;
 
+  const cards = (await DB.all('creditCards').catch(() => [])) || [];
   const amount = el('input', { type: 'number', inputmode: 'decimal', step: 'any', placeholder: '0' });
   const dateInp = el('input', { type: 'date', value: todayISO() });
   const note = el('input', { type: 'text', placeholder: 'Optional note' });
@@ -3352,12 +3430,38 @@ function openSpendForm(budget) {
     })),
   ])));
 
+  // Which card the swipe went on — only asked once "Card" is the method, since
+  // it's meaningless otherwise. Choosing one bills the spend to that card's
+  // month on the Credit Card tab, so the statement builds itself as the month
+  // goes rather than being typed in from scratch at the end of it.
+  const cardBtns = [];
+  const cardGrid = el('div', { class: 'spend-card-grid' }, cards.map((c) => {
+    const btn = el('button', { class: 'spend-card-btn', type: 'button' }, [
+      el('span', { class: 'spend-card-radio' }),
+      el('span', { class: 'spend-card-name', text: c.name || 'Card' }),
+    ]);
+    btn.addEventListener('click', () => {
+      chosenCardId = chosenCardId === c.id ? null : c.id; // tap again to unset
+      cardBtns.forEach((x) => x.classList.toggle('active', x === btn && chosenCardId === c.id));
+    });
+    cardBtns.push(btn);
+    return btn;
+  }));
+  const cardField = field('Which card', cards.length
+    ? cardGrid
+    : el('p', { class: 'hint', style: 'margin:0', text: 'No credit cards yet — add one on the Credit Card tab to bill spends to it.' }));
+  cardField.classList.add('hidden');
+
   const methodBtns = [];
   const methodRow = el('div', { class: 'seg spend-method' }, SPEND_METHODS.map((m) => {
     const btn = el('button', { type: 'button', class: m === chosenMethod ? 'active' : '', text: m });
     btn.addEventListener('click', () => {
       chosenMethod = m;
       methodBtns.forEach((x) => x.classList.toggle('active', x === btn));
+      cardField.classList.toggle('hidden', m !== 'Card');
+      // Switching away from Card drops the selection, so a card can't be
+      // silently billed for something paid by UPI.
+      if (m !== 'Card') { chosenCardId = null; cardBtns.forEach((x) => x.classList.remove('active')); }
     });
     methodBtns.push(btn);
     return btn;
@@ -3371,13 +3475,16 @@ function openSpendForm(budget) {
     // Filed under the month of the DATE CHOSEN, not today's — logging
     // yesterday's spend just after midnight must not land it in the wrong month.
     const d = (dateInp.value || todayISO()).slice(0, 10);
+    const ym = d.slice(0, 7);
+    const cardId = chosenMethod === 'Card' ? chosenCardId : null;
+    if (cardId != null) await _billSpendToCard(cardId, ym, amt);
     await DB.put('spends', {
-      ym: d.slice(0, 7), date: d, category: chosenCat, amount: amt,
-      method: chosenMethod, note: note.value.trim() || null,
+      ym, date: d, category: chosenCat, amount: amt,
+      method: chosenMethod, cardId, note: note.value.trim() || null,
       createdAt: nowIso, updatedAt: nowIso,
     });
     closeModal();
-    toast('Added ' + fmtSheetCur(amt));
+    toast('Added ' + fmtSheetCur(amt) + (cardId != null ? ' · billed to card' : ''));
     renderHomeExpense();
   };
 
@@ -3388,6 +3495,7 @@ function openSpendForm(budget) {
       field('Category', catGrid),
       el('div', { class: 'field-row' }, [field('Amount', amount), field('Date', dateInp)]),
       field('Paid by', methodRow),
+      cardField,
       field('Note', note),
     ]),
     el('div', { class: 'sheet-footer' }, [el('div', { class: 'btn-row' }, [

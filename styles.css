@@ -1810,3 +1810,18 @@ html[data-theme="light"] {
 .spend-cat-btn { font-size: 0.72rem; font-weight: 600; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--card-2); color: var(--text); cursor: pointer; }
 .spend-cat-btn.active { border-color: var(--accent); background: var(--card); color: var(--accent); font-weight: 700; box-shadow: inset 0 0 0 1px var(--accent); }
 .spend-method button { flex: 1; }
+/* Card picker, shown only when the spend was paid by Card. Four across so a
+   typical wallet fits without scrolling; the radio dot makes it read as a
+   single choice rather than the multi-select the category chips above allow. */
+.spend-card-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.spend-card-btn {
+  display: flex; align-items: flex-start; gap: 5px; min-width: 0;
+  padding: 7px 7px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--card-2); color: var(--text);
+  font-size: 0.63rem; font-weight: 600; text-align: left; line-height: 1.2;
+}
+.spend-card-radio { flex: 0 0 auto; width: 11px; height: 11px; border-radius: 50%; border: 1.5px solid var(--muted); }
+.spend-card-btn.active { border-color: var(--accent); background: var(--card); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.spend-card-btn.active .spend-card-radio { border-color: var(--accent); background: var(--accent); box-shadow: inset 0 0 0 2px var(--card); }
+.spend-card-name { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 330px) { .spend-card-grid { grid-template-columns: repeat(2, 1fr); } }
