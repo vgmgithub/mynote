@@ -1730,7 +1730,7 @@ function buildEfBottomNav() {
   const nav = $('#efBottomNav');
   if (nav.childElementCount) { updateEfNavActive(); return; }
   nav.innerHTML = '';
-  [['fund', '🛟', 'Funds'], ['targets', '🎯', 'Targets'], ['loans', '🤝', 'Loans'], ['log', '🗓️', 'Log'], ['terms', '📜', 'Rules']].forEach(([v, ico, label]) => {
+  [['fund', '🚨', 'Funds'], ['targets', '🎯', 'Targets'], ['loans', '🤝', 'Loans'], ['log', '🗓️', 'Log'], ['terms', '📜', 'Rules']].forEach(([v, ico, label]) => {
     nav.appendChild(el('button', { 'data-view': v, onclick: () => { if (_efTab === v) return; _efTab = v; renderEmergency(); $('#efAddBtn').classList.toggle('hidden', _efTab === 'fund' || _efTab === 'terms'); } },
       [el('span', { class: 'bn-ico', text: ico }), label]));
   });
@@ -2801,7 +2801,7 @@ async function renderHomeSavings() {
   const host = $('#savingsView');
   host.innerHTML = '';
 
-  const efCard = _homeCard('🛟', 'Emergency Fund', 'targets · loans · corpus', () => openEmergency());
+  const efCard = _homeCard('🚨', 'Emergency Fund', 'targets · loans · corpus', () => openEmergency());
   const bankSavCard = _homeCard('🐷', 'Bank Savings', 'per-bank balances', () => setAppMode('banksav'));
   host.appendChild(el('div', { class: 'home-cards' }, [efCard, bankSavCard]));
 
