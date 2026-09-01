@@ -57,6 +57,9 @@ let _efLoanFilter = 'open';  // 'open' | 'closed' | 'all'
 // Expense view state (only used inside the Expense section page).
 let _expTab = 'cc';          // 'cc' | 'alloc' | 'spend' (bottom nav)
 let _expSheetYm = null;      // month shown on the Expense tab; null = this month
+// First month the monthly sheet covers. Nothing before this is reachable — the
+// sheet simply wasn't being kept then, so those months would be blank forever.
+const EXPENSE_START_YM = '2026-09';
 // Every Expense render takes a ticket. Each tab's renderer loads its data
 // asynchronously, so two renders started close together (a fast tab switch, a
 // save that re-renders while a switch is in flight) both clear the host and
@@ -2944,6 +2947,12 @@ const sumExpr = (s) => {
 };
 // Trailing zeros off, so an appended term reads "+5000" not "+5000.00".
 const exprTerm = (n) => String(round2(n));
+// Clamp every term in an expression to 2dp, leaving the "+" structure alone.
+// Sources are computed by float arithmetic (the emergency fund's available cash
+// especially), and earlier versions stored the raw sum — so a box could hold
+// "140600.25999999999". Applied on read AND on save, so those clean themselves
+// up the next time the month is touched, with no migration.
+const normaliseExpr = (s) => String(s == null ? '' : s).replace(/-?\d+(?:\.\d+)?/g, (m) => String(round2(m)));
 
 // ---------- Monthly cash-flow sheet (Expense → Expense tab) ----------
 // One month at a time: what came in, what's committed out, what's left.
@@ -2961,7 +2970,16 @@ async function renderExpenseSheet(host, token) {
   const mod = await import('./credit.js');
   const now = new Date();
   const thisYm = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
-  const ym = _expSheetYm || thisYm;
+  // The sheet runs from the month it went into use to the CURRENT month, and no
+  // further: a future month has no card statement, no spending and no fund
+  // balance behind it, so stepping into one would only ever show a hollow copy
+  // of the plan. Clamped rather than merely hidden, so a stale _expSheetYm
+  // (left behind by a month rolling over mid-session) can't strand the tab on
+  // an out-of-range month.
+  const months = mod.monthRangeYm(EXPENSE_START_YM, thisYm);
+  if (!months.length) months.push(thisYm); // clock set before the start month
+  if (!_expSheetYm || !months.includes(_expSheetYm)) _expSheetYm = months[months.length - 1];
+  const ym = _expSheetYm;
   const year = Number(ym.slice(0, 4));
 
   const [allocs, reimb, sheetRow, ef] = await Promise.all([
@@ -2996,15 +3014,23 @@ async function renderExpenseSheet(host, token) {
     { key: 'monthlyExpense', label: 'Monthly Expense', source: null, note: 'you enter' },
   ];
   // Boxes are stored as text ("2000+5000"), but earlier months were written as
-  // plain numbers — String() covers both, and sumExpr reads either.
-  const exprOf = (r) => (sheet[r.key] == null ? '' : String(sheet[r.key]));
+  // plain numbers — String() covers both, and sumExpr reads either. Normalised
+  // on the way out so a box written before term-rounding existed (the emergency
+  // fund's cash arrives as 140600.25999999999) reads back at 2dp.
+  const exprOf = (r) => normaliseExpr(sheet[r.key]);
   const boxOf = (r) => sumExpr(exprOf(r));
 
   // ---- Month stepper + the shared Fetch ----
+  // Steps within the known range only. While the range IS one month (the sheet
+  // has only just started) the arrows are left out entirely rather than shown
+  // permanently dead — they reappear on their own once a second month exists.
+  const monthIx = months.indexOf(ym);
+  const multiMonth = months.length > 1;
   const monthLabelEl = el('span', { class: 'msheet-month-label', text: mod.monthLabel(ym) });
   const step = (delta) => {
-    const d = new Date(year, Number(ym.slice(5, 7)) - 1 + delta, 1);
-    _expSheetYm = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    const next = months[monthIx + delta];
+    if (!next) return;
+    _expSheetYm = next;
     renderHomeExpense();
   };
 
@@ -3034,12 +3060,31 @@ async function renderExpenseSheet(host, token) {
     renderHomeExpense();
   };
 
+  // A month that has never been opened gets its figures pulled in on the spot,
+  // so rolling into a new month doesn't start on a blank sheet nobody
+  // remembered to fill. Unlike the button this doesn't ask: it only ever fires
+  // when the month has NO stored row at all, so there is nothing it could
+  // double, and it can't fire twice because writing the row settles the
+  // condition. Past months are left alone — auto-filling one the user
+  // deliberately skipped would invent history.
+  if (!sheetRow && ym === thisYm && fetchable.length) {
+    const seed = { ym, updatedAt: new Date().toISOString() };
+    fetchable.forEach((r) => { seed[r.key] = exprTerm(r.source); });
+    await DB.put('monthlySheet', seed);
+    if (expRenderStale(token)) return;
+    toast(mod.monthLabel(ym) + ' started — figures fetched');
+    renderHomeExpense();
+    return;
+  }
+
+  const prevBtn = el('button', { class: 'icon-btn', type: 'button', text: '◀', onclick: () => step(-1) });
+  const nextBtn = el('button', { class: 'icon-btn', type: 'button', text: '▶', onclick: () => step(1) });
+  prevBtn.disabled = monthIx <= 0;
+  nextBtn.disabled = monthIx >= months.length - 1;
   host.appendChild(el('div', { class: 'msheet-head' }, [
-    el('div', { class: 'msheet-stepper' }, [
-      el('button', { class: 'icon-btn', type: 'button', text: '◀', onclick: () => step(-1) }),
-      monthLabelEl,
-      el('button', { class: 'icon-btn', type: 'button', text: '▶', onclick: () => step(1) }),
-    ]),
+    el('div', { class: 'msheet-stepper' }, multiMonth
+      ? [prevBtn, monthLabelEl, nextBtn]
+      : [monthLabelEl]),
     el('button', { class: 'btn ghost small msheet-fetch', type: 'button', text: '↻ Fetch', onclick: fetchAll }),
   ]));
 
@@ -3054,39 +3099,39 @@ async function renderExpenseSheet(host, token) {
     renderHomeExpense();
   };
 
-  // Green rows keep their original shape: one figure, no box.
-  const creditRow = (label, amount, note) => {
-    credits += amount;
-    table.appendChild(el('div', { class: 'msheet-row msheet-credit' }, [
-      el('div', { class: 'msheet-label' }, [
-        el('span', { text: label }),
-        note ? el('span', { class: 'msheet-note', text: note }) : el('span'),
-      ]),
-      el('span', { class: 'msheet-val', text: fmtSheetCur(amount) }),
-    ]));
-  };
-  const creditInputRow = (label, key) => {
-    const amount = Number(sheet[key]) || 0;
+  // Green rows: an editable box, same as the red ones. `fallback` is the figure
+  // to show when nothing has been entered for this month yet — In Hand starts
+  // from the Allocation salary but is overridable, since actual take-home moves
+  // around (a bonus, a deduction) while the plan stays put.
+  const creditInputRow = (label, key, note, fallback) => {
+    const stored = sheet[key];
+    const hasOwn = stored != null && String(stored).trim() !== '';
+    const amount = hasOwn ? Number(stored) || 0 : (fallback || 0);
     credits += amount;
     const inp = el('input', {
       type: 'number', inputmode: 'decimal', step: 'any',
-      value: amount !== 0 ? amount : '', placeholder: '0',
+      value: hasOwn ? amount : '', placeholder: fallback ? String(round2(fallback)) : '0',
     });
     inp.addEventListener('blur', () => {
-      const v = num(inp.value) || 0;
-      if (v !== amount) saveField(key, v);
+      const raw = inp.value.trim();
+      // Cleared back to empty means "use the planned figure again", not zero.
+      const v = raw === '' ? null : round2(num(raw) || 0);
+      if (v !== (hasOwn ? amount : null)) saveField(key, v);
     });
     table.appendChild(el('div', { class: 'msheet-row msheet-credit' }, [
       el('div', { class: 'msheet-label' }, [
         el('span', { text: label }),
-        el('span', { class: 'msheet-note', text: 'you enter' }),
+        el('span', { class: 'msheet-note', text: note }),
       ]),
-      el('div', { class: 'msheet-input' }, [inp]),
+      el('div', { class: 'msheet-stack' }, [
+        el('span', { class: 'msheet-val', text: fmtSheetCur(amount) }),
+        el('div', { class: 'msheet-input' }, [inp]),
+      ]),
     ]));
   };
 
-  creditRow('In Hand', perMonth('salary'), planNote);
-  creditInputRow('Virtual Bal', 'virtualBalance');
+  creditInputRow('In Hand', 'inHand', planNote + ' · ' + fmtSheetCur(perMonth('salary')), perMonth('salary'));
+  creditInputRow('Virtual Bal', 'virtualBalance', 'you enter', 0);
 
   debitRows.forEach((r) => {
     const expr = exprOf(r);
@@ -3103,7 +3148,7 @@ async function renderExpenseSheet(host, token) {
     const liveTotal = el('span', { class: 'msheet-val', text: fmtSheetCur(boxVal) });
     inp.addEventListener('input', () => { liveTotal.textContent = fmtSheetCur(sumExpr(inp.value)); });
     inp.addEventListener('blur', () => {
-      const cleaned = inp.value.trim();
+      const cleaned = normaliseExpr(inp.value.trim());
       if (cleaned !== expr) saveField(r.key, cleaned);
     });
     // The note carries the source AMOUNT, not just where it came from: the
@@ -3125,18 +3170,18 @@ async function renderExpenseSheet(host, token) {
   host.appendChild(table);
 
   // ---- Closing balance ----
-  // Subtracts each row's SOURCE figure where it has one, and its box where it
-  // doesn't (Loan and Monthly Expense have nothing else to go on) — so the
-  // balance tracks what's actually committed this month, independent of how
-  // much has been accumulated into the boxes.
-  const debits = debitRows.reduce((s, r) => s + (r.source != null ? r.source : boxOf(r)), 0);
-  const available = credits - debits;
+  // (In Hand + Virtual Bal) − every committed row, taken from the BOXES. The
+  // boxes are what actually happened this month; the source figures are only
+  // the starting suggestion Fetch pulls in, so the balance follows what's
+  // recorded rather than what was planned.
+  const debits = debitRows.reduce((s, r) => s + boxOf(r), 0);
+  const available = round2(credits - debits);
   host.appendChild(el('div', { class: 'msheet-total' + (available < 0 ? ' is-neg' : '') }, [
     el('span', { class: 'msheet-total-label', text: 'Available Balance' }),
     el('span', { class: 'msheet-total-val', text: fmtSheetCur(available) }),
   ]));
 
-  host.appendChild(el('p', { class: 'hint mf-foot', text: 'Green rows are money available this month; red rows are what\'s already committed. Each red row\'s box takes a running total you can add to — type "2000+5000" and the figure above it shows the sum. ↻ Fetch appends this month\'s figure (the amount after the · in each row\'s caption) as another term. Available Balance uses those source figures, not the boxes, so it always reflects what\'s committed this month.' }));
+  host.appendChild(el('p', { class: 'hint mf-foot', text: 'Available Balance = (In Hand + Virtual Bal) − every red row. Each box takes a running total you can add to: type "2000+5000" and the figure above shows the sum. ↻ Fetch appends this month\'s figure (the amount after the · in a row\'s caption) as another term. In Hand starts from the Allocation salary — type over it for a month that differed, or clear it to go back to the plan.' }));
 }
 
 // ---------- Allocation tracker (Expense → Allocation tab) ----------
