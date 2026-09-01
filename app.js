@@ -3619,12 +3619,19 @@ async function openSpendQuick() {
   const ym = onTracker ? _trkYm : (now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0'));
   const allocs = await DB.all('allocations').catch(() => []);
   const alloc = (allocs || []).find((a) => Number(a.year) === Number(ym.slice(0, 4))) || null;
-  openSpendForm(round2((alloc ? Number(alloc.houseExp) || 0 : 0) * 2));
+  // Dates default INTO the month being viewed. Back-filling an old month and
+  // having every entry land on today would file them all under the wrong
+  // month — and silently, since the form would look right while saving wrong.
+  // Today's date for the current month; the 1st for any earlier one, as a
+  // clearly provisional day to correct rather than a guess at the real one.
+  const today = todayISO();
+  const defaultDate = ym === today.slice(0, 7) ? today : ym + '-01';
+  openSpendForm(round2((alloc ? Number(alloc.houseExp) || 0 : 0) * 2), null, defaultDate);
 }
 
 // Add one spend: category, amount, how it was paid. Deliberately that short —
 // this gets opened several times a day, and anything longer stops being used.
-async function openSpendForm(budget, existing) {
+async function openSpendForm(budget, existing, defaultDate) {
   const editing = !!(existing && existing.id != null);
   let chosenCat = editing ? existing.category : null;
   let chosenMethod = editing ? (existing.method || 'UPI') : 'UPI';
@@ -3632,7 +3639,7 @@ async function openSpendForm(budget, existing) {
 
   const cards = (await DB.all('creditCards').catch(() => [])) || [];
   const amount = el('input', { type: 'number', inputmode: 'decimal', step: 'any', placeholder: '0', value: editing ? existing.amount : '' });
-  const dateInp = el('input', { type: 'date', value: editing ? (existing.date || todayISO()) : todayISO() });
+  const dateInp = el('input', { type: 'date', value: editing ? (existing.date || todayISO()) : (defaultDate || todayISO()) });
   const note = el('input', { type: 'text', placeholder: 'Optional note', value: editing && existing.note ? existing.note : '' });
 
   const catBtns = [];
