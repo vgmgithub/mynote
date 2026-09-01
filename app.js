@@ -3253,9 +3253,9 @@ async function renderExpenseSheet(host, token) {
 // Grouped only for the picker's sake; the group isn't stored, so regrouping
 // later can't strand existing rows.
 const SPEND_CATEGORIES = [
-  { group: 'Fixed', items: ['Rent', 'Electricity', 'Internet', 'Water', 'GAS', 'Brigade'] },
+  { group: 'Fixed', items: ['Rent', 'Electricity', 'Internet', 'Water', 'GAS'] },
   { group: 'Home', items: ['Bruno Food', 'Plants / Aquarium', 'Urban/House', 'Medicine'] },
-  { group: 'Grocery', items: ['Online Grocery', 'Flipkart Grocery', 'Amazon Grocery', 'Local Shop', 'Milk', 'Non veg', 'Fruits'] },
+  { group: 'Grocery', items: ['Online Grocery', 'Flipkart Grocery', 'Amazon Grocery', 'Local Shop', 'Brigade', 'Milk', 'Non veg', 'Fruits'] },
   { group: 'Lifestyle', items: ['Dining', 'App Subscription', 'Cinema'] },
   { group: 'Other', items: ['Prev Bill Bal / Misc'] },
 ];
