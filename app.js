@@ -2442,6 +2442,9 @@ function openInvestedBreakdown(bd) {
 // How far ahead Home's "Coming up this week" strip looks. One week: near enough
 // that the money needs a decision now, far enough ahead to actually act on it.
 const UPCOMING_DAYS = 7;
+// The live resize handler for Home's "Coming Up" strip, so a re-render can
+// detach the previous one (see _homeUpcomingStrip).
+let _upcomingResizeHandler = null;
 
 async function renderHome() {
   const host = $('#homeView');
@@ -2487,9 +2490,11 @@ async function renderHome() {
     if (soon) host.appendChild(soon);
   } catch (_) {}
 
-  const investmentCard = _homeCard('💼', 'Investment', 'Stocks · MF · FD · Bonds', () => setAppMode('investment'));
+  // Subtitles list what's actually behind each card, in the order the section
+  // itself lists them.
+  const investmentCard = _homeCard('💼', 'Investment', 'Stocks · MF · FD · Metals · Bonds · Dividends', () => setAppMode('investment'));
   const savingsCard = _homeCard('🏦', 'Savings', 'Emergency Fund · Goals', () => setAppMode('savings'));
-  const expenseCard = _homeCard('💳', 'Expense', 'Coming soon', () => setAppMode('expense'));
+  const expenseCard = _homeCard('💳', 'Expense', 'Credit Card · Allocation · Monthly sheet', () => setAppMode('expense'));
   host.appendChild(el('div', { class: 'home-cards' }, [investmentCard, savingsCard, expenseCard]));
   host.appendChild(el('p', { class: 'hint home-foot', text: 'Backup covers everything - open the ⋮ menu → Backup & Restore.' }));
 }
@@ -2581,6 +2586,10 @@ async function _homeUpcomingStrip() {
   // month is in that list AND the CURRENT year's total on the record is still 0,
   // i.e. nothing has been logged for it yet - once the user records this year's
   // dividend the reminder drops it, since there's nothing left to check for.
+  //
+  // India and US get SEPARATE cards. They're different currencies and different
+  // brokers, so they're two different things to go and check - one merged card
+  // read as a single errand and buried which market each name belonged to.
   try {
     const mod = await import('./dividend.js');
     const recs = await _eligibleDividendRecords(mod, { write: false });
@@ -2588,17 +2597,24 @@ async function _homeUpcomingStrip() {
       const nowDate = new Date(now);
       const curMonAbbr = mod.MONTHS[nowDate.getMonth()];
       const curYear = nowDate.getFullYear();
-      const names = recs
+      const monthName = nowDate.toLocaleString('en-US', { month: 'long' });
+      const due = recs
         .filter((d) => (d.months || []).includes(curMonAbbr))
-        .filter((d) => mod.yearTotal(d, curYear) <= 0)
-        .map((d) => d.name)
-        .filter(Boolean);
-      if (names.length) {
-        const monthName = nowDate.toLocaleString('en-US', { month: 'long' });
+        .filter((d) => mod.yearTotal(d, curYear) <= 0);
+      // Market named in words, not a 🇺🇸/🇮🇳 flag: regional-indicator pairs don't
+      // render as flags on Windows, where they fall back to the bare letters —
+      // "us Dividend of September" reads as the pronoun.
+      // US first so it sorts ahead of India on the equal-days tiebreak below.
+      [{ market: 'us', label: 'US' }, { market: 'in', label: 'India' }].forEach(({ market, label }, ix) => {
+        const names = due.filter((d) => d.market === market).map((d) => d.name).filter(Boolean);
+        if (!names.length) return;
         // No real "days left" for a whole-month reminder - sorted to the end,
         // after every dated FD/bond item, rather than competing with them.
-        items.push({ kind: 'DIV', days: UPCOMING_DAYS + 1000, names, monthLabel: 'Dividend of ' + monthName, go: () => openDividend() });
-      }
+        items.push({
+          kind: 'DIV', days: UPCOMING_DAYS + 1000 + ix, names,
+          monthLabel: label + ' Dividend · ' + monthName, go: () => openDividend(),
+        });
+      });
     }
   } catch (_) {}
 
@@ -2610,7 +2626,11 @@ async function _homeUpcomingStrip() {
     el('span', { class: 'due-soon-title', text: '\u23f0 Coming Up' }),
     el('span', { class: 'due-soon-count', text: items.length + (items.length === 1 ? ' item' : ' items') }),
   ]));
-  const rail = el('div', { class: 'due-soon-rail' });
+  // Built as a factory, not built once and cloned: the marquee below needs a
+  // second identical group to loop seamlessly, and cloneNode() would drop every
+  // onclick — giving a rail of dead cards for half its travel.
+  const buildGroup = () => {
+  const rail = el('div', { class: 'due-soon-group' });
   items.forEach((it) => {
     // Dividend reminder: no due date to count down to (it covers the whole
     // month), so it gets its own two rows - the badge alone (top-right, same
@@ -2651,24 +2671,88 @@ async function _homeUpcomingStrip() {
       ]),
     ]));
   });
-
-  // The rail already scrolls, but with only two or three cards on screen there's
-  // nothing telling you more exist off to the right. A fade on the trailing edge
-  // is that cue - shown only when the rail genuinely overflows, and cleared once
-  // you reach the end so it never implies content that isn't there.
-  const scroller = el('div', { class: 'due-soon-scroller' }, [rail]);
-  const syncFade = () => {
-    const max = rail.scrollWidth - rail.clientWidth;
-    scroller.classList.toggle('can-scroll', max > 2);
-    scroller.classList.toggle('at-end', max > 2 && rail.scrollLeft >= max - 2);
+  return rail;
   };
-  rail.addEventListener('scroll', syncFade, { passive: true });
+
+  const track = el('div', { class: 'due-soon-rail' }, [buildGroup()]);
+
+  // The rail scrolls by hand when it overflows, but with only two or three cards
+  // on screen there's nothing telling you more exist off to the right. A fade on
+  // the trailing edge is that cue - shown only while it genuinely overflows, and
+  // cleared once you reach the end so it never implies content that isn't there.
+  const scroller = el('div', { class: 'due-soon-scroller' }, [track]);
+  const syncFade = () => {
+    if (scroller.classList.contains('is-marquee')) return; // marquee: no manual scroll to hint at
+    const max = track.scrollWidth - track.clientWidth;
+    scroller.classList.toggle('can-scroll', max > 2);
+    scroller.classList.toggle('at-end', max > 2 && track.scrollLeft >= max - 2);
+  };
+  track.addEventListener('scroll', syncFade, { passive: true });
+
+  // Touch has no hover, so a finger on the strip pauses it the same way a
+  // pointer does — otherwise the card you're reaching for slides away. Released
+  // on a short delay so a tap doesn't restart the motion before it registers.
+  let holdTimer = null;
+  const hold = () => { clearTimeout(holdTimer); scroller.classList.add('is-held'); };
+  const release = () => {
+    clearTimeout(holdTimer);
+    holdTimer = setTimeout(() => scroller.classList.remove('is-held'), 600);
+  };
+  scroller.addEventListener('touchstart', hold, { passive: true });
+  scroller.addEventListener('touchend', release, { passive: true });
+  scroller.addEventListener('touchcancel', release, { passive: true });
+
+  // Once there are more cards than fit, hand-scrolling is a poor fit for a
+  // glanceable strip - you'd have to know to swipe. Past that point it becomes a
+  // marquee instead: a second identical group is appended and the track slides
+  // exactly one group's width, so the loop is seamless (the clone lands where
+  // the original started). Below the overflow threshold nothing animates, since
+  // there'd be nothing to reveal.
+  const setupRail = () => {
+    const groups = track.querySelectorAll('.due-soon-group');
+    const first = groups[0];
+    if (!first) return;
+    const overflows = first.scrollWidth > scroller.clientWidth + 2;
+    const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    if (!overflows || reduceMotion) {
+      // Drop back to the plain scroll+fade rail (also the path when the strip
+      // shrinks on resize, or a card is logged and the rest now fit).
+      if (groups[1]) groups[1].remove();
+      scroller.classList.remove('is-marquee');
+      track.style.removeProperty('--marquee-duration');
+      syncFade();
+      return;
+    }
+
+    if (!groups[1]) {
+      const clone = buildGroup();
+      // The duplicate exists only to make the loop seamless — hidden from
+      // assistive tech and skipped by Tab so nothing is announced twice.
+      clone.setAttribute('aria-hidden', 'true');
+      clone.querySelectorAll('button').forEach((b2) => b2.setAttribute('tabindex', '-1'));
+      track.appendChild(clone);
+    }
+    scroller.classList.add('is-marquee');
+    scroller.classList.remove('can-scroll', 'at-end');
+    // Constant speed regardless of how many cards there are, so adding one
+    // makes the loop longer rather than making everything rush.
+    const MARQUEE_PX_PER_SEC = 34;
+    track.style.setProperty('--marquee-duration', (first.scrollWidth / MARQUEE_PX_PER_SEC).toFixed(2) + 's');
+  };
   // Deferred via setTimeout, not requestAnimationFrame: the rail isn't attached
   // to the document yet (renderHome() appends the returned strip right after
   // this call returns), and rAF is suspended entirely on a backgrounded tab
   // (e.g. the phone screen just locked) - a plain macrotask still fires either
   // way, and reading clientWidth/scrollWidth forces the layout it needs.
-  setTimeout(syncFade, 0);
+  setTimeout(setupRail, 0);
+  // Rotating the phone can flip the strip either way across the threshold.
+  // Home re-renders on every visit back, so drop the previous strip's handler
+  // first — otherwise each visit leaves another one behind, all firing against
+  // the detached rails of strips that no longer exist.
+  if (_upcomingResizeHandler) window.removeEventListener('resize', _upcomingResizeHandler);
+  _upcomingResizeHandler = debounce(setupRail, 150);
+  window.addEventListener('resize', _upcomingResizeHandler);
 
   strip.appendChild(scroller);
   return strip;

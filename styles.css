@@ -1624,6 +1624,34 @@ html[data-theme="light"] {
   padding-bottom: 2px;
 }
 .due-soon-rail::-webkit-scrollbar { display: none; }
+.due-soon-group { display: flex; gap: 8px; flex: 0 0 auto; }
+/* Marquee mode - switched on from app.js only once the cards actually overflow.
+   The track holds two identical groups and slides exactly one group's width
+   (plus the gap that follows it), so the clone arrives where the original
+   started and the loop has no visible seam. Manual scrolling is turned off
+   here: the strip is moving on its own, and a half-scrolled rail fighting the
+   animation is worse than either alone. */
+.due-soon-scroller.is-marquee { overflow: hidden; }
+.due-soon-scroller.is-marquee .due-soon-rail {
+  overflow-x: hidden;
+  scroll-snap-type: none;
+  animation: due-soon-marquee var(--marquee-duration, 20s) linear infinite;
+  width: max-content;
+}
+/* Hold still while being looked at or touched, so a card can actually be read
+   and tapped rather than sliding out from under the finger. */
+.due-soon-scroller.is-marquee:hover .due-soon-rail,
+.due-soon-scroller.is-marquee:focus-within .due-soon-rail,
+.due-soon-scroller.is-marquee.is-held .due-soon-rail { animation-play-state: paused; }
+/* The track is two groups plus the 8px gap between them, so -50% lands 4px
+   short of the second group's start — hence the extra -4px (half the gap). */
+@keyframes due-soon-marquee {
+  from { transform: translateX(0); }
+  to   { transform: translateX(calc(-50% - 4px)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .due-soon-scroller.is-marquee .due-soon-rail { animation: none; overflow-x: auto; }
+}
 /* Two fixed rows per card - type/EF badge sits top-right beside "days left",
    maturity date sits bottom-right beside the amount. Nowrap + no min/max-width:
    a card with more to show (a longer date, an EF badge) grows WIDER instead of
