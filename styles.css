@@ -1832,7 +1832,16 @@ html[data-theme="light"] {
 .trk-entry.is-tappable { cursor: pointer; }
 .trk-entry.is-tappable:active { background: var(--card-2); }
 /* An emoji FAB needs no bold/oversized glyph treatment the way "+" does. */
-.fab.fab-spend { font-size: 1.35rem; font-weight: 400; line-height: 1; }
+/* White with a lifted shadow rather than the accent fill the other FABs use:
+   this one sits on Home over a pale background as well as inside the Expense
+   section, and a single fixed white keeps it identical in both themes. */
+.fab.fab-spend {
+  background: #fff; color: #14203a;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 6px 14px rgba(0,0,0,0.18), 0 12px 28px rgba(0,0,0,0.22);
+}
+.fab.fab-spend:active { transform: translateY(1px); box-shadow: 0 4px 10px rgba(0,0,0,0.2); }
+.fab.fab-spend svg { width: 26px; height: 26px; display: block; }
 /* Timeline chip for a month that has spends — distinguishes "nothing logged"
    from "not looked at yet" without competing with the selected state. */
 .cc-timeline-chip.has-data:not(.active) { color: var(--text); }
