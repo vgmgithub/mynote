@@ -316,7 +316,17 @@ main.swipe-in-left { animation: swipe-from-left 0.18s ease-out; }
 .div-cur-total { font-size: 0.85rem; }
 /* Consolidated (all-years) payout months, top of card — months from the
    current month onward this year get the highlighted "upcoming" style. */
-.div-card-months { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.div-card-months { display: flex; flex-wrap: wrap; gap: 4px; }
+/* Consolidated "ever paid in these months" list, in its own grey panel across
+   the card — the per-year rows below now carry month chips too, so this needs
+   to read as a separate kind of fact rather than more of the same. */
+.div-months-panel { margin-top: 10px; padding: 8px 10px; border-radius: 8px; background: var(--card-2); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
+.div-months-panel-label { font-size: 0.6rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
+.div-months-panel .hint { margin: 0; }
+/* A plain chip's own background IS --card-2, which the panel now also uses —
+   lift the chips to --card so they don't vanish into it. The blue "upcoming"
+   chips set their own background and are left alone. */
+.div-months-panel .div-month-chip:not(.upcoming) { background: var(--card); }
 .div-years { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
 /* Per-year entry row (dividend stock card only) — deliberately its own class
    family (div-year-entry*, not div-year-row/k/v) because .div-year-row and

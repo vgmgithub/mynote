@@ -86,6 +86,20 @@ export function yearsOf(rec) {
   return (rec.years || []).map((r) => Number(r.year)).filter((n) => Number.isFinite(n)).sort((a, b) => b - a);
 }
 
+// Years worth showing/offering for a record, newest first. A year before the
+// linked stock's "Started (year)" is dropped — the stock wasn't held then, so
+// it can't have paid. UNLESS that year actually carries a figure: older
+// records accumulated empty rows for every year the editor offered (the
+// editor used to save every slider row, blank ones included), and those are
+// exactly what this clears out — but a year holding a real number is data,
+// and hiding it would also delete it on the next save.
+export function visibleYears(rec, startYear) {
+  const ys = yearsOf(rec);
+  const from = Number(startYear);
+  if (!Number.isFinite(from)) return ys;
+  return ys.filter((y) => y >= from || yearTotal(rec, y) > 0);
+}
+
 // Most recent year with any dividend, and that year's total — used as the
 // "expected ≈" hint on the calendar tab and the current-value on cards.
 export function latestYearTotal(rec) {

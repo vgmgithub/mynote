@@ -2846,9 +2846,9 @@ async function renderHomeExpense() {
 // surface knows (virtual balance, loan, this month's own spending) are typed
 // in, and those are the only ones stored (monthlySheet, keyed by month).
 //
-// Allocation is an ANNUAL plan, so its categories are shown here at 1/12 —
-// this sheet is a single month, and mixing a year's salary with one month's
-// card due would make the closing balance meaningless.
+// Allocation's per-category figures are already PER MONTH (the tab is headed
+// "Annual Allocations" and totals them as annual, but the amounts themselves
+// are a monthly plan), so they're carried across as-is — no scaling.
 async function renderExpenseSheet(host, token) {
   const mod = await import('./credit.js');
   const now = new Date();
@@ -2866,9 +2866,9 @@ async function renderExpenseSheet(host, token) {
   const alloc = (allocs || []).find((a) => Number(a.year) === year) || null;
   const sheet = sheetRow || {};
 
-  // Annual plan → this month's share.
-  const perMonth = (key) => (alloc ? (Number(alloc[key]) || 0) / 12 : 0);
-  const planNote = alloc ? '1/12 of ' + year + ' plan' : 'no ' + year + ' allocation';
+  // Allocation figures are already monthly — used as entered.
+  const perMonth = (key) => (alloc ? Number(alloc[key]) || 0 : 0);
+  const planNote = alloc ? year + ' allocation' : 'no ' + year + ' allocation';
 
   // ---- Month stepper ----
   const monthLabelEl = el('span', { class: 'msheet-month-label', text: mod.monthLabel(ym) });
@@ -2949,7 +2949,7 @@ async function renderExpenseSheet(host, token) {
     el('span', { class: 'msheet-total-val', text: fmtIntCur(available) }),
   ]));
 
-  host.appendChild(el('p', { class: 'hint mf-foot', text: 'In Hand + Virtual Bal, less everything below it. The green rows are money available this month; the red rows are what\'s already committed. Anything marked "1/12 of ' + year + ' plan" comes from the Allocation tab — edit it there, not here.' }));
+  host.appendChild(el('p', { class: 'hint mf-foot', text: 'In Hand + Virtual Bal, less everything below it. The green rows are money available this month; the red rows are what\'s already committed. Anything marked "' + year + ' allocation" comes from the Allocation tab — edit it there, not here.' }));
 }
 
 // ---------- Allocation tracker (Expense → Allocation tab) ----------
@@ -3260,7 +3260,14 @@ async function _eligibleDividendRecords(mod, { write } = {}) {
       rec = mod.buildSeedRecord(s, market, curYear, nowIso);
       rec.id = await DB.put('dividends', rec);
     }
-    out.push(Object.assign({}, rec, { name: (s.name || '').trim() })); // keep displayed name fresh
+    // `name` is kept fresh from the stock; `_startYear` rides along purely for
+    // display (which years to show) and is NEVER persisted — openDivForm's
+    // save() strips it, so the dividend record keeps no stale copy of a field
+    // the stock owns.
+    out.push(Object.assign({}, rec, {
+      name: (s.name || '').trim(),
+      _startYear: Number.isFinite(Number(s.startYear)) ? Number(s.startYear) : null,
+    }));
   }
   return out;
 }
@@ -3359,7 +3366,9 @@ function _divCard(rec, mod, curYear, cur) {
   const months = mod.parseMonths(rec.months);
   const curTotal = mod.yearTotal(rec, curYear);
   const isUs = rec.market === 'us';
-  const recentYears = mod.yearsOf(rec).slice(0, 3); // Show top 3 years for clarity
+  // Top 3 years, ignoring any that predate the stock's Started year (see
+  // dividend.js visibleYears).
+  const recentYears = mod.visibleYears(rec, rec._startYear).slice(0, 3);
   const breakdown = el('div', { class: 'div-years' });
   // Months from this point in the year onward (inclusive of the current
   // month) get the highlighted "upcoming" chip style on the consolidated
@@ -3397,6 +3406,12 @@ function _divCard(rec, mod, curYear, cur) {
     ]));
   });
 
+  // The consolidated payout months — every month this stock has EVER paid in,
+  // pooled from all years. Kept in its own grey panel spanning the card rather
+  // than tucked beside the name: it's a different kind of fact from the
+  // per-year rows below (which months, ever — not what any one year paid), and
+  // now that those rows carry month chips of their own the two need visibly
+  // separating. Labelled for the same reason.
   const monthChipsTop = el('div', { class: 'div-card-months' },
     months.length
       ? months.map((m) => el('span', {
@@ -3404,6 +3419,10 @@ function _divCard(rec, mod, curYear, cur) {
           text: m,
         }))
       : [el('span', { class: 'hint', text: '— No payout months' })]);
+  const monthsPanel = el('div', { class: 'div-months-panel' }, [
+    el('span', { class: 'div-months-panel-label', text: 'Payout months' }),
+    monthChipsTop,
+  ]);
 
   return el('div', { class: 'card div-card-enhanced', onclick: () => openDivForm(rec) }, [
     el('div', { class: 'top' }, [
@@ -3416,8 +3435,8 @@ function _divCard(rec, mod, curYear, cur) {
           el('div', { class: 'kv-label', text: String(curYear) }),
         ]),
       ]),
-      monthChipsTop,
     ]),
+    monthsPanel,
     breakdown,
   ]);
 }
@@ -3723,9 +3742,20 @@ async function openDivForm(rec) {
     yearRowsWrap.appendChild(row);
   };
 
-  const sortedYears = (rec.years || []).slice().sort((x, y) => Number(y.year) - Number(x.year));
   const usAmountOf = (y) => (y.amount != null ? y.amount : (y.units != null && y.perUnit != null ? (Number(y.units) || 0) * (Number(y.perUnit) || 0) : ''));
   const curYear = new Date().getFullYear();
+
+  const rawStartYear = linkedStock && Number.isFinite(Number(linkedStock.startYear)) ? Number(linkedStock.startYear) : null;
+  const startYear = rawStartYear != null ? Math.min(Math.max(rawStartYear, curYear - 50), curYear) : null;
+
+  // Saved years, minus any that predate the stock's Started year and hold
+  // nothing (see dividend.js visibleYears) — a stock started in 2026 shouldn't
+  // offer a 2025 row. Dropping them from the slider also drops them from the
+  // record on the next save, since collectYears() only reads rows on screen.
+  const keepYears = new Set(mod.visibleYears(rec, startYear));
+  const sortedYears = (rec.years || [])
+    .filter((y) => keepYears.has(Number(y.year)))
+    .sort((x, y) => Number(y.year) - Number(x.year));
 
   // Collect all years: every year with saved data, the current year, and —
   // since there's no "+ Add year" button any more — every year from the
@@ -3736,8 +3766,6 @@ async function openDivForm(rec) {
   // like "202" instead of "2020" would otherwise generate ~1800 empty rows).
   let allYears = sortedYears.map((y) => y.year);
   if (!allYears.includes(curYear)) allYears.push(curYear);
-  const rawStartYear = linkedStock && Number.isFinite(Number(linkedStock.startYear)) ? Number(linkedStock.startYear) : null;
-  const startYear = rawStartYear != null ? Math.min(Math.max(rawStartYear, curYear - 50), curYear) : null;
   if (startYear) {
     for (let y = startYear; y <= curYear; y++) allYears.push(y);
   }
@@ -3830,6 +3858,14 @@ async function openDivForm(rec) {
       // This year's own months — saved per-year so unchecking a month here
       // doesn't get overwritten by another year's selection on next open.
       const yearMonthsArr = [...r.yearMonths].sort((m1, m2) => mod.MONTHS.indexOf(m1) - mod.MONTHS.indexOf(m2));
+      // The slider hands every year in range a row whether or not it's been
+      // filled in, so skip the untouched ones — otherwise merely OPENING the
+      // form writes a blank entry for every year offered, which is how records
+      // ended up listing years the stock never paid in (and, before the
+      // Started-year filter, years it wasn't even held for). A year with
+      // months ticked but no figures yet is deliberate, so it's kept.
+      const anyFigure = Object.values(r.monthlyInputs || {}).some((v) => (Number(v) || 0) !== 0);
+      if (!yearMonthsArr.length && !anyFigure) continue;
       if (isUs) {
         // Per-month figures are the source of truth; `amount` is their sum,
         // kept so the older flat-amount readers keep working.
@@ -3878,6 +3914,8 @@ async function openDivForm(rec) {
       years: collectYears(),
       updatedAt: new Date().toISOString(),
     });
+    // Display-only, owned by the stock — never store a copy that can go stale.
+    delete out._startYear;
     await DB.put('dividends', out);
     closeModal(); toast('Saved'); renderDividend();
   };
