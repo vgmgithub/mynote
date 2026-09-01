@@ -1202,6 +1202,15 @@ body.locked { overflow: hidden; }
    expected to run long, unlike a short due-soon list). */
 .cc-timeline-scroll { overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; margin: 4px 0 14px; }
 .cc-timeline-scroll::-webkit-scrollbar { display: none; }
+/* Fixed under the app header (its `top` is set inline in app.js, from the
+   header's measured height) so the month picker stays reachable while the
+   card list, reimbursement box and grid scroll underneath it. An opaque
+   background + z-index below the header's own (20) so it reads as a second,
+   lower band rather than letting content show through or covering the
+   header itself. Horizontal side padding compensates for the page's own
+   edge padding, which this element no longer scrolls past when pinned. */
+.cc-timeline-sticky { position: sticky; z-index: 15; background: var(--bg); padding: 8px 0; margin: 0 -14px 10px; }
+.cc-timeline-sticky .cc-timeline { padding: 0 14px 2px; }
 .cc-timeline { display: flex; gap: 6px; padding-bottom: 2px; }
 .cc-timeline-chip {
   flex: 0 0 auto; padding: 7px 12px; border-radius: 999px;
@@ -1236,6 +1245,11 @@ body.locked { overflow: hidden; }
    (it's the figure that changes with the timeline selection), not down in
    the static bank/limit line. */
 .cc-name-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* This list isn't the last thing on the page (the reimbursement box and
+   grid follow it) so it doesn't need .stock-list's shared FAB-clearance
+   padding-bottom — that was showing up as a large, out-of-place gap before
+   the reimbursement box. */
+.cc-card-list { padding-bottom: 0; }
 
 /* Common per-month reimbursement box below the card list */
 .cc-reimb-card input {

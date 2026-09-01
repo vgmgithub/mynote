@@ -5761,7 +5761,15 @@ async function renderCreditCards(host) {
   const fullyPaidByYm = new Map(g.monthly.map((m) => [m.ym, m.fullyPaid]));
 
   // ---- Month timeline — tap a month to view/edit that specific bill ----
-  const timelineWrap = el('div', { class: 'cc-timeline-scroll' });
+  // Fixed under the app header while the rest of the page scrolls, so the
+  // month picker is always reachable without scrolling back up. The header's
+  // own height varies (safe-area inset on notched devices), so it's measured
+  // rather than hardcoded.
+  const appHeader = document.querySelector('.app-header');
+  const timelineWrap = el('div', {
+    class: 'cc-timeline-scroll cc-timeline-sticky',
+    style: 'top:' + (appHeader ? appHeader.offsetHeight : 0) + 'px',
+  });
   const timelineRow = el('div', { class: 'cc-timeline' }, timelineYms.map((ym) => el('button', {
     type: 'button',
     class: 'cc-timeline-chip'
@@ -5807,7 +5815,10 @@ async function renderCreditCards(host) {
 
   // Per-card cards for the SELECTED month — tap a card to edit it (bank,
   // limit, and its full month-by-month ledger with the status dropdown).
-  const list = el('section', { class: 'stock-list' });
+  // .stock-list's shared padding-bottom leaves room for the FAB when the
+  // list is the last thing on a page - it isn't here (the reimbursement box
+  // and grid follow it), so cc-card-list overrides that gap to nothing.
+  const list = el('section', { class: 'stock-list cc-card-list' });
   g.rows.slice().sort((a, b2) => b2.c.averageUse - a.c.averageUse).forEach(({ card, c, cell }) => {
     // This card's bill for the month currently selected on the timeline —
     // computed early since both the catLine badge and the status below key
