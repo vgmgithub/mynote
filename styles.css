@@ -1720,6 +1720,10 @@ html[data-theme="light"] {
    it, right-aligned so both read down the same edge as the green rows' single
    figure. */
 .msheet-stack { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+/* Wider than the plain-number boxes on the green rows: these hold an additive
+   expression that grows a term on every Fetch, and the sum above is only
+   trustworthy if you can see what's feeding it. */
+.msheet-stack .msheet-input input { width: 146px; font-size: 0.82rem; }
 .msheet { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
 .msheet-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
 .msheet-row:last-child { border-bottom: none; }

@@ -2918,6 +2918,33 @@ async function renderHomeExpense() {
   await renderExpenseSheet(host, token);
 }
 
+// Expense-sheet money formatting: whole rupees when the figure IS whole,
+// otherwise two decimals. Sources like the emergency fund's available cash come
+// out fractional, and rounding those away would make a box disagree with the
+// number printed above it.
+// Two decimal places, and never 0.1 + 0.2 = 0.30000000000000004.
+const round2 = (n) => Math.round(((Number(n) || 0) + Number.EPSILON) * 100) / 100;
+const _msheetCurFmt2 = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtSheetCur = (n) => {
+  const v = round2(n);
+  return Number.isInteger(v) ? fmtIntCur(v) : _msheetCurFmt2.format(v);
+};
+
+// A committed row's box holds an ADDITIVE EXPRESSION, not a single number:
+// "2000+5000" keeps what was added and when, instead of collapsing to 7000 the
+// moment it's entered. Fetch appends its figure as another term. The row's
+// headline is the sum.
+//
+// Parsed by pulling out every signed number rather than evaluating: the input
+// is user text, and a regex sum can't be tricked into running anything. A bare
+// "-500" term still subtracts, so a correction doesn't need a separate field.
+const sumExpr = (s) => {
+  const parts = String(s == null ? '' : s).match(/-?\d+(?:\.\d+)?/g);
+  return parts ? round2(parts.reduce((a, b) => a + Number(b), 0)) : 0;
+};
+// Trailing zeros off, so an appended term reads "+5000" not "+5000.00".
+const exprTerm = (n) => String(round2(n));
+
 // ---------- Monthly cash-flow sheet (Expense → Expense tab) ----------
 // One month at a time: what came in, what's committed out, what's left.
 //
@@ -2968,7 +2995,10 @@ async function renderExpenseSheet(host, token) {
     { key: 'metal', label: 'Metal', source: perMonth('metal'), note: planNote },
     { key: 'monthlyExpense', label: 'Monthly Expense', source: null, note: 'you enter' },
   ];
-  const boxOf = (r) => Number(sheet[r.key]) || 0;
+  // Boxes are stored as text ("2000+5000"), but earlier months were written as
+  // plain numbers — String() covers both, and sumExpr reads either.
+  const exprOf = (r) => (sheet[r.key] == null ? '' : String(sheet[r.key]));
+  const boxOf = (r) => sumExpr(exprOf(r));
 
   // ---- Month stepper + the shared Fetch ----
   const monthLabelEl = el('span', { class: 'msheet-month-label', text: mod.monthLabel(ym) });
@@ -2978,21 +3008,27 @@ async function renderExpenseSheet(host, token) {
     renderHomeExpense();
   };
 
-  // Pulls every committed row that HAS a live source, adding it to that row's
-  // box. Loan and Monthly Expense have no source to pull, so they're left
-  // alone. Confirmed first because it's additive — running it twice by mistake
-  // would silently double the month, and there's no undo.
+  // Pulls every committed row that HAS a live source, APPENDING it to that
+  // row's expression as another "+" term rather than collapsing the box to a
+  // single total — so the box keeps a visible record of what was added.
+  // Loan and Monthly Expense have no source to pull, so they're left alone.
+  // Confirmed first because it's additive: running it twice by mistake would
+  // silently double the month, and there's no undo.
   const fetchable = debitRows.filter((r) => r.source != null && r.source > 0);
+  const appended = (r) => {
+    const cur = exprOf(r).trim();
+    return cur === '' ? exprTerm(r.source) : cur + '+' + exprTerm(r.source);
+  };
   const fetchAll = async () => {
     if (!fetchable.length) { toast('Nothing to fetch for ' + mod.monthLabel(ym)); return; }
-    const lines = fetchable.map((r) => '  • ' + r.label + ':  ' + fmtIntCur(boxOf(r)) + ' + ' + fmtIntCur(r.source) + '  =  ' + fmtIntCur(boxOf(r) + r.source));
+    const lines = fetchable.map((r) => '  • ' + r.label + ':  ' + appended(r) + '  =  ' + fmtSheetCur(boxOf(r) + r.source));
     const ok = window.confirm(
       'Add this month\'s figures into ' + mod.monthLabel(ym) + '?\n\n' + lines.join('\n')
       + '\n\nThis ADDS to what each box already holds — running it again will add them a second time.'
     );
     if (!ok) return;
     const patch = { ym, updatedAt: new Date().toISOString() };
-    fetchable.forEach((r) => { patch[r.key] = boxOf(r) + r.source; });
+    fetchable.forEach((r) => { patch[r.key] = appended(r); });
     await DB.put('monthlySheet', Object.assign({}, sheet, patch));
     toast('Fetched ' + fetchable.length + ' value' + (fetchable.length === 1 ? '' : 's'));
     renderHomeExpense();
@@ -3026,7 +3062,7 @@ async function renderExpenseSheet(host, token) {
         el('span', { text: label }),
         note ? el('span', { class: 'msheet-note', text: note }) : el('span'),
       ]),
-      el('span', { class: 'msheet-val', text: fmtIntCur(amount) }),
+      el('span', { class: 'msheet-val', text: fmtSheetCur(amount) }),
     ]));
   };
   const creditInputRow = (label, key) => {
@@ -3053,26 +3089,34 @@ async function renderExpenseSheet(host, token) {
   creditInputRow('Virtual Bal', 'virtualBalance');
 
   debitRows.forEach((r) => {
+    const expr = exprOf(r);
     const boxVal = boxOf(r);
+    // type=text, not number: a number input rejects "2000+5000" outright and
+    // reports an empty value for it. inputmode=text keeps a usable keyboard on
+    // mobile (the decimal pad has no "+" key).
     const inp = el('input', {
-      type: 'number', inputmode: 'decimal', step: 'any',
-      value: boxVal !== 0 ? boxVal : '', placeholder: '0',
+      type: 'text', inputmode: 'text', autocomplete: 'off', spellcheck: 'false',
+      value: expr, placeholder: '0', 'aria-label': r.label + ' running total',
     });
+    // The headline follows the box as it's typed, so the sum of an expression
+    // is visible before committing it.
+    const liveTotal = el('span', { class: 'msheet-val', text: fmtSheetCur(boxVal) });
+    inp.addEventListener('input', () => { liveTotal.textContent = fmtSheetCur(sumExpr(inp.value)); });
     inp.addEventListener('blur', () => {
-      const v = num(inp.value) || 0;
-      if (v !== boxVal) saveField(r.key, v);
+      const cleaned = inp.value.trim();
+      if (cleaned !== expr) saveField(r.key, cleaned);
     });
     // The note carries the source AMOUNT, not just where it came from: the
     // headline is now the box, so without this the figure Available Balance
     // actually subtracts wouldn't appear anywhere on screen.
-    const noteTxt = r.source != null ? r.note + ' · ' + fmtIntCur(r.source) : r.note;
+    const noteTxt = r.source != null ? r.note + ' · ' + fmtSheetCur(r.source) : r.note;
     table.appendChild(el('div', { class: 'msheet-row msheet-debit' }, [
       el('div', { class: 'msheet-label' }, [
         el('span', { text: r.label }),
         el('span', { class: 'msheet-note', text: noteTxt }),
       ]),
       el('div', { class: 'msheet-stack' }, [
-        el('span', { class: 'msheet-val', text: fmtIntCur(boxVal) }),
+        liveTotal,
         el('div', { class: 'msheet-input' }, [inp]),
       ]),
     ]));
@@ -3089,10 +3133,10 @@ async function renderExpenseSheet(host, token) {
   const available = credits - debits;
   host.appendChild(el('div', { class: 'msheet-total' + (available < 0 ? ' is-neg' : '') }, [
     el('span', { class: 'msheet-total-label', text: 'Available Balance' }),
-    el('span', { class: 'msheet-total-val', text: fmtIntCur(available) }),
+    el('span', { class: 'msheet-total-val', text: fmtSheetCur(available) }),
   ]));
 
-  host.appendChild(el('p', { class: 'hint mf-foot', text: 'Green rows are money available this month; red rows are what\'s already committed. Each red row\'s box is a running total you keep — ↻ Fetch adds this month\'s figure (the amount after the · in each row\'s caption) on top of what the box already holds. Available Balance uses those source figures, not the boxes, so it always reflects what\'s committed this month.' }));
+  host.appendChild(el('p', { class: 'hint mf-foot', text: 'Green rows are money available this month; red rows are what\'s already committed. Each red row\'s box takes a running total you can add to — type "2000+5000" and the figure above it shows the sum. ↻ Fetch appends this month\'s figure (the amount after the · in each row\'s caption) as another term. Available Balance uses those source figures, not the boxes, so it always reflects what\'s committed this month.' }));
 }
 
 // ---------- Allocation tracker (Expense → Allocation tab) ----------
