@@ -1209,7 +1209,10 @@ body.locked { overflow: hidden; }
   font-size: 0.76rem; font-weight: 600; white-space: nowrap; cursor: pointer;
 }
 .cc-timeline-chip.is-current { border-color: var(--accent); }
-.cc-timeline-chip.active { background: var(--accent); border-color: var(--accent); color: #06243a; }
+/* Selected chip — matches the app's own subdued "selected tab" convention
+   (.seg button.active: card-2 fill, text colour, bold) rather than a loud
+   solid accent fill, with an accent ring to still read clearly as chosen. */
+.cc-timeline-chip.active { background: var(--card-2); border-color: var(--accent); color: var(--text); font-weight: 700; box-shadow: inset 0 0 0 1px var(--accent); }
 /* Fully paid — every card billed that month has a status set. A green ring
    so it's visible whether or not the chip is also the active selection
    (which already owns the accent background); tinted fill only when it
@@ -1229,6 +1232,10 @@ body.locked { overflow: hidden; }
 .cc-avg-util-badge { margin-left: 6px; font-weight: 700; }
 .cc-status-late { color: var(--bad); font-weight: 700; }
 .cc-status-unpaid { color: var(--warn); font-weight: 700; }
+/* Card name row — the selected month's usage badge sits beside the name
+   (it's the figure that changes with the timeline selection), not down in
+   the static bank/limit line. */
+.cc-name-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
 /* Common per-month reimbursement box below the card list */
 .cc-reimb-card input {

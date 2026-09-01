@@ -5720,6 +5720,11 @@ const CC_TIMELINE_START_YM = '2024-07';
 // Which month the timeline/card-list/reimburse-box are currently showing.
 // null = default to the latest month with data (or this month, if none).
 let _ccSelectedYm = null;
+// Set right before a timeline click triggers its re-render, so the render
+// that follows knows to animate the scroll into place — a plain page-open
+// (or any other re-render, e.g. after saving a card) should land on the
+// right position instantly, not visibly slide there.
+let _ccTimelineClicked = false;
 
 async function renderCreditCards(host) {
   // Called again on every timeline click (via renderHomeExpense, which
@@ -5764,18 +5769,20 @@ async function renderCreditCards(host) {
       + (ym === thisYm ? ' is-current' : '')
       + (fullyPaidByYm.get(ym) ? ' is-paid' : ''),
     text: mod.monthLabel(ym),
-    onclick: () => { if (ym === selYm) return; _ccSelectedYm = ym; renderHomeExpense(); },
+    onclick: () => { if (ym === selYm) return; _ccSelectedYm = ym; _ccTimelineClicked = true; renderHomeExpense(); },
   })));
   timelineWrap.appendChild(timelineRow);
   host.appendChild(timelineWrap);
-  // Keep the selected chip in view instead of the whole strip snapping back
-  // to its start on every re-render (a fresh render means a fresh scroll
-  // container, so scrollLeft resets to 0 unless we actively correct it).
-  // 'nearest' is a no-op when the chip's already visible — true on first
-  // load, since the default selection (latest month) is the leftmost chip —
-  // and only scrolls when a click brought an off-screen chip into play.
+  // Keep the selected chip centred in view instead of the whole strip
+  // snapping back to its start on every re-render (a fresh render means a
+  // fresh scroll container, so scrollLeft resets to 0 unless corrected).
+  // Smooth-animated when this render came from an actual click; instant on
+  // any other render (initial page load, or a re-render after saving a
+  // card) so it lands in place rather than visibly sliding for no reason.
   const activeChip = timelineRow.querySelector('.cc-timeline-chip.active');
-  if (activeChip) activeChip.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+  const scrollBehavior = _ccTimelineClicked ? 'smooth' : 'auto';
+  _ccTimelineClicked = false;
+  if (activeChip) activeChip.scrollIntoView({ inline: 'center', block: 'nearest', behavior: scrollBehavior });
 
   // Summary: the SELECTED month's figures (not always "latest"), so the
   // summary and timeline never disagree about which month is on screen.
@@ -5813,12 +5820,14 @@ async function renderCreditCards(host) {
     catBits.push(c.monthCount + (c.monthCount === 1 ? ' month' : ' months'));
     const catLine = el('div', { class: 'cat mf-catline', text: catBits.join(' · ') });
     // THIS MONTH's usage against the limit (not always-latest any more —
-    // it tracks whichever month is selected on the timeline above).
+    // it tracks whichever month is selected on the timeline above). Sits
+    // next to the card name (top row), not in catLine below — it's the
+    // figure that changes as the timeline selection changes, so it reads
+    // better up with the name than buried among the static bank/limit info.
     const monthUtilPct = c.limit > 0 && monthCell ? (monthCell.billed / c.limit) * 100 : null;
-    if (monthUtilPct != null) {
-      const hot = monthUtilPct >= 30;
-      catLine.appendChild(el('span', { class: 'badge mf-beat ' + (hot ? 'warn' : 'good'), text: monthUtilPct.toFixed(0) + '% used' }));
-    }
+    const monthUtilBadge = monthUtilPct != null
+      ? el('span', { class: 'badge mf-beat ' + (monthUtilPct >= 30 ? 'warn' : 'good'), text: monthUtilPct.toFixed(0) + '% used' })
+      : document.createTextNode('');
     // Average usage against the limit, across every month logged — a
     // steady long-term figure, so it's always green rather than
     // warn-at-a-threshold like the month-specific badge above.
@@ -5842,7 +5851,10 @@ async function renderCreditCards(host) {
     list.appendChild(el('div', { class: 'card', onclick: () => openCreditCardForm(card) }, [
       el('div', { class: 'top' }, [
         el('div', { class: 'card-left' }, [
-          el('div', { class: 'name', text: card.name || 'Card' }),
+          el('div', { class: 'cc-name-row' }, [
+            el('div', { class: 'name', text: card.name || 'Card' }),
+            monthUtilBadge,
+          ]),
           catLine,
         ]),
         el('div', { class: 'card-right' }, [
