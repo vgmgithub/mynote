@@ -3021,6 +3021,7 @@ async function renderExpenseSheet(host, token) {
   const kitty = round2((alloc ? Number(alloc.houseExp) || 0 : 0) * 2);
   const kittySpent = round2((spendRows || []).reduce((s, r) => s + (Number(r.amount) || 0), 0));
   const kittyLeft = round2(kitty - kittySpent);
+  const efAvail = ef ? round2(Math.max(0, ef.c.cashInHand)) : 0;
 
   // Allocation figures are already monthly — used as entered.
   const perMonth = (key) => (alloc ? Number(alloc[key]) || 0 : 0);
@@ -3034,7 +3035,12 @@ async function renderExpenseSheet(host, token) {
   // records both. The row's headline number is that box.
   const debitRows = [
     { key: 'nextMonthDue', label: 'Next Month Due', source: Number(reimb && reimb.amount) || 0, note: 'card reimbursement' },
-    { key: 'emiEf', label: 'EMI / EF', source: ef ? Math.max(0, ef.c.cashInHand) : 0, note: 'emergency fund available' },
+    // Follows the Emergency Fund's own available cash, so the two can't
+    // disagree. `source: null` keeps it out of Fetch — there is nothing to
+    // pull when the figure is already live — while staying overridable for a
+    // month the fund was actually drawn on.
+    { key: 'emiEf', label: 'EMI / EF', source: null, single: true, fallback: efAvail,
+      note: ef ? 'emergency fund · ' + fmtSheetCur(efAvail) : 'you enter' },
     { key: 'loan', label: 'Loan', source: null, note: 'you enter' },
     { key: 'home', label: 'Home', source: perMonth('home'), note: planNote },
     { key: 'mf', label: 'Mutual Fund', source: perMonth('mf'), note: planNote },
@@ -3057,8 +3063,12 @@ async function renderExpenseSheet(host, token) {
   // A `single` row holds one plain number and falls back to its derived figure
   // when nothing has been entered; the rest sum their expression.
   const hasOwnVal = (r) => sheet[r.key] != null && String(sheet[r.key]).trim() !== '';
+  // sumExpr on BOTH kinds, deliberately: a row that used to accumulate "+"
+  // terms and is now a single figure still has months holding "70300+70300" on
+  // record, and Number() on that is NaN — which would have silently read as
+  // zero and quietly changed those months' closing balance.
   const boxOf = (r) => (r.single
-    ? (hasOwnVal(r) ? round2(Number(sheet[r.key]) || 0) : round2(r.fallback || 0))
+    ? (hasOwnVal(r) ? sumExpr(sheet[r.key]) : round2(r.fallback || 0))
     : sumExpr(exprOf(r)));
 
   // ---- Month stepper + the shared Fetch ----
@@ -5971,8 +5981,14 @@ async function renderEmergency() {
   updateEfNavActive();
   const { mod, c, parked } = await efLoad();
 
-  // ---- Summary (on every tab, so the headline figure never leaves the screen)
-  host.appendChild(el('section', { class: 'summary' }, [
+  // ---- Summary ----
+  // Shown on the tabs that report on the fund's money (Funds, Targets,
+  // Loans), where the headline figure is the thing being read against.
+  // Left off Log and Rules: a dated list of contributions and a page of
+  // written terms aren't measured against the current balance, so there it
+  // was only pushing the actual content down the screen.
+  const showSummary = _efTab !== 'log' && _efTab !== 'terms';
+  if (showSummary) host.appendChild(el('section', { class: 'summary' }, [
     el('div', { class: 'row-between summary-top' }, [
       el('div', {}, [
         el('div', { class: 'label', text: 'Fund value' }),
