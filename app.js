@@ -3516,8 +3516,12 @@ async function renderSpendTracker(host, token) {
   // ---- Insights: this month read against the ones before it ----
   // Only under the category view — they're commentary on that roll-up, and the
   // entries list is already long.
-  if (_trkView === 'category') {
-    const insights = _trackerInsights(ym, timelineYms, byYm, byCat, spent, totalOf);
+  // Wrapped: the insights are commentary, and a failure computing them must not
+  // take the rest of the tab down with it. When this threw, everything after it
+  // — including the footer — silently vanished, and the only visible symptom
+  // was a missing panel.
+  try {
+    const insights = _trkView === 'category' ? _trackerInsights(ym, timelineYms, byYm, byCat, spent, totalOf) : [];
     if (insights.length) {
       host.appendChild(el('h3', { class: 'div-group-head', text: '💡 Insights' }));
       host.appendChild(el('div', { class: 'trk-insights' }, insights.map((it) =>
@@ -3529,7 +3533,7 @@ async function renderSpendTracker(host, token) {
           ]),
         ]))));
     }
-  }
+  } catch (_) { /* commentary only — the month's figures above stand on their own */ }
 
   host.appendChild(el('p', { class: 'hint mf-foot', text: 'The kitty is the Allocation tab\'s House Exp doubled — the same figure from each of you. Every spend logged here comes off it. This tab always shows the current month; earlier months stay in the backup.' }));
 }
@@ -3564,6 +3568,113 @@ async function _reimburseSpend(ym, delta) {
     const next = round2(Math.max(0, (Number(row && row.amount) || 0) + delta));
     await DB.put('ccReimbursements', { ym, amount: next, updatedAt: new Date().toISOString() });
   } catch (_) { /* a spend must still save even if this write fails */ }
+}
+
+// What this month's spending says when read against the months before it.
+// Returns only the observations that actually have data behind them — an
+// insight panel that pads itself out with "no change" lines stops being read.
+//
+// Deliberately plain arithmetic on months already in memory: no projection
+// models, no thresholds tuned to one household. Each line states a number the
+// user could verify by hand, which is the only kind worth trusting here.
+function _trackerInsights(ym, timelineYms, byYm, byCat, spent, totalOf) {
+  const out = [];
+  const fmtDelta = (n) => (n >= 0 ? '+' : '−') + fmtSheetCur(Math.abs(n)).replace('₹', '₹');
+  const monLabel = (k) => {
+    const m = /^(\d{4})-(\d{2})/.exec(k || '');
+    return m ? _SPEND_MONS[+m[2] - 1] : k;
+  };
+
+  // Calendar previous month, whether or not it has entries — "nothing last
+  // month" is itself worth knowing, so it isn't skipped over silently.
+  const d = new Date(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)) - 2, 1);
+  const prevYm = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  const prevTotal = totalOf(prevYm);
+  const prevRows = byYm.get(prevYm) || [];
+
+  // ---- 1. Against last month ----
+  if (prevTotal > 0) {
+    const diff = round2(spent - prevTotal);
+    const pct = Math.abs(Math.round((diff / prevTotal) * 100));
+    out.push({
+      icon: diff > 0 ? '📈' : diff < 0 ? '📉' : '➖',
+      tone: diff > 0 ? 'warn' : diff < 0 ? 'good' : '',
+      head: diff === 0
+        ? 'Same as ' + monLabel(prevYm)
+        : fmtDelta(diff) + ' vs ' + monLabel(prevYm) + ' (' + pct + '%)',
+      sub: monLabel(prevYm) + ' came to ' + fmtSheetCur(prevTotal) + '; this month is ' + fmtSheetCur(spent) + '.',
+    });
+  }
+
+  // ---- 2. Against the running average of earlier months ----
+  const earlier = timelineYms.filter((k) => k < ym).map((k) => totalOf(k)).filter((t) => t > 0);
+  if (earlier.length >= 2) {
+    const avg = round2(earlier.reduce((s, t) => s + t, 0) / earlier.length);
+    const diff = round2(spent - avg);
+    out.push({
+      icon: '⚖️',
+      tone: diff > 0 ? 'warn' : 'good',
+      head: fmtDelta(diff) + ' vs your ' + earlier.length + '-month average',
+      sub: 'You normally spend about ' + fmtSheetCur(avg) + ' a month.',
+    });
+  }
+
+  // ---- 3. Categories that moved most against last month ----
+  if (prevRows.length) {
+    const prevCat = new Map();
+    prevRows.forEach((r) => {
+      const k = r.category || 'Prev Bill Bal / Misc';
+      prevCat.set(k, round2((prevCat.get(k) || 0) + (Number(r.amount) || 0)));
+    });
+    const names = new Set([...byCat.keys(), ...prevCat.keys()]);
+    const moves = [...names].map((n) => ({
+      name: n,
+      now: (byCat.get(n) || { total: 0 }).total,
+      was: prevCat.get(n) || 0,
+    })).map((m) => Object.assign(m, { diff: round2(m.now - m.was) }));
+
+    const up = moves.filter((m) => m.diff > 0).sort((a, b2) => b2.diff - a.diff)[0];
+    const down = moves.filter((m) => m.diff < 0).sort((a, b2) => a.diff - b2.diff)[0];
+    if (up) {
+      out.push({
+        icon: '🔺', tone: 'warn',
+        head: up.name + ' up ' + fmtSheetCur(up.diff),
+        sub: fmtSheetCur(up.was) + ' in ' + monLabel(prevYm) + ' → ' + fmtSheetCur(up.now) + ' now.',
+      });
+    }
+    if (down) {
+      out.push({
+        icon: '🔻', tone: 'good',
+        head: down.name + ' down ' + fmtSheetCur(Math.abs(down.diff)),
+        sub: fmtSheetCur(down.was) + ' in ' + monLabel(prevYm) + ' → ' + fmtSheetCur(down.now) + ' now.',
+      });
+    }
+    // Something being spent on for the first time is worth surfacing on its
+    // own — it won't top the "moved most" list while it's still small.
+    const fresh = moves.filter((m) => m.was === 0 && m.now > 0).sort((a, b2) => b2.now - a.now)[0];
+    if (fresh && (!up || fresh.name !== up.name)) {
+      out.push({
+        icon: '🆕', tone: '',
+        head: 'New this month: ' + fresh.name,
+        sub: fmtSheetCur(fresh.now) + ', with nothing in ' + monLabel(prevYm) + '.',
+      });
+    }
+  }
+
+  // ---- 4. Where the money actually goes ----
+  const top = [...byCat.entries()].sort((a, b2) => b2[1].total - a[1].total)[0];
+  if (top && spent > 0) {
+    const pct = Math.round((top[1].total / spent) * 100);
+    if (pct >= 30) {
+      out.push({
+        icon: '🎯', tone: '',
+        head: top[0] + ' is ' + pct + '% of the month',
+        sub: fmtSheetCur(top[1].total) + ' of ' + fmtSheetCur(spent) + ' went there.',
+      });
+    }
+  }
+
+  return out;
 }
 
 // "12 Sep" — short, since the rows already sit under one month.
