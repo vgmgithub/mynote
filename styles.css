@@ -1920,47 +1920,74 @@ html[data-theme="light"] {
 .trk-cat-meta { flex: 0 0 auto; font-size: 0.6rem; font-weight: 600; color: var(--muted); min-width: 52px; text-align: right; }
 
 /* ---- Reduce tab ---- */
-.rdc-head { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin: 2px 0 12px; }
-.rdc-head-fig { font-size: 1.15rem; font-weight: 800; }
-.rdc-head-fig.is-over { color: var(--bad); }
-.rdc-head-note { font-size: 0.68rem; color: var(--muted); margin-top: 3px; }
+.rvw-head { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin: 2px 0 12px; }
+.rvw-head-fig { font-size: 1.15rem; font-weight: 800; }
+.rvw-head-fig.is-over { color: var(--bad); }
+.rvw-head-note { font-size: 0.68rem; color: var(--muted); margin-top: 3px; }
 /* Says outright when there isn't the history to judge anything, rather than
    showing an empty panel that reads as "nothing to worry about". */
-.rdc-thin { background: var(--card-2); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
-.rdc-thin-head { font-size: 0.82rem; font-weight: 700; }
-.rdc-thin-sub { font-size: 0.7rem; color: var(--muted); margin-top: 4px; line-height: 1.45; }
-.rdc-clear { display: flex; gap: 10px; align-items: flex-start; background: var(--card); border: 1px solid var(--good); border-radius: 12px; padding: 12px 14px; }
-.rdc-clear-head { font-size: 0.84rem; font-weight: 700; color: var(--good); }
-.rdc-clear-sub { font-size: 0.7rem; color: var(--muted); margin-top: 2px; }
+.rvw-thin { background: var(--card-2); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.rvw-thin-head { font-size: 0.82rem; font-weight: 700; }
+.rvw-thin-sub { font-size: 0.7rem; color: var(--muted); margin-top: 4px; line-height: 1.45; }
+.rvw-clear { display: flex; gap: 10px; align-items: flex-start; background: var(--card); border: 1px solid var(--good); border-radius: 12px; padding: 12px 14px; }
+.rvw-clear-head { font-size: 0.84rem; font-weight: 700; color: var(--good); }
+.rvw-clear-sub { font-size: 0.7rem; color: var(--muted); margin-top: 2px; }
 /* One finding per card, tinted by its category group so the Reduce tab and the
    Tracker roll-up agree on what colour a category is. */
-.rdc-list { display: flex; flex-direction: column; gap: 8px; }
-.rdc-item { background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--g, var(--line)); border-radius: 10px; padding: 10px 12px; }
-.rdc-item-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
-.rdc-item-name { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 0.86rem; font-weight: 700; }
-.rdc-item-dot { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--g, var(--muted)); }
-.rdc-item-amt { font-size: 0.9rem; font-weight: 800; white-space: nowrap; }
-.rdc-item-mid { font-size: 0.66rem; color: var(--muted); margin-top: 4px; }
-.rdc-item-save { display: flex; align-items: baseline; gap: 6px; margin-top: 7px; padding-top: 7px; border-top: 1px dashed var(--line); flex-wrap: wrap; }
-.rdc-save-amt { font-size: 0.8rem; font-weight: 800; color: var(--bad); }
-.rdc-save-txt { font-size: 0.63rem; color: var(--muted); }
-.rdc-total { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 12px 0 4px; padding: 13px 15px; border-radius: 12px; background: linear-gradient(135deg, var(--card) 0%, var(--card-2) 100%); border: 1px solid var(--good); }
-.rdc-total.is-neg { border-color: var(--bad); }
-.rdc-total-label { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; font-weight: 700; }
-.rdc-total-val { font-size: 1.1rem; font-weight: 800; color: var(--good); }
-.rdc-total.is-neg .rdc-total-val { color: var(--bad); }
+.rvw-list { display: flex; flex-direction: column; gap: 8px; }
+.rvw-item { background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--g, var(--line)); border-radius: 10px; padding: 10px 12px; }
+.rvw-item-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.rvw-item-name { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 0.86rem; font-weight: 700; }
+.rvw-item-dot { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--g, var(--muted)); }
+.rvw-item-amt { font-size: 0.9rem; font-weight: 800; white-space: nowrap; }
+.rvw-item-mid { font-size: 0.66rem; color: var(--muted); margin-top: 4px; }
+.rvw-item-save { display: flex; align-items: baseline; gap: 6px; margin-top: 7px; padding-top: 7px; border-top: 1px dashed var(--line); flex-wrap: wrap; }
+.rvw-save-amt { font-size: 0.8rem; font-weight: 800; color: var(--bad); }
+.rvw-save-txt { font-size: 0.63rem; color: var(--muted); }
+.rvw-total { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 12px 0 4px; padding: 13px 15px; border-radius: 12px; background: linear-gradient(135deg, var(--card) 0%, var(--card-2) 100%); border: 1px solid var(--good); }
+.rvw-total.is-neg { border-color: var(--bad); }
+.rvw-total-label { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; font-weight: 700; }
+.rvw-total-val { font-size: 1.1rem; font-weight: 800; color: var(--good); }
+.rvw-total.is-neg .rvw-total-val { color: var(--bad); }
 /* Recurring items still to land. The day-of-month leads each row, since "when"
    is the thing being reported. */
-.rdc-due { display: flex; flex-direction: column; gap: 6px; }
-.rdc-due-row { display: flex; align-items: center; gap: 10px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; }
-.rdc-due-when { flex: 0 0 34px; display: flex; flex-direction: column; align-items: center; line-height: 1; }
-.rdc-due-day { font-size: 1rem; font-weight: 800; color: var(--accent); }
-.rdc-due-daylbl { font-size: 0.55rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.3px; }
-.rdc-due-body { flex: 1; min-width: 0; }
-.rdc-due-name { font-size: 0.82rem; font-weight: 600; }
-.rdc-due-meta { font-size: 0.62rem; color: var(--muted); margin-top: 2px; }
-.rdc-due-amt { flex: 0 0 auto; font-size: 0.85rem; font-weight: 700; white-space: nowrap; }
-.rdc-flat { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
-.rdc-flat-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 8px 12px; background: var(--card); border-bottom: 1px solid var(--line); font-size: 0.78rem; }
-.rdc-flat-row:last-child { border-bottom: none; }
-.rdc-flat-meta { font-size: 0.64rem; color: var(--muted); white-space: nowrap; }
+.rvw-due { display: flex; flex-direction: column; gap: 6px; }
+.rvw-due-row { display: flex; align-items: center; gap: 10px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; }
+.rvw-due-when { flex: 0 0 34px; display: flex; flex-direction: column; align-items: center; line-height: 1; }
+.rvw-due-day { font-size: 1rem; font-weight: 800; color: var(--accent); }
+.rvw-due-daylbl { font-size: 0.55rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.3px; }
+.rvw-due-body { flex: 1; min-width: 0; }
+.rvw-due-name { font-size: 0.82rem; font-weight: 600; }
+.rvw-due-meta { font-size: 0.62rem; color: var(--muted); margin-top: 2px; }
+.rvw-due-amt { flex: 0 0 auto; font-size: 0.85rem; font-weight: 700; white-space: nowrap; }
+.rvw-flat { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.rvw-flat-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 8px 12px; background: var(--card); border-bottom: 1px solid var(--line); font-size: 0.78rem; }
+.rvw-flat-row:last-child { border-bottom: none; }
+.rvw-flat-meta { font-size: 0.64rem; color: var(--muted); white-space: nowrap; }
+/* Review: creeping sequence, small-spend panel, payment split */
+.rvw-seq { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+.rvw-seq-step { display: flex; flex-direction: column; align-items: center; padding: 4px 8px; border-radius: 7px; background: var(--card-2); border: 1px solid var(--line); line-height: 1.2; }
+.rvw-seq-mon { font-size: 0.55rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.3px; }
+.rvw-seq-amt { font-size: 0.72rem; font-weight: 700; }
+/* The last step is where it has got to, so it carries the group's colour. */
+.rvw-seq-step:last-child { border-color: var(--g, var(--line)); }
+.rvw-seq-step:last-child .rvw-seq-amt { color: var(--g, var(--text)); }
+.rvw-panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.rvw-panel-top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.rvw-panel-fig { font-size: 1.05rem; font-weight: 800; }
+.rvw-panel-sub { font-size: 0.68rem; color: var(--muted); }
+.rvw-mini { margin-top: 9px; padding-top: 8px; border-top: 1px dashed var(--line); display: flex; flex-direction: column; gap: 4px; }
+.rvw-mini-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 0.74rem; }
+.rvw-mini-meta { font-size: 0.64rem; color: var(--muted); white-space: nowrap; }
+.rvw-meth { display: flex; flex-direction: column; gap: 7px; }
+.rvw-meth-row { display: flex; align-items: center; gap: 8px; }
+.rvw-meth-name { flex: 0 0 40px; font-size: 0.72rem; font-weight: 700; }
+.rvw-meth-track { flex: 1; height: 6px; border-radius: 999px; background: var(--card-2); border: 1px solid var(--line); overflow: hidden; }
+.rvw-meth-fill { display: block; height: 100%; border-radius: 999px; }
+/* Card is the one that becomes a bill later, so it gets the warning hue. */
+.rvw-meth-fill.is-card { background: var(--bad); }
+.rvw-meth-fill.is-upi  { background: var(--accent); }
+.rvw-meth-fill.is-cash { background: var(--good); }
+.rvw-meth-amt { flex: 0 0 auto; font-size: 0.74rem; font-weight: 700; white-space: nowrap; }
+.rvw-meth-pct { flex: 0 0 32px; font-size: 0.64rem; color: var(--muted); text-align: right; }
+.rvw-note { font-size: 0.68rem; line-height: 1.5; margin: 8px 0 0; }
