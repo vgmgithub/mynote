@@ -2922,6 +2922,14 @@ async function renderHomeSavings() {
 
 // ---------- Expense section page (Credit Card | Allocation | Expense) ----------
 async function renderHomeExpense() {
+  // Does nothing unless the Expense section is actually on screen. The spend
+  // form can be opened from the FAB on HOME, and its save calls back here to
+  // refresh the Tracker — which used to repaint a hidden view and, worse,
+  // reset the FABs from `_expTab` (still 'cc' when the section was never
+  // opened), so Home was left showing the add-credit-card button. Which FAB
+  // belongs to which screen is applyAppMode's business, not this function's.
+  if (state.appMode !== 'expense') return;
+
   const host = $('#expenseView');
   host.innerHTML = '';
   updateExpNavActive();
