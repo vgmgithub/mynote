@@ -1918,3 +1918,49 @@ html[data-theme="light"] {
 .trk-cat-track { flex: 1; height: 4px; border-radius: 999px; background: var(--card-2); overflow: hidden; }
 .trk-cat-fill { display: block; height: 100%; border-radius: 999px; background: var(--g); opacity: 0.85; }
 .trk-cat-meta { flex: 0 0 auto; font-size: 0.6rem; font-weight: 600; color: var(--muted); min-width: 52px; text-align: right; }
+
+/* ---- Reduce tab ---- */
+.rdc-head { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin: 2px 0 12px; }
+.rdc-head-fig { font-size: 1.15rem; font-weight: 800; }
+.rdc-head-fig.is-over { color: var(--bad); }
+.rdc-head-note { font-size: 0.68rem; color: var(--muted); margin-top: 3px; }
+/* Says outright when there isn't the history to judge anything, rather than
+   showing an empty panel that reads as "nothing to worry about". */
+.rdc-thin { background: var(--card-2); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.rdc-thin-head { font-size: 0.82rem; font-weight: 700; }
+.rdc-thin-sub { font-size: 0.7rem; color: var(--muted); margin-top: 4px; line-height: 1.45; }
+.rdc-clear { display: flex; gap: 10px; align-items: flex-start; background: var(--card); border: 1px solid var(--good); border-radius: 12px; padding: 12px 14px; }
+.rdc-clear-head { font-size: 0.84rem; font-weight: 700; color: var(--good); }
+.rdc-clear-sub { font-size: 0.7rem; color: var(--muted); margin-top: 2px; }
+/* One finding per card, tinted by its category group so the Reduce tab and the
+   Tracker roll-up agree on what colour a category is. */
+.rdc-list { display: flex; flex-direction: column; gap: 8px; }
+.rdc-item { background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--g, var(--line)); border-radius: 10px; padding: 10px 12px; }
+.rdc-item-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.rdc-item-name { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 0.86rem; font-weight: 700; }
+.rdc-item-dot { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--g, var(--muted)); }
+.rdc-item-amt { font-size: 0.9rem; font-weight: 800; white-space: nowrap; }
+.rdc-item-mid { font-size: 0.66rem; color: var(--muted); margin-top: 4px; }
+.rdc-item-save { display: flex; align-items: baseline; gap: 6px; margin-top: 7px; padding-top: 7px; border-top: 1px dashed var(--line); flex-wrap: wrap; }
+.rdc-save-amt { font-size: 0.8rem; font-weight: 800; color: var(--bad); }
+.rdc-save-txt { font-size: 0.63rem; color: var(--muted); }
+.rdc-total { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 12px 0 4px; padding: 13px 15px; border-radius: 12px; background: linear-gradient(135deg, var(--card) 0%, var(--card-2) 100%); border: 1px solid var(--good); }
+.rdc-total.is-neg { border-color: var(--bad); }
+.rdc-total-label { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; font-weight: 700; }
+.rdc-total-val { font-size: 1.1rem; font-weight: 800; color: var(--good); }
+.rdc-total.is-neg .rdc-total-val { color: var(--bad); }
+/* Recurring items still to land. The day-of-month leads each row, since "when"
+   is the thing being reported. */
+.rdc-due { display: flex; flex-direction: column; gap: 6px; }
+.rdc-due-row { display: flex; align-items: center; gap: 10px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; }
+.rdc-due-when { flex: 0 0 34px; display: flex; flex-direction: column; align-items: center; line-height: 1; }
+.rdc-due-day { font-size: 1rem; font-weight: 800; color: var(--accent); }
+.rdc-due-daylbl { font-size: 0.55rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.3px; }
+.rdc-due-body { flex: 1; min-width: 0; }
+.rdc-due-name { font-size: 0.82rem; font-weight: 600; }
+.rdc-due-meta { font-size: 0.62rem; color: var(--muted); margin-top: 2px; }
+.rdc-due-amt { flex: 0 0 auto; font-size: 0.85rem; font-weight: 700; white-space: nowrap; }
+.rdc-flat { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.rdc-flat-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 8px 12px; background: var(--card); border-bottom: 1px solid var(--line); font-size: 0.78rem; }
+.rdc-flat-row:last-child { border-bottom: none; }
+.rdc-flat-meta { font-size: 0.64rem; color: var(--muted); white-space: nowrap; }
