@@ -3022,6 +3022,7 @@ async function renderExpenseSheet(host, token) {
   const kittySpent = round2((spendRows || []).reduce((s, r) => s + (Number(r.amount) || 0), 0));
   const kittyLeft = round2(kitty - kittySpent);
   const efAvail = ef ? round2(Math.max(0, ef.c.cashInHand)) : 0;
+  const reimbAmt = round2(Number(reimb && reimb.amount) || 0);
 
   // Allocation figures are already monthly — used as entered.
   const perMonth = (key) => (alloc ? Number(alloc[key]) || 0 : 0);
@@ -3034,7 +3035,11 @@ async function renderExpenseSheet(host, token) {
   // the source on top of whatever's already there, so pulling twice in a month
   // records both. The row's headline number is that box.
   const debitRows = [
-    { key: 'nextMonthDue', label: 'Next Month Due', source: Number(reimb && reimb.amount) || 0, note: 'card reimbursement' },
+    // Follows the month's combined card reimbursement, which card spends on
+    // the Tracker add to themselves — so logging one flows straight through
+    // to here. Out of Fetch for the same reason EMI / EF is: already live.
+    { key: 'nextMonthDue', label: 'Next Month Due', source: null, single: true, fallback: reimbAmt,
+      note: 'card reimbursement · ' + fmtSheetCur(reimbAmt) },
     // Follows the Emergency Fund's own available cash, so the two can't
     // disagree. `source: null` keeps it out of Fetch — there is nothing to
     // pull when the figure is already live — while staying overridable for a
@@ -3493,11 +3498,11 @@ async function renderSpendTracker(host, token) {
           class: 'icon-btn trk-del', type: 'button', text: '×', 'aria-label': 'Delete this spend',
           onclick: async (e) => {
             e.stopPropagation(); // the row opens the editor; the × must not
-            // Only spends that actually reached a statement come back off one.
+            // Only spends that actually reached a reimbursement come back off one.
             const billed = r.cardId != null && r.ym === _thisSpendYm();
             if (!window.confirm('Delete ' + fmtSheetCur(r.amount) + ' on ' + (r.category || '—') + '?'
-              + (billed ? '\n\nIt will also come off that card\'s billed total for the month.' : ''))) return;
-            if (billed) await _billSpendToCard(r.cardId, r.ym, -(Number(r.amount) || 0));
+              + (billed ? '\n\nIt will also come off this month\'s card reimbursement.' : ''))) return;
+            if (billed) await _reimburseSpend(r.ym, -(Number(r.amount) || 0));
             await DB.del('spends', r.id);
             toast('Deleted');
             renderHomeExpense();
@@ -3540,136 +3545,25 @@ const _spendMonthLabel = (k) => {
 // so back-filling a spend into it would rewrite a statement that is closed.
 const _thisSpendYm = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); };
 
-// Move `delta` onto a card's billed total for one month, creating the month row
-// if the card has none yet. Used with a positive delta when a card spend is
-// logged and a negative one when it's deleted, so the Credit Card tab always
-// reflects the spends that are actually on record — a spend removed here must
-// not leave the statement inflated.
+// Move `delta` onto a MONTH'S combined credit-card reimbursement. Positive
+// when a card spend is logged, negative when one is deleted or edited away.
 //
-// Only `billed` is touched: `status`/`paidOn` say whether the bill was settled,
-// which adding a purchase mid-month tells us nothing about.
-async function _billSpendToCard(cardId, ym, delta) {
+// The reimbursement, not the card's billed total, is where these belong: the
+// billed figure is the statement, which already contains the spend by the time
+// it is entered, so adding it there too would count it twice. Reimbursement is
+// exactly what credit.js describes it as — home spending logged elsewhere and
+// credited back — which is what a household spend put on a card is.
+//
+// Stored per MONTH rather than per card (see the ccReimbursements store), so
+// the chosen card is recorded on the spend for reference but does not split the
+// figure. Clamped at zero: a reimbursement cannot be negative, and a stray
+// reversal must not push it below.
+async function _reimburseSpend(ym, delta) {
   try {
-    const card = await DB.get('creditCards', cardId);
-    if (!card) return;
-    const months = Array.isArray(card.months) ? card.months.slice() : [];
-    const ix = months.findIndex((m) => String(m.ym).slice(0, 7) === ym);
-    if (ix >= 0) {
-      months[ix] = Object.assign({}, months[ix], { billed: round2(Math.max(0, (Number(months[ix].billed) || 0) + delta)) });
-    } else if (delta > 0) {
-      months.push({ ym, billed: round2(delta), status: null, paidOn: null });
-    } else {
-      return; // nothing to take away from
-    }
-    await DB.put('creditCards', Object.assign({}, card, { months, updatedAt: new Date().toISOString() }));
-  } catch (_) { /* a spend must still save even if the card write fails */ }
-}
-
-// What this month's spending says when read against the months before it.
-// Returns only the observations that actually have data behind them — an
-// insight panel that pads itself out with "no change" lines stops being read.
-//
-// Deliberately plain arithmetic on months already in memory: no projection
-// models, no thresholds tuned to one household. Each line states a number the
-// user could verify by hand, which is the only kind worth trusting here.
-function _trackerInsights(ym, timelineYms, byYm, byCat, spent, totalOf) {
-  const out = [];
-  const fmtDelta = (n) => (n >= 0 ? '+' : '−') + fmtSheetCur(Math.abs(n)).replace('₹', '₹');
-  const monLabel = (k) => {
-    const m = /^(\d{4})-(\d{2})/.exec(k || '');
-    return m ? _SPEND_MONS[+m[2] - 1] : k;
-  };
-
-  // Calendar previous month, whether or not it has entries — "nothing last
-  // month" is itself worth knowing, so it isn't skipped over silently.
-  const d = new Date(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)) - 2, 1);
-  const prevYm = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
-  const prevTotal = totalOf(prevYm);
-  const prevRows = byYm.get(prevYm) || [];
-
-  // ---- 1. Against last month ----
-  if (prevTotal > 0) {
-    const diff = round2(spent - prevTotal);
-    const pct = Math.abs(Math.round((diff / prevTotal) * 100));
-    out.push({
-      icon: diff > 0 ? '📈' : diff < 0 ? '📉' : '➖',
-      tone: diff > 0 ? 'warn' : diff < 0 ? 'good' : '',
-      head: diff === 0
-        ? 'Same as ' + monLabel(prevYm)
-        : fmtDelta(diff) + ' vs ' + monLabel(prevYm) + ' (' + pct + '%)',
-      sub: monLabel(prevYm) + ' came to ' + fmtSheetCur(prevTotal) + '; this month is ' + fmtSheetCur(spent) + '.',
-    });
-  }
-
-  // ---- 2. Against the running average of earlier months ----
-  const earlier = timelineYms.filter((k) => k < ym).map((k) => totalOf(k)).filter((t) => t > 0);
-  if (earlier.length >= 2) {
-    const avg = round2(earlier.reduce((s, t) => s + t, 0) / earlier.length);
-    const diff = round2(spent - avg);
-    out.push({
-      icon: '⚖️',
-      tone: diff > 0 ? 'warn' : 'good',
-      head: fmtDelta(diff) + ' vs your ' + earlier.length + '-month average',
-      sub: 'You normally spend about ' + fmtSheetCur(avg) + ' a month.',
-    });
-  }
-
-  // ---- 3. Categories that moved most against last month ----
-  if (prevRows.length) {
-    const prevCat = new Map();
-    prevRows.forEach((r) => {
-      const k = r.category || 'Prev Bill Bal / Misc';
-      prevCat.set(k, round2((prevCat.get(k) || 0) + (Number(r.amount) || 0)));
-    });
-    const names = new Set([...byCat.keys(), ...prevCat.keys()]);
-    const moves = [...names].map((n) => ({
-      name: n,
-      now: (byCat.get(n) || { total: 0 }).total,
-      was: prevCat.get(n) || 0,
-    })).map((m) => Object.assign(m, { diff: round2(m.now - m.was) }));
-
-    const up = moves.filter((m) => m.diff > 0).sort((a, b2) => b2.diff - a.diff)[0];
-    const down = moves.filter((m) => m.diff < 0).sort((a, b2) => a.diff - b2.diff)[0];
-    if (up) {
-      out.push({
-        icon: '🔺', tone: 'warn',
-        head: up.name + ' up ' + fmtSheetCur(up.diff),
-        sub: fmtSheetCur(up.was) + ' in ' + monLabel(prevYm) + ' → ' + fmtSheetCur(up.now) + ' now.',
-      });
-    }
-    if (down) {
-      out.push({
-        icon: '🔻', tone: 'good',
-        head: down.name + ' down ' + fmtSheetCur(Math.abs(down.diff)),
-        sub: fmtSheetCur(down.was) + ' in ' + monLabel(prevYm) + ' → ' + fmtSheetCur(down.now) + ' now.',
-      });
-    }
-    // Something being spent on for the first time is worth surfacing on its
-    // own — it won't top the "moved most" list while it's still small.
-    const fresh = moves.filter((m) => m.was === 0 && m.now > 0).sort((a, b2) => b2.now - a.now)[0];
-    if (fresh && (!up || fresh.name !== up.name)) {
-      out.push({
-        icon: '🆕', tone: '',
-        head: 'New this month: ' + fresh.name,
-        sub: fmtSheetCur(fresh.now) + ', with nothing in ' + monLabel(prevYm) + '.',
-      });
-    }
-  }
-
-  // ---- 4. Where the money actually goes ----
-  const top = [...byCat.entries()].sort((a, b2) => b2[1].total - a[1].total)[0];
-  if (top && spent > 0) {
-    const pct = Math.round((top[1].total / spent) * 100);
-    if (pct >= 30) {
-      out.push({
-        icon: '🎯', tone: '',
-        head: top[0] + ' is ' + pct + '% of the month',
-        sub: fmtSheetCur(top[1].total) + ' of ' + fmtSheetCur(spent) + ' went there.',
-      });
-    }
-  }
-
-  return out;
+    const row = await DB.get('ccReimbursements', ym).catch(() => null);
+    const next = round2(Math.max(0, (Number(row && row.amount) || 0) + delta));
+    await DB.put('ccReimbursements', { ym, amount: next, updatedAt: new Date().toISOString() });
+  } catch (_) { /* a spend must still save even if this write fails */ }
 }
 
 // "12 Sep" — short, since the rows already sit under one month.
@@ -3728,9 +3622,9 @@ async function openSpendForm(budget, existing, defaultDate) {
   ])));
 
   // Which card the swipe went on — only asked once "Card" is the method, since
-  // it's meaningless otherwise. Choosing one bills the spend to that card's
-  // month on the Credit Card tab, so the statement builds itself as the month
-  // goes rather than being typed in from scratch at the end of it.
+  // it's meaningless otherwise. Choosing one adds the spend to that month's
+  // card reimbursement on the Credit Card tab, so what gets credited back
+  // accumulates as the month goes instead of being totted up at the end of it.
   const cardBtns = [];
   const cardGrid = el('div', { class: 'spend-card-grid' }, cards.map((c) => {
     const btn = el('button', { class: 'spend-card-btn' + (c.id === chosenCardId ? ' active' : ''), type: 'button' }, [
@@ -3753,7 +3647,7 @@ async function openSpendForm(budget, existing, defaultDate) {
     const d = (dateInp.value || todayISO()).slice(0, 7);
     const past = d !== _thisSpendYm();
     pastNote.textContent = past
-      ? 'Recorded against the card, but ' + _spendMonthLabel(d) + ' is a closed month — its bill is left as it is.'
+      ? 'Recorded against the card, but ' + _spendMonthLabel(d) + ' is a closed month — its reimbursement is left as it is.'
       : '';
     pastNote.classList.toggle('hidden', !past);
   };
@@ -3800,9 +3694,9 @@ async function openSpendForm(budget, existing, defaultDate) {
     // they stay in step: a month that was never billed is never unwound.
     const curYm = _thisSpendYm();
     if (editing && existing.cardId != null && existing.ym === curYm) {
-      await _billSpendToCard(existing.cardId, existing.ym, -(Number(existing.amount) || 0));
+      await _reimburseSpend(existing.ym, -(Number(existing.amount) || 0));
     }
-    if (cardId != null && ym === curYm) await _billSpendToCard(cardId, ym, amt);
+    if (cardId != null && ym === curYm) await _reimburseSpend(ym, amt);
     const rec = {
       ym, date: d, category: chosenCat, amount: amt,
       method: chosenMethod, cardId, note: note.value.trim() || null,
@@ -3811,7 +3705,7 @@ async function openSpendForm(budget, existing, defaultDate) {
     if (editing) rec.id = existing.id;
     await DB.put('spends', rec);
     closeModal();
-    toast((editing ? 'Updated ' : 'Added ') + fmtSheetCur(amt) + (cardId != null && ym === curYm ? ' · billed to card' : ''));
+    toast((editing ? 'Updated ' : 'Added ') + fmtSheetCur(amt) + (cardId != null && ym === curYm ? ' · added to reimbursement' : ''));
     renderHomeExpense();
   };
 
