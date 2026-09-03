@@ -7539,6 +7539,17 @@ async function openEfLoanForm(existing) {
     if (!who.value.trim()) { toast('Who took it?'); return; }
     if (!(num(amount.value) > 0)) { toast('Enter the amount lent'); return; }
     if (!takenDate.value) { toast('Enter the date it was taken'); return; }
+    // A plan totalling more than was borrowed would reduce those months by
+    // money that never arrived — so it is refused, not merely flagged. Planning
+    // LESS is fine: the rest may simply not be scheduled yet.
+    if (loanKind.value === 'emergency' && applyTo === 'kitty') {
+      const planned = round2(collectPlan().reduce((a, pp) => a + pp.amount, 0));
+      const lent = round2(num(amount.value) || 0);
+      if (planned - lent > 0.5) {
+        toast('Plan is ' + fmtSheetCur(round2(planned - lent)) + ' more than the ' + fmtSheetCur(lent) + ' lent');
+        return;
+      }
+    }
     const rec = buildRec();
     if (isEdit) rec.id = r.id;
     const key = await DB.put('emergency', rec);
