@@ -623,7 +623,7 @@ main.swipe-in-left { animation: swipe-from-left 0.18s ease-out; }
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
-.field textarea { resize: vertical; min-height: 60px; }
+.field textarea { resize: vertical; min-height: 60px; font-family: inherit; line-height: 1.45; }
 .field-row { display: flex; gap: 10px; }
 .field-row .field { flex: 1; }
 .sold-only.hidden { display: none; }
@@ -2115,15 +2115,12 @@ html[data-theme="light"] {
 /* Spent is settled, the remainder is an estimate — so the estimate is hatched
    rather than solid. The kitty is a line across it, because the question is
    which side of that line the month ends on. */
-.rvw-fc-bar { position: relative; display: flex; height: 10px; border-radius: 999px; overflow: hidden; background: var(--card-2); margin: 11px 0 8px; }
-.rvw-fc-seg.is-spent { background: var(--accent); }
-.rvw-fc-seg.is-rest { background: repeating-linear-gradient(45deg, rgba(148,163,184,0.55) 0 4px, rgba(148,163,184,0.22) 4px 8px); }
-.rvw-fc-kitty { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--good); border-radius: 2px; }
 .rvw-fc-split { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; font-size: 0.66rem; color: var(--muted); font-weight: 600; }
-.rvw-fc-kitty-lbl { color: var(--good); font-weight: 700; }
 .rvw-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; vertical-align: baseline; }
 .rvw-dot.is-spent { background: var(--accent); }
-.rvw-dot.is-rest { background: rgba(148,163,184,0.6); }
+/* Dashed ring for the estimated part, matching the dashed line on the chart -
+   a swatch should look like the thing it labels. */
+.rvw-dot.is-proj { background: transparent; border: 2px dashed var(--accent); width: 9px; height: 9px; box-sizing: border-box; }
 
 /* The lines that decide today. Marked rather than bulleted, so a "you are
    fine" and a "you are over" are told apart without reading them. */
@@ -2160,3 +2157,75 @@ html[data-theme="light"] {
 .rvw-cyc-key { display: flex; align-items: baseline; gap: 4px; font-size: 0.66rem; }
 .rvw-cyc-key-name { font-weight: 700; }
 .rvw-cyc-key-range { color: var(--muted); }
+
+/* ---- Review: collapsible sections ---- */
+/* Nine reports about one month read as a wall when all are open, so each is a
+   section that remembers its own state. A CLOSED header still carries the
+   section's headline figure — a collapsed section should answer its own
+   question at a glance and only be opened for the working behind it. */
+.rvw-sec { margin: 10px 0 0; }
+.rvw-sec-head { display: flex; align-items: center; gap: 9px; width: 100%; padding: 11px 13px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.rvw-sec-head.is-open { border-bottom-left-radius: 0; border-bottom-right-radius: 0; border-bottom-color: transparent; }
+.rvw-sec-ico { font-size: 1rem; flex: 0 0 auto; }
+.rvw-sec-title { flex: 1; min-width: 0; font-size: 0.82rem; font-weight: 700; }
+/* The figure, not a restatement of the title: what the section would tell you
+   if you opened it. */
+.rvw-sec-sum { flex: 0 0 auto; font-size: 0.7rem; font-weight: 700; color: var(--muted); max-width: 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Drawn, not typed: the down-chevron glyph falls back to a caret in some
+   fonts, which then points the wrong way half the time. */
+.rvw-sec-chev { flex: 0 0 auto; width: 7px; height: 7px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); transition: transform 0.18s ease; margin: 0 3px 3px 0; }
+.rvw-sec-head.is-open .rvw-sec-chev { transform: rotate(-135deg); margin: 3px 3px 0 0; }
+.rvw-sec-body { padding: 11px 13px 13px; background: var(--card); border: 1px solid var(--line); border-top: none; border-radius: 0 0 12px 12px; }
+.rvw-sec-body > .div-group-head:first-child { margin-top: 0; }
+/* Inside a section the panels already sit on card, so they drop their own
+   frame rather than boxing a box. */
+.rvw-sec-body .rvw-fc, .rvw-sec-body .rvw-cyc { background: transparent; border: none; padding: 0; }
+.rvw-sec-body > .rvw-note:last-child { margin-bottom: 0; }
+
+/* The month as a picture: where it has got to, where a usual month would be,
+   and where this one is heading. */
+.rvw-chart { margin: 12px 0 9px; }
+.rvw-dot.is-usual { background: #7c8db5; }
+
+/* A category's recent months, revealed on tap. */
+.rvw-item.is-tappable { cursor: pointer; }
+.rvw-item.is-open { box-shadow: inset 0 0 0 1px var(--g, var(--line)); }
+.rvw-item-detail { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
+.rvw-bars-wrap { display: flex; flex-direction: column; gap: 6px; }
+.rvw-bars { display: flex; align-items: flex-end; gap: 5px; }
+.rvw-bar-cell { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.rvw-bar-amt { font-size: 0.52rem; font-weight: 700; color: var(--muted); white-space: nowrap; }
+.rvw-bar-cell.is-now .rvw-bar-amt { color: var(--text); }
+.rvw-bar-track { width: 100%; height: 40px; display: flex; align-items: flex-end; background: var(--card-2); border-radius: 4px; overflow: hidden; }
+.rvw-bar-fill { width: 100%; background: rgba(124,141,181,0.65); border-radius: 4px 4px 0 0; }
+.rvw-bar-cell.is-now .rvw-bar-fill { background: var(--accent); }
+.rvw-bar-mon { font-size: 0.55rem; font-weight: 700; color: var(--muted); text-transform: uppercase; }
+.rvw-bars-foot { font-size: 0.62rem; color: var(--muted); text-align: right; font-weight: 600; }
+
+/* Thirds of the month are tappable: the shape only becomes actionable once you
+   know which bills sit in the hump. */
+.rvw-cyc-bar .rvw-cyc-seg { border: none; font: inherit; font-size: 0.62rem; font-weight: 800; cursor: pointer; padding: 0; }
+.rvw-cyc-detail { margin-top: 10px; padding: 9px 11px; background: var(--card-2); border: 1px solid var(--line); border-radius: 9px; }
+.rvw-cyc-detail-head { font-size: 0.6rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); margin-bottom: 5px; }
+.rvw-cyc-tap { font-size: 0.58rem; color: var(--muted); text-align: center; margin-top: 7px; font-weight: 600; }
+
+/* The week as seven bars. A table of averages says the same thing but has to
+   be read; the tall bar IS the answer. */
+.rvw-dow { display: flex; align-items: flex-end; gap: 4px; margin: 12px 0 4px; }
+.rvw-dow-cell { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.rvw-dow-amt { font-size: 0.5rem; font-weight: 700; color: var(--muted); white-space: nowrap; }
+.rvw-dow-track { width: 100%; height: 46px; display: flex; align-items: flex-end; background: var(--card-2); border-radius: 4px; overflow: hidden; }
+.rvw-dow-fill { width: 100%; background: rgba(96,165,250,0.55); border-radius: 4px 4px 0 0; }
+.rvw-dow-cell.is-weekend .rvw-dow-fill { background: #a855f7; }
+.rvw-dow-cell.is-weekend .rvw-dow-amt { color: var(--text); }
+.rvw-dow-lbl { font-size: 0.55rem; font-weight: 700; color: var(--muted); }
+
+/* ---- Loan form: settlement and note ---- */
+/* The switch and the date it reveals belong on one line; the note sits under
+   both, since what was agreed is part of how the loan ends. */
+.ef-settle-row { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.ef-settle-row > .field { margin: 0; flex: 0 0 auto; }
+.ef-settle-row .sold-only { flex: 1 1 150px; min-width: 0; }
+.ef-settle-row .sold-only .field { margin: 0; }
+/* Room for a couple of sentences, and it grows if there is more to say. */
+textarea.ef-note { min-height: 68px; line-height: 1.45; resize: vertical; }

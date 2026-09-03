@@ -4349,6 +4349,10 @@ function _reviewCycle(ym, byYm, nowDate, isCurrent) {
   const thirds = [[], [], []];
   const halfDays = [], noSpend = [], wkEndPerDay = [], wkDayPerDay = [], wkEndShare = [];
   const dowAmt = new Array(7).fill(0), dowDays = new Array(7).fill(0);
+  // Which categories make each third of the month heavy. Kept per month so the
+  // figure quoted is a median month, like everything else on this tab, rather
+  // than a total divided by however many months happen to be on record.
+  const thirdCat = [new Map(), new Map(), new Map()];
 
   hist.forEach((k) => {
     const dim = _daysInYm(k);
@@ -4356,6 +4360,18 @@ function _reviewCycle(ym, byYm, nowDate, isCurrent) {
     const days = _spendDayTotals(byYm.get(k) || [], dim);
     const total = totalOf(k);
     const t = [0, 0, 0];
+    const catPer = [new Map(), new Map(), new Map()];
+    (byYm.get(k) || []).forEach((r) => {
+      const d = Number(String(r.date || '').slice(8, 10)) || 0;
+      if (d < 1 || d > dim) return;
+      const i = d <= 10 ? 0 : d <= 20 ? 1 : 2;
+      const n = r.category || 'Prev Bill Bal / Misc';
+      catPer[i].set(n, round2((catPer[i].get(n) || 0) + (Number(r.amount) || 0)));
+    });
+    catPer.forEach((m, i) => m.forEach((v, n) => {
+      if (!thirdCat[i].has(n)) thirdCat[i].set(n, []);
+      thirdCat[i].get(n).push(v);
+    }));
     let run = 0, half = null, zero = 0, we = 0, weD = 0, wd = 0, wdD = 0;
     for (let d = 1; d <= dim; d++) {
       const amt = days[d];
@@ -4409,8 +4425,56 @@ function _reviewCycle(ym, byYm, nowDate, isCurrent) {
     weekendPerDay: wePerDay, weekdayPerDay: wdPerDay,
     weekendGap: round2(wePerDay - wdPerDay),
     weekendShare: wkEndShare.length ? Math.round(_median(wkEndShare)) : null,
-    busiest, quietest,
+    busiest, quietest, perDow,
+    // Top three categories in each third of a typical month.
+    thirdTops: thirdCat.map((m) => [...m.entries()]
+      .map(([name, vals]) => ({ name, amount: _median(vals) }))
+      .filter((r) => r.amount > 0)
+      .sort((x, y) => y.amount - x.amount)
+      .slice(0, 3)),
   };
+}
+
+// Cumulative spend day by day: this month against a usual one. The chart drawn
+// from this is the whole forecast in one picture - where the month has got to,
+// where it normally would be by now, and where the two are heading.
+//
+// A history month shorter than this one simply plateaus at its own last day,
+// which is what actually happened rather than a gap in the line.
+function _reviewCurve(ym, byYm, day) {
+  const dim = _daysInYm(ym);
+  const totalOf = (k) => round2((byYm.get(k) || []).reduce((sum, r) => sum + (Number(r.amount) || 0), 0));
+  const hist = [...byYm.keys()].filter((k) => k < ym && totalOf(k) > 0).sort();
+  if (!hist.length) return null;
+  const histCum = hist.map((k) => {
+    const hd = _daysInYm(k);
+    const days = _spendDayTotals(byYm.get(k) || [], hd);
+    const cum = [];
+    let run = 0;
+    for (let d = 1; d <= dim; d++) { run = round2(run + (d <= hd ? days[d] : 0)); cum[d] = run; }
+    return cum;
+  });
+  const nowDays = _spendDayTotals(byYm.get(ym) || [], dim);
+  const out = [];
+  let run = 0;
+  for (let d = 1; d <= dim; d++) {
+    run = round2(run + nowDays[d]);
+    out.push({ day: d, now: d <= day ? run : null, usual: _median(histCum.map((c) => c[d])) });
+  }
+  return out;
+}
+
+// One category's last few months, for the mini bars revealed when a row is
+// tapped. The evidence behind "usually X a month", in the form where an eye
+// can check it.
+function _catMonthHistory(name, ym, byYm, count) {
+  const months = [...byYm.keys()].filter((k) => k <= ym).sort().slice(-(count || 6));
+  return months.map((k) => ({
+    ym: k, current: k === ym,
+    amount: round2((byYm.get(k) || [])
+      .filter((r) => (r.category || 'Prev Bill Bal / Misc') === name)
+      .reduce((sum, r) => sum + (Number(r.amount) || 0), 0)),
+  }));
 }
 
 // A usual month's worth of small change, for comparison against this one.
@@ -4558,6 +4622,128 @@ function _reviewAnalysis(ym, byYm, thisYm, kitty, nowDate) {
   };
 }
 
+// ---------- Review tab: presentation helpers ----------
+//
+// The tab reports nine things about a month, which read as a wall when they are
+// all open at once. So each is a section that remembers whether it is open, and
+// a CLOSED one still carries its headline figure in the header - the point being
+// that a collapsed section should answer its own question in one glance and only
+// be opened for the working behind it.
+//
+// Open state is per section id and survives a re-render (switching month, or
+// logging a spend), so the tab stays arranged the way it was left.
+const _rvwOpen = Object.create(null);
+const RVW_DEFAULT_OPEN = { forecast: true, savings: true, look: true };
+
+function rvwSection(host, id, icon, title, summary, build) {
+  const open = _rvwOpen[id] == null ? !!RVW_DEFAULT_OPEN[id] : !!_rvwOpen[id];
+  const body = el('div', { class: 'rvw-sec-body' + (open ? '' : ' hidden') });
+  const head = el('button', { class: 'rvw-sec-head' + (open ? ' is-open' : ''), type: 'button' }, [
+    el('span', { class: 'rvw-sec-ico', text: icon }),
+    el('span', { class: 'rvw-sec-title', text: title }),
+    summary == null ? document.createTextNode('')
+      : (typeof summary === 'string' ? el('span', { class: 'rvw-sec-sum', text: summary }) : summary),
+    el('span', { class: 'rvw-sec-chev' }),
+  ]);
+  head.addEventListener('click', () => {
+    const closed = body.classList.toggle('hidden');
+    _rvwOpen[id] = !closed;
+    head.classList.toggle('is-open', !closed);
+  });
+  host.appendChild(el('section', { class: 'rvw-sec' }, [head, body]));
+  build(body);
+}
+
+// Cumulative spend for the month: a usual month, this month so far, and the
+// forecast carrying on from where this month has got to. Three lines that
+// answer "am I ahead or behind, and where does this end" without arithmetic.
+//
+// No stretched text: the viewBox scales uniformly and the labels ride inside
+// it, so a wide screen enlarges the chart rather than distorting the type.
+function _rvwCurveChart(curve, o) {
+  const ns = 'http://www.w3.org/2000/svg';
+  const w = 320, h = 132, padL = 4, padR = 4, padT = 12, padB = 18;
+  const mk = (t, attrs) => {
+    const n = document.createElementNS(ns, t);
+    for (const k in attrs) n.setAttribute(k, attrs[k]);
+    return n;
+  };
+  const dim = curve.length;
+  const peak = Math.max(
+    o.kitty || 0, o.forecast || 0,
+    curve.reduce((m, pt) => Math.max(m, pt.usual || 0, pt.now || 0), 0), 1);
+  const maxY = peak * 1.08;
+  const X = (d) => padL + ((d - 1) / Math.max(1, dim - 1)) * (w - padL - padR);
+  const Y = (v) => h - padB - (Math.max(0, v) / maxY) * (h - padT - padB);
+  const svg = mk('svg', { viewBox: '0 0 ' + w + ' ' + h, style: 'width:100%;height:auto;display:block' });
+
+  // Baseline and day ticks. Four labels only - the shape is the message, and a
+  // tick every day would be noise at this size.
+  svg.appendChild(mk('line', { x1: padL, y1: Y(0), x2: w - padR, y2: Y(0), stroke: '#334155', 'stroke-width': '1' }));
+  [1, Math.round(dim / 3), Math.round((dim / 3) * 2), dim].forEach((d) => {
+    const t = mk('text', { x: X(d), y: h - 5, fill: '#7c8db5', 'font-size': '9', 'text-anchor': d === 1 ? 'start' : d === dim ? 'end' : 'middle' });
+    t.textContent = String(d);
+    svg.appendChild(t);
+  });
+
+  // The kitty, as the line the month is trying to stay under.
+  if (o.kitty > 0 && o.kitty <= maxY) {
+    svg.appendChild(mk('line', { x1: padL, y1: Y(o.kitty), x2: w - padR, y2: Y(o.kitty), stroke: '#34d399', 'stroke-width': '1.2', 'stroke-dasharray': '5 4', opacity: '0.85' }));
+    const t = mk('text', { x: w - padR, y: Y(o.kitty) - 4, fill: '#34d399', 'font-size': '9', 'text-anchor': 'end' });
+    t.textContent = 'kitty';
+    svg.appendChild(t);
+  }
+
+  // A usual month.
+  svg.appendChild(mk('polyline', {
+    points: curve.map((pt) => X(pt.day).toFixed(1) + ',' + Y(pt.usual).toFixed(1)).join(' '),
+    fill: 'none', stroke: '#7c8db5', 'stroke-width': '1.8', 'stroke-linejoin': 'round',
+  }));
+
+  // This month, up to today.
+  const done = curve.filter((pt) => pt.now != null);
+  if (done.length) {
+    svg.appendChild(mk('polyline', {
+      points: done.map((pt) => X(pt.day).toFixed(1) + ',' + Y(pt.now).toFixed(1)).join(' '),
+      fill: 'none', stroke: '#38bdf8', 'stroke-width': '2.6', 'stroke-linecap': 'round', 'stroke-linejoin': 'round',
+    }));
+    const last = done[done.length - 1];
+    // The projection, dashed because it is the only estimated part of the
+    // picture and should not be mistaken for what has happened.
+    if (o.forecast != null && last.day < dim) {
+      svg.appendChild(mk('line', {
+        x1: X(last.day), y1: Y(last.now), x2: X(dim), y2: Y(o.forecast),
+        stroke: '#38bdf8', 'stroke-width': '2', 'stroke-dasharray': '4 4', opacity: '0.85',
+      }));
+      svg.appendChild(mk('circle', { cx: X(dim), cy: Y(o.forecast), r: '3', fill: '#0b1220', stroke: '#38bdf8', 'stroke-width': '1.8' }));
+    }
+    svg.appendChild(mk('circle', { cx: X(last.day), cy: Y(last.now), r: '3.4', fill: '#38bdf8' }));
+  }
+  return svg;
+}
+
+// A category's recent months as bars, with its median marked. Revealed when a
+// row is tapped: the claim is "usually X a month", and this is the evidence for
+// it in a form that can be checked at a glance.
+function _rvwMonthBars(rows, usual) {
+  const peak = Math.max(usual || 0, rows.reduce((m, r) => Math.max(m, r.amount), 0), 1);
+  const wrap = el('div', { class: 'rvw-bars' });
+  rows.forEach((r) => {
+    wrap.appendChild(el('div', { class: 'rvw-bar-cell' + (r.current ? ' is-now' : '') }, [
+      el('span', { class: 'rvw-bar-amt', text: r.amount > 0 ? fmtIntCur(r.amount) : '\u2014' }),
+      el('span', { class: 'rvw-bar-track' }, [
+        el('span', { class: 'rvw-bar-fill', style: 'height:' + Math.max(2, (r.amount / peak) * 100).toFixed(1) + '%' }),
+      ]),
+      el('span', { class: 'rvw-bar-mon', text: _spendMonthLabel(r.ym).split(' ')[0] }),
+    ]));
+  });
+  const out = el('div', { class: 'rvw-bars-wrap' }, [wrap]);
+  if (usual > 0) {
+    out.appendChild(el('div', { class: 'rvw-bars-foot', text: 'median ' + fmtIntCur(usual) + ' a month' }));
+  }
+  return out;
+}
+
 async function renderReview(host, token) {
   const mod = await import('./credit.js');
   const now = new Date();
@@ -4654,242 +4840,283 @@ async function renderReview(host, token) {
     return;
   }
 
-  // Computed together, before anything is rendered: the savings list reads
-  // across all three, and the forecast wants the recurring-due total that the
-  // section further down also uses.
+  // Everything computed first, so a section header can carry its own headline
+  // figure while closed - the summary has to exist before the section is built.
   const due = a.isCurrent ? _recurringDue(ym, byYm) : [];
   const dueTotal = round2(due.reduce((sum, r) => sum + r.amount, 0));
   const small = _reviewSmallTickets(ym, byYm);
   const cycle = _reviewCycle(ym, byYm, now, a.isCurrent);
   const forecast = a.isCurrent ? _reviewForecast(ym, byYm, now, dueTotal, kitty) : null;
   const savings = _reviewSavings(a, cycle, small, _smallTicketUsual(ym, byYm));
+  const creeping = _reviewCreeping(ym, byYm);
+  const prevD = new Date(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)) - 2, 1);
+  const prevYm = prevD.getFullYear() + '-' + String(prevD.getMonth() + 1).padStart(2, '0');
+  const methods = _reviewMethods(ym, byYm, prevYm);
+  const fit = _reviewKittyFit(ym, byYm, kittyOf, thisYm);
 
-  // ---- Month-end forecast ----
+  // ---- Where this month lands ----
   if (forecast) {
     const f = forecast;
-    host.appendChild(el('h3', { class: 'div-group-head rvw-head-row' }, [
-      el('span', { text: '🔮 Where this month lands' }),
-      el('span', { class: 'rvw-grade is-' + f.grade,
-        text: f.errPct != null ? f.grade + ' · ' + '±' + f.errPct + '%' : f.grade }),
-    ]));
-    const bar = [];
-    const scale = Math.max(f.forecast, kitty, 1);
-    bar.push(el('span', { class: 'rvw-fc-seg is-spent', style: 'width:' + (f.spent / scale * 100).toFixed(1) + '%' }));
-    bar.push(el('span', { class: 'rvw-fc-seg is-rest', style: 'width:' + (f.rest / scale * 100).toFixed(1) + '%' }));
-    host.appendChild(el('div', { class: 'rvw-fc' }, [
-      el('div', { class: 'rvw-fc-top' }, [
-        el('div', {}, [
-          el('div', { class: 'rvw-fc-big' + (f.overKitty > 0 ? ' is-over' : ''), text: fmtSheetCur(f.forecast) }),
-          el('div', { class: 'rvw-fc-lbl', text: 'forecast for ' + mod.monthLabel(ym) }),
+    const grade = el('span', { class: 'rvw-grade is-' + f.grade,
+      text: f.errPct != null ? f.grade + ' · ' + '\u00b1' + f.errPct + '%' : f.grade });
+    rvwSection(host, 'forecast', '\ud83d\udd2e', 'Where this month lands', grade, (body) => {
+      const curve = _reviewCurve(ym, byYm, f.day);
+      body.appendChild(el('div', { class: 'rvw-fc' }, [
+        el('div', { class: 'rvw-fc-top' }, [
+          el('div', {}, [
+            el('div', { class: 'rvw-fc-big' + (f.overKitty > 0 ? ' is-over' : ''), text: fmtSheetCur(f.forecast) }),
+            el('div', { class: 'rvw-fc-lbl', text: 'forecast for ' + mod.monthLabel(ym) }),
+          ]),
+          el('div', { class: 'rvw-fc-range' }, [
+            el('div', { class: 'rvw-fc-range-lbl', text: 'likely between' }),
+            el('div', { class: 'rvw-fc-range-val', text: fmtSheetCur(f.lo) + ' – ' + fmtSheetCur(f.hi) }),
+          ]),
         ]),
-        el('div', { class: 'rvw-fc-range' }, [
-          el('div', { class: 'rvw-fc-range-lbl', text: 'likely between' }),
-          el('div', { class: 'rvw-fc-range-val', text: fmtSheetCur(f.lo) + ' – ' + fmtSheetCur(f.hi) }),
-        ]),
-      ]),
-      el('div', { class: 'rvw-fc-bar' }, bar.concat(
-        kitty > 0 && kitty < scale
-          ? [el('span', { class: 'rvw-fc-kitty', style: 'left:' + (kitty / scale * 100).toFixed(1) + '%' })]
-          : [])),
-      el('div', { class: 'rvw-fc-split' }, [
-        el('span', {}, [el('i', { class: 'rvw-dot is-spent' }), fmtSheetCur(f.spent) + ' spent']),
-        el('span', {}, [el('i', { class: 'rvw-dot is-rest' }), fmtSheetCur(f.rest) + ' still to come']),
-        kitty > 0 ? el('span', { class: 'rvw-fc-kitty-lbl', text: 'kitty ' + fmtSheetCur(kitty) }) : document.createTextNode(''),
-      ]),
-    ]));
-
-    // The lines that actually decide today, in the order they get acted on:
-    // what the rest of the month usually costs, what is affordable if the
-    // kitty is to hold, and where this month sits against a usual one.
-    const lines = [];
-    if (f.restPerDay != null) {
-      lines.push(['–', 'The rest of your month usually costs ' + fmtIntCur(f.restPerDay)
-        + ' a day · ' + f.daysLeft + (f.daysLeft === 1 ? ' day' : ' days') + ' left']);
-    }
-    if (f.fitPerDay != null) {
-      lines.push(f.fitPerDay > 0
-        ? ['OK', fmtIntCur(f.fitPerDay) + ' a day from here keeps this month inside the ' + fmtSheetCur(kitty) + ' kitty']
-        : ['NO', 'The kitty is already spent · anything from here is over it']);
-    }
-    if (f.overKitty != null && f.overKitty > 0) {
-      lines.push(['NO', 'On this estimate the month ends ' + fmtSheetCur(f.overKitty) + ' over the kitty']);
-    } else if (f.overKitty != null) {
-      lines.push(['OK', 'On this estimate the month ends ' + fmtSheetCur(-f.overKitty) + ' inside the kitty']);
-    }
-    if (f.usualByNow > 0) {
-      lines.push([f.vsUsualByNow > 0 ? 'UP' : 'DOWN', 'By the ' + f.day + _ordinalSuffix(f.day)
-        + ' a usual month is at ' + fmtIntCur(f.usualByNow) + ' · you are '
-        + fmtIntCur(Math.abs(f.vsUsualByNow)) + (f.vsUsualByNow > 0 ? ' above that' : ' below that')]);
-    }
-    if (f.restIsDueFloor && f.due > 0) {
-      lines.push(['–', 'Held up to ' + fmtSheetCur(f.due) + ' by items listed below as still expected, which is more than a usual remainder']);
-    }
-    host.appendChild(el('div', { class: 'rvw-lines' }, lines.map(([kind, text]) => el('div', {
-      class: 'rvw-line is-' + kind.toLowerCase(),
-    }, [
-      el('span', { class: 'rvw-line-mark', text: kind === 'OK' ? '✓' : kind === 'NO' ? '!' : kind === 'UP' ? '↑' : kind === 'DOWN' ? '↓' : '•' }),
-      el('span', { text }),
-    ]))));
-
-    host.appendChild(el('p', { class: 'hint rvw-note', text: f.errPct != null
-      ? 'Only the REMAINDER is estimated · what is already spent is counted, and the days still to come are priced from what the same days cost in your last '
-        + f.months + ' months. Run against those months at the same point in the month, this came out a median '
-        + f.errPct + '% away from what they actually cost.'
-      : 'Only the REMAINDER is estimated · what is already spent is counted, and the days still to come are priced from what the same days cost in your last '
-        + f.months + ' months. Too few months to have tested it against yet, so treat it as a rough shape.' }));
-  }
-
-  // ---- Where the money could stay ----
-  if (savings.rows.length) {
-    host.appendChild(el('h3', { class: 'div-group-head', text: '💡 Where you could keep money' }));
-    host.appendChild(el('div', { class: 'rvw-save-list' }, savings.rows.map((r) => el('div', {
-      class: 'rvw-save-row ' + _spendGroupClass(r.group),
-    }, [
-      el('div', { class: 'rvw-save-body' }, [
-        el('div', { class: 'rvw-save-name', text: r.name }),
-        el('div', { class: 'rvw-save-how', text: r.how }),
-      ]),
-      el('div', { class: 'rvw-save-fig' }, [
-        el('div', { class: 'rvw-save-val', text: r.kind === 'weekend' ? fmtIntCur(r.save) : fmtSheetCur(r.save) }),
-        el('div', { class: 'rvw-save-unit', text: r.kind === 'weekend' ? 'a day' : 'this month' }),
-      ]),
-    ]))));
-    // The category total lives under "Worth a look" below, where the evidence
-    // for it is. Repeating it here would be the same figure twice.
-    host.appendChild(el('p', { class: 'hint rvw-note', text: 'These overlap on purpose and are not added up — the same '
-      + 'spend can be a small one, a weekend one and an over-median one at once. Three ways of seeing one leak is useful; '
-      + 'counting it three times is not. The one figure that IS a total is under Worth a look below, where the evidence for it sits.' }));
-  }
-
-  // ---- Where there is something to act on ----
-  if (a.actionable.length) {
-    host.appendChild(el('h3', { class: 'div-group-head', text: '⚠️ Worth a look' }));
-    const wrap = el('div', { class: 'rvw-list' });
-    a.actionable.forEach((r) => {
-      const bits = [r.count + '× this month'];
-      if (r.usualCount) bits.push('usually ' + r.usualCount + '×');
-      if (r.driver) bits.push(r.driver);
-      wrap.appendChild(el('div', { class: 'rvw-item ' + _spendGroupClass(r.group) }, [
-        el('div', { class: 'rvw-item-top' }, [
-          el('span', { class: 'rvw-item-name' }, [el('span', { class: 'rvw-item-dot' }), el('span', { text: r.name })]),
-          el('span', { class: 'rvw-item-amt', text: fmtSheetCur(r.now) }),
-        ]),
-        el('div', { class: 'rvw-item-mid', text: 'Usually ' + fmtSheetCur(r.usual) + ' a month · ' + bits.join(' · ') }),
-        el('div', { class: 'rvw-item-save' }, [
-          el('span', { class: 'rvw-save-amt', text: fmtSheetCur(r.over) }),
-          el('span', { class: 'rvw-save-txt', text: 'above a normal month — that much back if it returns to usual' }),
+        // The month as a picture: where it has got to, where a usual month
+        // would be by now, and where this one is heading.
+        curve ? el('div', { class: 'rvw-chart' }, [_rvwCurveChart(curve, { kitty, forecast: f.forecast })]) : document.createTextNode(''),
+        el('div', { class: 'rvw-fc-split' }, [
+          el('span', {}, [el('i', { class: 'rvw-dot is-spent' }), fmtSheetCur(f.spent) + ' spent']),
+          el('span', {}, [el('i', { class: 'rvw-dot is-proj' }), fmtSheetCur(f.rest) + ' to come']),
+          el('span', {}, [el('i', { class: 'rvw-dot is-usual' }), 'a usual month']),
         ]),
       ]));
-    });
-    host.appendChild(wrap);
 
-    host.appendChild(el('div', { class: 'rvw-total' }, [
-      el('span', { class: 'rvw-total-label', text: 'Recoverable this month' }),
-      el('span', { class: 'rvw-total-val', text: fmtSheetCur(a.recoverable) }),
-    ]));
-  } else {
-    host.appendChild(el('div', { class: 'rvw-clear' }, [
-      el('span', { text: '✅' }),
-      el('div', {}, [
-        el('div', { class: 'rvw-clear-head', text: 'Nothing unusual this month' }),
-        el('div', { class: 'rvw-clear-sub', text: 'Every category you can act on is at or below its own normal.' }),
-      ]),
-    ]));
+      // The lines that actually decide today, in the order they get acted on:
+      // what the rest of the month usually costs, what is affordable if the
+      // kitty is to hold, and where this month sits against a usual one.
+      const lines = [];
+      if (f.restPerDay != null) {
+        lines.push(['-', 'The rest of your month usually costs ' + fmtIntCur(f.restPerDay)
+          + ' a day · ' + f.daysLeft + (f.daysLeft === 1 ? ' day' : ' days') + ' left']);
+      }
+      if (f.fitPerDay != null) {
+        lines.push(f.fitPerDay > 0
+          ? ['OK', fmtIntCur(f.fitPerDay) + ' a day from here keeps this month inside the ' + fmtSheetCur(kitty) + ' kitty']
+          : ['NO', 'The kitty is already spent · anything from here is over it']);
+      }
+      if (f.overKitty != null && f.overKitty > 0) {
+        lines.push(['NO', 'On this estimate the month ends ' + fmtSheetCur(f.overKitty) + ' over the kitty']);
+      } else if (f.overKitty != null) {
+        lines.push(['OK', 'On this estimate the month ends ' + fmtSheetCur(-f.overKitty) + ' inside the kitty']);
+      }
+      if (f.usualByNow > 0) {
+        lines.push([f.vsUsualByNow > 0 ? 'UP' : 'DOWN', 'By the ' + f.day + _ordinalSuffix(f.day)
+          + ' a usual month is at ' + fmtIntCur(f.usualByNow) + ' · you are '
+          + fmtIntCur(Math.abs(f.vsUsualByNow)) + (f.vsUsualByNow > 0 ? ' above that' : ' below that')]);
+      }
+      if (f.restIsDueFloor && f.due > 0) {
+        lines.push(['-', 'Held up to ' + fmtSheetCur(f.due) + ' by items still expected below, which is more than a usual remainder']);
+      }
+      body.appendChild(el('div', { class: 'rvw-lines' }, lines.map(([kind, text]) => el('div', {
+        class: 'rvw-line is-' + kind.toLowerCase(),
+      }, [
+        el('span', { class: 'rvw-line-mark', text: kind === 'OK' ? '\u2713' : kind === 'NO' ? '!' : kind === 'UP' ? '\u2191' : kind === 'DOWN' ? '\u2193' : '\u2022' }),
+        el('span', { text }),
+      ]))));
+
+      body.appendChild(el('p', { class: 'hint rvw-note', text: f.errPct != null
+        ? 'Only the REMAINDER is estimated · what is already spent is counted, and the days still to come are priced from what the same days cost in your last '
+          + f.months + ' months. Run against those months at the same point in the month, this came out a median '
+          + f.errPct + '% away from what they actually cost.'
+        : 'Only the REMAINDER is estimated · what is already spent is counted, and the days still to come are priced from what the same days cost in your last '
+          + f.months + ' months. Too few months to have tested it against yet, so treat it as a rough shape.' }));
+    });
   }
 
+  // ---- Where you could keep money ----
+  if (savings.rows.length) {
+    const top = savings.rows[0];
+    rvwSection(host, 'savings', '\ud83d\udca1', 'Where you could keep money',
+      savings.rows.length + (savings.rows.length === 1 ? ' place' : ' places'), (body) => {
+        body.appendChild(el('div', { class: 'rvw-save-list' }, savings.rows.map((r) => el('div', {
+          class: 'rvw-save-row ' + _spendGroupClass(r.group),
+        }, [
+          el('div', { class: 'rvw-save-body' }, [
+            el('div', { class: 'rvw-save-name', text: r.name }),
+            el('div', { class: 'rvw-save-how', text: r.how }),
+          ]),
+          el('div', { class: 'rvw-save-fig' }, [
+            el('div', { class: 'rvw-save-val', text: r.kind === 'weekend' ? fmtIntCur(r.save) : fmtSheetCur(r.save) }),
+            el('div', { class: 'rvw-save-unit', text: r.kind === 'weekend' ? 'a day' : 'this month' }),
+          ]),
+        ]))));
+        body.appendChild(el('p', { class: 'hint rvw-note', text: 'These overlap on purpose and are not added up — the same '
+          + 'spend can be a small one, a weekend one and an over-median one at once. Three ways of seeing one leak is useful; '
+          + 'counting it three times is not. The one figure that IS a total is under Worth a look, where the evidence for it sits.' }));
+      });
+    void top;
+  }
+
+  // ---- Worth a look ----
+  // Rows open on tap to show the category's own recent months, so "usually
+  // 4,480 a month" can be checked rather than taken on trust.
+  rvwSection(host, 'look', '\u26a0\ufe0f', 'Worth a look',
+    a.actionable.length ? fmtSheetCur(a.recoverable) : 'nothing unusual', (body) => {
+      if (!a.actionable.length) {
+        body.appendChild(el('div', { class: 'rvw-clear' }, [
+          el('span', { text: '\u2705' }),
+          el('div', {}, [
+            el('div', { class: 'rvw-clear-head', text: 'Nothing unusual this month' }),
+            el('div', { class: 'rvw-clear-sub', text: 'Every category you can act on is at or below its own normal.' }),
+          ]),
+        ]));
+        return;
+      }
+      const wrap = el('div', { class: 'rvw-list' });
+      a.actionable.forEach((r) => {
+        const bits = [r.count + '\u00d7 this month'];
+        if (r.usualCount) bits.push('usually ' + r.usualCount + '\u00d7');
+        if (r.driver) bits.push(r.driver);
+        const detail = el('div', { class: 'rvw-item-detail hidden' });
+        let built = false;
+        const item = el('div', { class: 'rvw-item is-tappable ' + _spendGroupClass(r.group) }, [
+          el('div', { class: 'rvw-item-top' }, [
+            el('span', { class: 'rvw-item-name' }, [el('span', { class: 'rvw-item-dot' }), el('span', { text: r.name })]),
+            el('span', { class: 'rvw-item-amt', text: fmtSheetCur(r.now) }),
+          ]),
+          el('div', { class: 'rvw-item-mid', text: 'Usually ' + fmtSheetCur(r.usual) + ' a month · ' + bits.join(' · ') }),
+          el('div', { class: 'rvw-item-save' }, [
+            el('span', { class: 'rvw-save-amt', text: fmtSheetCur(r.over) }),
+            el('span', { class: 'rvw-save-txt', text: 'above a normal month — that much back if it returns to usual' }),
+          ]),
+          detail,
+        ]);
+        item.addEventListener('click', () => {
+          // Built on first open only: six months of bars per category adds up
+          // on a month with a dozen findings.
+          if (!built) { detail.appendChild(_rvwMonthBars(_catMonthHistory(r.name, ym, byYm, 6), r.usual)); built = true; }
+          const closed = detail.classList.toggle('hidden');
+          item.classList.toggle('is-open', !closed);
+        });
+        wrap.appendChild(item);
+      });
+      body.appendChild(wrap);
+      body.appendChild(el('div', { class: 'rvw-total' }, [
+        el('span', { class: 'rvw-total-label', text: 'Recoverable this month' }),
+        el('span', { class: 'rvw-total-val', text: fmtSheetCur(a.recoverable) }),
+      ]));
+      body.appendChild(el('p', { class: 'hint rvw-note', text: 'Tap a row for that category\u2019s last six months.' }));
+    });
+
   // ---- Creeping up ----
-  const creeping = _reviewCreeping(ym, byYm);
   if (creeping.length) {
-    host.appendChild(el('h3', { class: 'div-group-head', text: '📈 Creeping up' }));
-    host.appendChild(el('div', { class: 'rvw-list' }, creeping.map((r) =>
-      el('div', { class: 'rvw-item ' + _spendGroupClass(r.group) }, [
-        el('div', { class: 'rvw-item-top' }, [
-          el('span', { class: 'rvw-item-name' }, [el('span', { class: 'rvw-item-dot' }), el('span', { text: r.name })]),
-          el('span', { class: 'rvw-item-amt', text: '+' + fmtSheetCur(r.rise) + (r.risePct != null ? ' (' + r.risePct + '%)' : '') }),
-        ]),
-        el('div', { class: 'rvw-seq' }, r.seq.map((s, i) => el('span', { class: 'rvw-seq-step' }, [
-          el('span', { class: 'rvw-seq-mon', text: _spendMonthLabel(s.ym).split(' ')[0] }),
-          el('span', { class: 'rvw-seq-amt', text: fmtSheetCur(s.amount) }),
-        ]))),
-        el('div', { class: 'rvw-item-mid', text: 'Up every month for ' + r.months + ' months'
-          + (r.fixed ? ' · fixed cost, but worth checking the rate' : '') }),
-      ]))));
+    rvwSection(host, 'creep', '\ud83d\udcc8', 'Creeping up',
+      '+' + fmtSheetCur(creeping[0].rise) + ' ' + creeping[0].name, (body) => {
+        body.appendChild(el('div', { class: 'rvw-list' }, creeping.map((r) =>
+          el('div', { class: 'rvw-item ' + _spendGroupClass(r.group) }, [
+            el('div', { class: 'rvw-item-top' }, [
+              el('span', { class: 'rvw-item-name' }, [el('span', { class: 'rvw-item-dot' }), el('span', { text: r.name })]),
+              el('span', { class: 'rvw-item-amt', text: '+' + fmtSheetCur(r.rise) + (r.risePct != null ? ' (' + r.risePct + '%)' : '') }),
+            ]),
+            el('div', { class: 'rvw-seq' }, r.seq.map((st) => el('span', { class: 'rvw-seq-step' }, [
+              el('span', { class: 'rvw-seq-mon', text: _spendMonthLabel(st.ym).split(' ')[0] }),
+              el('span', { class: 'rvw-seq-amt', text: fmtSheetCur(st.amount) }),
+            ]))),
+            el('div', { class: 'rvw-item-mid', text: 'Up every month for ' + r.months + ' months'
+              + (r.fixed ? ' · fixed cost, but worth checking the rate' : '') }),
+          ]))));
+      });
   }
 
   // ---- Small spends ----
   if (small) {
-    host.appendChild(el('h3', { class: 'div-group-head', text: '🪙 Small spends add up' }));
-    host.appendChild(el('div', { class: 'rvw-panel' }, [
-      el('div', { class: 'rvw-panel-top' }, [
-        el('span', { class: 'rvw-panel-fig', text: fmtSheetCur(small.total) }),
-        el('span', { class: 'rvw-panel-sub', text: small.count + ' entries under ' + fmtSheetCur(small.threshold) }),
-      ]),
-      el('div', { class: 'rvw-item-mid', text: small.entryShare + '% of this month\'s entries · '
-        + small.valueShare + '% of what was spent' }),
-      el('div', { class: 'rvw-mini' }, small.top.map((t) => el('div', { class: 'rvw-mini-row' }, [
-        el('span', { text: t.name }),
-        el('span', { class: 'rvw-mini-meta', text: t.count + '× · ' + fmtSheetCur(t.total) }),
-      ]))),
-    ]));
+    rvwSection(host, 'small', '\ud83e\ude99', 'Small spends add up', fmtSheetCur(small.total), (body) => {
+      body.appendChild(el('div', { class: 'rvw-panel' }, [
+        el('div', { class: 'rvw-panel-top' }, [
+          el('span', { class: 'rvw-panel-fig', text: fmtSheetCur(small.total) }),
+          el('span', { class: 'rvw-panel-sub', text: small.count + ' entries under ' + fmtSheetCur(small.threshold) }),
+        ]),
+        el('div', { class: 'rvw-item-mid', text: small.entryShare + '% of this month\u2019s entries · '
+          + small.valueShare + '% of what was spent' }),
+        el('div', { class: 'rvw-mini' }, small.top.map((t) => el('div', { class: 'rvw-mini-row' }, [
+          el('span', { text: t.name }),
+          el('span', { class: 'rvw-mini-meta', text: t.count + '\u00d7 · ' + fmtSheetCur(t.total) }),
+        ]))),
+      ]));
+    });
   }
 
-  // ---- The shape of a month ----
+  // ---- Your spending cycle ----
   if (cycle) {
-    host.appendChild(el('h3', { class: 'div-group-head', text: '🔁 Your spending cycle' }));
-    const THIRDS = [['Early', '1–10'], ['Middle', '11–20'], ['Late', '21–' + cycle.dim]];
-    host.appendChild(el('div', { class: 'rvw-cyc' }, [
-      el('div', { class: 'rvw-cyc-bar' }, cycle.thirds.map((pct, i) => el('span', {
-        class: 'rvw-cyc-seg is-t' + i, style: 'width:' + pct + '%',
-        text: pct >= 12 ? pct + '%' : '',
-      }))),
-      el('div', { class: 'rvw-cyc-legend' }, THIRDS.map(([name, range], i) => el('span', { class: 'rvw-cyc-key' }, [
-        el('i', { class: 'rvw-dot is-t' + i }),
-        el('span', { class: 'rvw-cyc-key-name', text: name }),
-        el('span', { class: 'rvw-cyc-key-range', text: range }),
-      ]))),
-    ]));
-    const cycRows = [];
-    if (cycle.halfBy) cycRows.push(['Half a month is gone by', 'the ' + cycle.halfBy + _ordinalSuffix(cycle.halfBy)]);
-    if (cycle.weekendPerDay > 0) cycRows.push(['Weekend vs weekday, per day',
-      fmtIntCur(cycle.weekendPerDay) + ' vs ' + fmtIntCur(cycle.weekdayPerDay)]);
-    if (cycle.weekendShare != null) cycRows.push(['Lands on a Saturday or Sunday', cycle.weekendShare + '% of a month']);
-    if (cycle.busiest && cycle.busiest.perDay > 0) cycRows.push(['Heaviest day of the week',
-      cycle.busiest.name + ' · ' + fmtIntCur(cycle.busiest.perDay) + ' a day']);
-    if (cycle.quietest && cycle.quietest.name !== (cycle.busiest || {}).name) cycRows.push(['Lightest day of the week',
-      cycle.quietest.name + ' · ' + fmtIntCur(cycle.quietest.perDay) + ' a day']);
-    cycRows.push(['Days with nothing spent', a.isCurrent
-      ? cycle.noSpendSoFar + ' of the first ' + cycle.daysSoFar + ' · usually ' + cycle.noSpendTypical + ' in a month'
-      : 'usually ' + cycle.noSpendTypical + ' in a month']);
-    host.appendChild(el('div', { class: 'rvw-flat' }, cycRows.map(([k, v]) =>
-      el('div', { class: 'rvw-flat-row' }, [el('span', { text: k }), el('span', { class: 'rvw-flat-meta', text: v })]))));
-    host.appendChild(el('p', { class: 'hint rvw-note', text: 'From your last ' + cycle.months
-      + ' months. This is the WHEN behind the total — the half of a spending habit that a monthly figure hides, '
-      + 'and the reason a forecast on the 6th and one on the 26th cannot use the same arithmetic.' }));
+    rvwSection(host, 'cycle', '\ud83d\udd01', 'Your spending cycle',
+      cycle.halfBy ? 'half gone by the ' + cycle.halfBy + _ordinalSuffix(cycle.halfBy) : null, (body) => {
+        const THIRDS = [['Early', '1–10'], ['Middle', '11–20'], ['Late', '21–' + cycle.dim]];
+        // Tap a third to see what makes it heavy. The shape of a month is only
+        // actionable once you know which bills are sitting in that hump.
+        const breakdown = el('div', { class: 'rvw-cyc-detail hidden' });
+        let openThird = -1;
+        const segs = cycle.thirds.map((pct, i) => {
+          const seg = el('button', {
+            type: 'button', class: 'rvw-cyc-seg is-t' + i, style: 'width:' + pct + '%',
+            text: pct >= 12 ? pct + '%' : '',
+            title: THIRDS[i][0] + ' ' + THIRDS[i][1],
+          });
+          seg.addEventListener('click', () => {
+            if (openThird === i) { breakdown.classList.add('hidden'); openThird = -1; return; }
+            openThird = i;
+            breakdown.innerHTML = '';
+            breakdown.classList.remove('hidden');
+            breakdown.appendChild(el('div', { class: 'rvw-cyc-detail-head',
+              text: THIRDS[i][0] + ' · day ' + THIRDS[i][1] + ' · ' + pct + '% of a usual month' }));
+            const tops = (cycle.thirdTops[i] || []);
+            if (!tops.length) {
+              breakdown.appendChild(el('div', { class: 'rvw-mini-row' }, [el('span', { text: 'Nothing regular in these days.' })]));
+              return;
+            }
+            tops.forEach((t) => breakdown.appendChild(el('div', { class: 'rvw-mini-row' }, [
+              el('span', { text: t.name }),
+              el('span', { class: 'rvw-mini-meta', text: fmtIntCur(t.amount) + ' a month' }),
+            ])));
+          });
+          return seg;
+        });
+        body.appendChild(el('div', { class: 'rvw-cyc' }, [
+          el('div', { class: 'rvw-cyc-bar' }, segs),
+          el('div', { class: 'rvw-cyc-legend' }, THIRDS.map(([name, range], i) => el('span', { class: 'rvw-cyc-key' }, [
+            el('i', { class: 'rvw-dot is-t' + i }),
+            el('span', { class: 'rvw-cyc-key-name', text: name }),
+            el('span', { class: 'rvw-cyc-key-range', text: range }),
+          ]))),
+          breakdown,
+          el('div', { class: 'rvw-cyc-tap', text: 'Tap a band to see what sits in it' }),
+        ]));
+
+        // The week, as seven bars. A table of averages says the same thing but
+        // needs reading; the tall bar is the answer.
+        if (cycle.perDow && cycle.perDow.some((d) => d.perDay > 0)) {
+          const peak = cycle.perDow.reduce((m, d) => Math.max(m, d.perDay), 1);
+          body.appendChild(el('div', { class: 'rvw-dow' }, cycle.perDow.map((d) => el('div', {
+            class: 'rvw-dow-cell' + (d.i === 0 || d.i === 6 ? ' is-weekend' : ''),
+          }, [
+            el('span', { class: 'rvw-dow-amt', text: d.perDay > 0 ? fmtIntCur(d.perDay) : '\u2014' }),
+            el('span', { class: 'rvw-dow-track' }, [
+              el('span', { class: 'rvw-dow-fill', style: 'height:' + Math.max(2, (d.perDay / peak) * 100).toFixed(1) + '%' }),
+            ]),
+            el('span', { class: 'rvw-dow-lbl', text: d.name.slice(0, 3) }),
+          ]))));
+        }
+
+        const cycRows = [];
+        if (cycle.halfBy) cycRows.push(['Half a month is gone by', 'the ' + cycle.halfBy + _ordinalSuffix(cycle.halfBy)]);
+        if (cycle.weekendPerDay > 0) cycRows.push(['Weekend vs weekday, per day',
+          fmtIntCur(cycle.weekendPerDay) + ' vs ' + fmtIntCur(cycle.weekdayPerDay)]);
+        if (cycle.weekendShare != null) cycRows.push(['Lands on a Saturday or Sunday', cycle.weekendShare + '% of a month']);
+        cycRows.push(['Days with nothing spent', a.isCurrent
+          ? cycle.noSpendSoFar + ' of the first ' + cycle.daysSoFar + ' · usually ' + cycle.noSpendTypical + ' in a month'
+          : 'usually ' + cycle.noSpendTypical + ' in a month']);
+        body.appendChild(el('div', { class: 'rvw-flat' }, cycRows.map(([k, v]) =>
+          el('div', { class: 'rvw-flat-row' }, [el('span', { text: k }), el('span', { class: 'rvw-flat-meta', text: v })]))));
+        body.appendChild(el('p', { class: 'hint rvw-note', text: 'From your last ' + cycle.months
+          + ' months. This is the WHEN behind the total — the half of a spending habit that a monthly figure hides, '
+          + 'and the reason a forecast on the 6th and one on the 26th cannot use the same arithmetic.' }));
+      });
   }
 
-  // ---- Context: what wasn't judged, and what can't be ----
-  if (a.unjudged.length) {
-    host.appendChild(el('h3', { class: 'div-group-head', text: '🕓 Too new to judge' }));
-    host.appendChild(el('div', { class: 'rvw-flat' }, a.unjudged.map((r) =>
-      el('div', { class: 'rvw-flat-row' }, [
-        el('span', { text: r.name }),
-        el('span', { class: 'rvw-flat-meta', text: fmtSheetCur(r.now) + ' · ' + (r.months ? r.months + ' earlier month' + (r.months === 1 ? '' : 's') : 'first time') }),
-      ]))));
-  }
-  if (a.fixedRows.length) {
-    host.appendChild(el('h3', { class: 'div-group-head', text: '🔒 Nothing to decide' }));
-    host.appendChild(el('div', { class: 'rvw-flat' }, a.fixedRows.map((r) =>
-      el('div', { class: 'rvw-flat-row' }, [
-        el('span', { text: r.name }),
-        el('span', { class: 'rvw-flat-meta', text: fmtSheetCur(r.now) }),
-      ]))));
-  }
-
-  // ---- Recurring items not yet logged this month ----
-  if (a.isCurrent) {
-    if (due.length) {
-      host.appendChild(el('h3', { class: 'div-group-head', text: '📅 Still expected this month' }));
-      host.appendChild(el('div', { class: 'rvw-due' }, due.map((r) => el('div', { class: 'rvw-due-row' }, [
+  // ---- Still expected this month ----
+  if (a.isCurrent && due.length) {
+    rvwSection(host, 'due', '\ud83d\udcc5', 'Still expected this month', '~' + fmtIntCur(dueTotal), (body) => {
+      body.appendChild(el('div', { class: 'rvw-due' }, due.map((r) => el('div', { class: 'rvw-due-row' }, [
         el('div', { class: 'rvw-due-when' }, [
           el('span', { class: 'rvw-due-day', text: r.day ? String(r.day) : '?' }),
           el('span', { class: 'rvw-due-daylbl', text: r.day ? _ordinalSuffix(r.day) : 'any' }),
@@ -4902,63 +5129,90 @@ async function renderReview(host, token) {
         el('span', { class: 'rvw-due-amt', text: '~' + fmtIntCur(r.amount) }),
       ]))));
       // No running total here. It would only ever count items that RECUR, so it
-      // sat below the forecast above by everything ordinary a month also costs,
-      // and two forward totals that disagree are worse than one.
-    }
+      // sat below the forecast by everything ordinary a month also costs, and
+      // two forward totals that disagree are worse than one.
+      body.appendChild(el('p', { class: 'hint rvw-note', text: 'Items that have landed in most recent months and have not yet this one. '
+        + 'A description of what keeps happening, not a promise about this month.' }));
+    });
   }
 
   // ---- How you paid ----
-  const prevD = new Date(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)) - 2, 1);
-  const prevYm = prevD.getFullYear() + '-' + String(prevD.getMonth() + 1).padStart(2, '0');
-  const methods = _reviewMethods(ym, byYm, prevYm);
   if (methods) {
-    host.appendChild(el('h3', { class: 'div-group-head', text: '💳 How you paid' }));
-    const bars = el('div', { class: 'rvw-meth' }, methods.rows.map((r) => el('div', { class: 'rvw-meth-row' }, [
-      el('span', { class: 'rvw-meth-name', text: r.method }),
-      el('span', { class: 'rvw-meth-track' }, [
-        el('span', { class: 'rvw-meth-fill is-' + r.method.toLowerCase(), style: 'width:' + Math.max(2, r.share) + '%' }),
-      ]),
-      el('span', { class: 'rvw-meth-amt', text: fmtSheetCur(r.amount) }),
-      el('span', { class: 'rvw-meth-pct', text: r.share + '%' }),
-    ])));
-    host.appendChild(bars);
-    if (methods.cardAmount > 0) {
-      const moved = methods.prevCardShare != null && Math.abs(methods.cardShare - methods.prevCardShare) >= 5
-        ? ' Card was ' + methods.prevCardShare + '% last month.'
-        : '';
-      host.appendChild(el('p', { class: 'hint rvw-note', text: fmtSheetCur(methods.cardAmount)
-        + ' of this month went on a card, so it lands on a statement later rather than being gone already.'
-        + ' It is also what feeds this month\'s card reimbursement.' + moved }));
-    }
+    const lead = methods.rows.slice().sort((x, y) => y.share - x.share)[0];
+    rvwSection(host, 'method', '\ud83d\udcb3', 'How you paid',
+      lead ? lead.method + ' ' + lead.share + '%' : null, (body) => {
+        body.appendChild(el('div', { class: 'rvw-meth' }, methods.rows.map((r) => el('div', { class: 'rvw-meth-row' }, [
+          el('span', { class: 'rvw-meth-name', text: r.method }),
+          el('span', { class: 'rvw-meth-track' }, [
+            el('span', { class: 'rvw-meth-fill is-' + r.method.toLowerCase(), style: 'width:' + Math.max(2, r.share) + '%' }),
+          ]),
+          el('span', { class: 'rvw-meth-amt', text: fmtSheetCur(r.amount) }),
+          el('span', { class: 'rvw-meth-pct', text: r.share + '%' }),
+        ]))));
+        if (methods.cardAmount > 0) {
+          const moved = methods.prevCardShare != null && Math.abs(methods.cardShare - methods.prevCardShare) >= 5
+            ? ' Card was ' + methods.prevCardShare + '% last month.'
+            : '';
+          body.appendChild(el('p', { class: 'hint rvw-note', text: fmtSheetCur(methods.cardAmount)
+            + ' of this month went on a card, so it lands on a statement later rather than being gone already.'
+            + ' It is also what feeds this month\u2019s card reimbursement.' + moved }));
+        }
+      });
   }
 
   // ---- Is the kitty right? ----
-  const fit = _reviewKittyFit(ym, byYm, kittyOf, thisYm);
   if (fit) {
-    host.appendChild(el('h3', { class: 'div-group-head', text: '🧮 Is the kitty right?' }));
-    const rows = [
-      ['Over the kitty', fit.overCount + ' of the last ' + fit.months + ' months'],
-      ['Average overshoot', fit.avgOvershoot > 0 ? fmtSheetCur(fit.avgOvershoot) : '—'],
-      ['Leanest month', _spendMonthLabel(fit.leanest.ym) + ' · ' + fmtSheetCur(fit.leanest.total)],
-      ['Heaviest month', _spendMonthLabel(fit.heaviest.ym) + ' · ' + fmtSheetCur(fit.heaviest.total)],
-    ];
-    host.appendChild(el('div', { class: 'rvw-flat' }, rows.map(([k, v]) =>
-      el('div', { class: 'rvw-flat-row' }, [el('span', { text: k }), el('span', { class: 'rvw-flat-meta', text: v })]))));
-    // Only worth saying when a bigger kitty would genuinely have covered more
-    // months than the one that's set. Otherwise the allocation is fine and the
-    // spending is the story, which the sections above already tell.
-    if (fit.suggested > fit.currentKitty && fit.covered > fit.coveredNow) {
-      host.appendChild(el('p', { class: 'hint rvw-note', text: 'A kitty of ' + fmtSheetCur(fit.suggested)
-        + ' would have covered ' + fit.covered + ' of those ' + fit.months + ' months, against '
-        + fit.coveredNow + ' on the ' + fmtSheetCur(fit.currentKitty) + ' set now — that is '
-        + fmtSheetCur(round2(fit.suggested / 2)) + ' each on House Exp. Sized to cover all but the single '
-        + 'heaviest month, so one unusual month does not set the budget.' }));
-    } else if (fit.overCount === 0) {
-      host.appendChild(el('p', { class: 'hint rvw-note', text: 'The kitty has covered every one of those months, so the allocation looks about right.' }));
-    }
+    rvwSection(host, 'kitty', '\ud83e\uddee', 'Is the kitty right?',
+      fit.overCount + ' of ' + fit.months + ' over', (body) => {
+        const rows = [
+          ['Over the kitty', fit.overCount + ' of the last ' + fit.months + ' months'],
+          ['Average overshoot', fit.avgOvershoot > 0 ? fmtSheetCur(fit.avgOvershoot) : '—'],
+          ['Leanest month', _spendMonthLabel(fit.leanest.ym) + ' · ' + fmtSheetCur(fit.leanest.total)],
+          ['Heaviest month', _spendMonthLabel(fit.heaviest.ym) + ' · ' + fmtSheetCur(fit.heaviest.total)],
+        ];
+        body.appendChild(el('div', { class: 'rvw-flat' }, rows.map(([k, v]) =>
+          el('div', { class: 'rvw-flat-row' }, [el('span', { text: k }), el('span', { class: 'rvw-flat-meta', text: v })]))));
+        // Only worth saying when a bigger kitty would genuinely have covered more
+        // months than the one that's set. Otherwise the allocation is fine and the
+        // spending is the story, which the sections above already tell.
+        if (fit.suggested > fit.currentKitty && fit.covered > fit.coveredNow) {
+          body.appendChild(el('p', { class: 'hint rvw-note', text: 'A kitty of ' + fmtSheetCur(fit.suggested)
+            + ' would have covered ' + fit.covered + ' of those ' + fit.months + ' months, against '
+            + fit.coveredNow + ' on the ' + fmtSheetCur(fit.currentKitty) + ' set now — that is '
+            + fmtSheetCur(round2(fit.suggested / 2)) + ' each on House Exp. Sized to cover all but the single '
+            + 'heaviest month, so one unusual month does not set the budget.' }));
+        } else if (fit.overCount === 0) {
+          body.appendChild(el('p', { class: 'hint rvw-note', text: 'The kitty has covered every one of those months, so the allocation looks about right.' }));
+        }
+      });
   }
 
-  host.appendChild(el('p', { class: 'hint mf-foot', text: 'Each category is compared with its own median month from your own entries — not a target, and not an average, which one unusual month would skew. Only categories already past a normal month appear. "Still expected" lists items that have recurred in most recent months and have not landed yet — a description of what keeps happening, not a prediction of what will.' }));
+  // ---- Context: what wasn't judged, and what can't be ----
+  if (a.unjudged.length) {
+    rvwSection(host, 'new', '\ud83d\udd53', 'Too new to judge', String(a.unjudged.length), (body) => {
+      body.appendChild(el('div', { class: 'rvw-flat' }, a.unjudged.map((r) =>
+        el('div', { class: 'rvw-flat-row' }, [
+          el('span', { text: r.name }),
+          el('span', { class: 'rvw-flat-meta', text: fmtSheetCur(r.now) + ' · ' + (r.months ? r.months + ' earlier month' + (r.months === 1 ? '' : 's') : 'first time') }),
+        ]))));
+      body.appendChild(el('p', { class: 'hint rvw-note', text: 'A category needs ' + REVIEW_MIN_HISTORY
+        + ' earlier months before it has a normal to be compared with.' }));
+    });
+  }
+  if (a.fixedRows.length) {
+    const fixedTotal = round2(a.fixedRows.reduce((sum, r) => sum + r.now, 0));
+    rvwSection(host, 'fixed', '\ud83d\udd12', 'Nothing to decide', fmtSheetCur(fixedTotal), (body) => {
+      body.appendChild(el('div', { class: 'rvw-flat' }, a.fixedRows.map((r) =>
+        el('div', { class: 'rvw-flat-row' }, [
+          el('span', { text: r.name }),
+          el('span', { class: 'rvw-flat-meta', text: fmtSheetCur(r.now) }),
+        ]))));
+      body.appendChild(el('p', { class: 'hint rvw-note', text: 'Rent, bills and medicine — real money, but not this month\u2019s decisions, '
+        + 'so they are kept out of the comparisons above rather than flagged every month for being large.' }));
+    });
+  }
+
+  host.appendChild(el('p', { class: 'hint mf-foot', text: 'Each category is compared with its own median month from your own entries — not a target, and not an average, which one unusual month would skew. Only categories already past a normal month appear.' }));
 }
 
 // Categories that keep turning up, and roughly when. This is pattern
@@ -8041,7 +8295,11 @@ async function openEfLoanForm(existing) {
   // record is still honoured and still carried through a save — the readout
   // says so when it is in play.
   const interestPaid = numInput(r.interestPaid, '₹ interest collected');
-  const note = el('input', { type: 'text', value: r.note || '', placeholder: 'Note (optional)' });
+  // A textarea, not a one-line input: what gets written here is the terms
+  // agreed out loud - who asked, what was said about paying it back - and a
+  // single line hid all but the first few words of it behind the right edge.
+  const note = el('textarea', { class: 'ef-note', rows: '3', placeholder: 'What was agreed, and anything worth remembering later' });
+  note.value = r.note || '';
 
   const closedChk = el('input', { type: 'checkbox' });
   closedChk.checked = !!r.closedDate;
@@ -8180,8 +8438,10 @@ async function openEfLoanForm(existing) {
     ]),
     emergencySec,
     formSection('🧮', 'Interest', [readout, field('Collected so far (₹)', interestPaid)]),
-    formSection('✅', 'Settlement', [field('Settled', closedSwitch), closedBlock]),
-    formSection('📝', 'Note', [note]),
+    formSection('✅', 'Settlement', [
+      el('div', { class: 'ef-settle-row' }, [field('Settled', closedSwitch), closedBlock]),
+      field('Note', note),
+    ]),
   ]);
   // The schedule, against what has actually been repaid in each of its months.
   // Rebuilt whenever the tab is opened, since both the plan and the repayments
