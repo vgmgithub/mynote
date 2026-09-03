@@ -8307,11 +8307,13 @@ async function openEfLoanForm(existing) {
   // record is still honoured and still carried through a save — the readout
   // says so when it is in play.
   const interestPaid = numInput(r.interestPaid, '₹ interest collected');
-  // A textarea, not a one-line input: what gets written here is the terms
-  // agreed out loud - who asked, what was said about paying it back - and a
-  // single line hid all but the first few words of it behind the right edge.
-  const note = el('textarea', { class: 'ef-note', rows: '3', placeholder: 'What was agreed, and anything worth remembering later' });
-  note.value = r.note || '';
+  // What gets written here is the terms agreed out loud - who asked, what was
+  // said about paying it back - so it gets a panel that expects a sentence or
+  // two rather than a one-line box that hid everything past the right edge.
+  const noteBox = noteField(r.note,
+    'What was agreed — the terms, who asked, anything worth remembering later',
+    'Shows under the loan on the Loans tab.');
+  const note = noteBox.input;
 
   const closedChk = el('input', { type: 'checkbox' });
   closedChk.checked = !!r.closedDate;
@@ -8462,10 +8464,14 @@ async function openEfLoanForm(existing) {
       el('div', { class: 'field-row' }, [field('Taken on', takenDate), field('Expected back', expectedDate)]),
     ]),
     emergencySec,
-    formSection('🧮', 'Interest', [readout, field('Collected so far (₹)', interestPaid)]),
+    formSection('🧮', 'Interest', [readout]),
+    // Interest collected and whether it is settled are the same question asked
+    // twice, so they share a row; the note then sits directly under them,
+    // because what was agreed is part of how the loan ends.
     formSection('✅', 'Settlement', [
-      el('div', { class: 'ef-settle-row' }, [field('Settled', closedSwitch), closedBlock]),
-      field('Note', note),
+      el('div', { class: 'field-row' }, [field('Interest collected (₹)', interestPaid), field('Settled', closedSwitch)]),
+      closedBlock,
+      noteBox.node,
     ]),
   ]);
   // The schedule, against what has actually been repaid in each of its months.
@@ -10426,6 +10432,46 @@ function segChoice(options, initial, onChange) {
     return btn;
   }));
   return { node, get value() { return cur; } };
+}
+
+// A note field that reads as a designed component rather than a bare textarea:
+// a labelled panel, an input with no frame of its own so the panel IS the
+// field, and a line saying where the note turns up later. It grows with the
+// text instead of putting a scrollbar inside three fixed lines.
+//
+// The character counter stays hidden until the limit is close enough to matter,
+// so it is feedback when needed rather than a permanent gauge.
+const NOTE_MAX = 500;
+const NOTE_WARN_AT = 100;   // characters remaining
+function noteField(value, placeholder, footHint, label) {
+  const ta = el('textarea', {
+    class: 'note-input', rows: '2', maxlength: String(NOTE_MAX),
+    placeholder: placeholder || '',
+  });
+  ta.value = value || '';
+  const count = el('span', { class: 'note-count hidden' });
+  const grow = () => {
+    // Reset first: without it the box can only ever get taller, never shrink
+    // back when text is deleted.
+    ta.style.height = 'auto';
+    ta.style.height = Math.min(ta.scrollHeight, 190) + 'px';
+    const left = NOTE_MAX - ta.value.length;
+    count.textContent = left + ' left';
+    count.classList.toggle('hidden', left > NOTE_WARN_AT);
+  };
+  ta.addEventListener('input', grow);
+  const node = el('div', { class: 'note-field' }, [
+    el('div', { class: 'note-field-head' }, [
+      el('span', { class: 'note-field-ico', text: '📝' }),
+      el('span', { class: 'note-field-label', text: label || 'Note' }),
+      count,
+    ]),
+    ta,
+    footHint ? el('div', { class: 'note-field-foot', text: footHint }) : document.createTextNode(''),
+  ]);
+  // Sizing needs layout, which does not exist until the sheet is on screen.
+  requestAnimationFrame(grow);
+  return { node, input: ta };
 }
 
 // A form section: an uppercase heading over a group of fields. Same shape as the
