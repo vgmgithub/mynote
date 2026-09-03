@@ -3389,13 +3389,19 @@ async function renderSpendTracker(host, token) {
   // ---- Kitty / spent / left ----
   host.appendChild(el('div', { class: 'trk-summary' }, [
     el('div', { class: 'trk-sum-cell' }, [
-      el('div', { class: 'trk-sum-label', text: 'Kitty' }),
+      // The draw rides on the LABEL line as a badge. It has to be declared —
+      // without it the basis below understates the figure above and reads as a
+      // bug — but this cell is a third of the width, and spelling it out on the
+      // basis line forced a wrap. Beside "Kitty" there is room, and the siren
+      // is what the Emergency Fund is marked with everywhere else.
+      el('div', { class: 'trk-sum-label trk-label-row' }, [
+        el('span', { text: 'Kitty' }),
+        drawn > 0
+          ? el('span', { class: 'trk-draw-badge', title: 'Emergency draw this month', text: '🚨' + fmtSheetCur(drawn) })
+          : document.createTextNode(''),
+      ]),
       el('div', { class: 'trk-sum-val', text: fmtSheetCur(budget) }),
-      // Says where the kitty came from. With an emergency draw in it, the
-      // basis alone would understate the figure above and read as a bug.
-      el('div', { class: 'trk-sum-note' + (drawn > 0 ? ' is-wrap' : ''), text: share > 0
-        ? fmtSheetCur(share) + ' × 2' + (drawn > 0 ? ' + ' + fmtSheetCur(drawn) + ' EF draw' : '')
-        : 'set House Exp for ' + year }),
+      el('div', { class: 'trk-sum-note', text: share > 0 ? fmtSheetCur(share) + ' × 2' : 'set House Exp for ' + year }),
     ]),
     el('div', { class: 'trk-sum-cell' }, [
       el('div', { class: 'trk-sum-label', text: 'Spent' }),
