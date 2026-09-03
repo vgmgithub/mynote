@@ -4068,6 +4068,11 @@ function _reviewMethods(ym, byYm, prevYm) {
 function _emergencyDrawIn(ym, loans) {
   return round2((loans || []).reduce((s, l) => {
     if (l.kind !== 'loan' || l.loanKind !== 'emergency') return s;
+    // 'balance' means the draw is left to reconcile against the fund's own
+    // balance and must NOT also raise a month's spending budget, or the same
+    // money would be counted in both places. Rows written before the choice
+    // existed have no field and keep the behaviour they already had.
+    if (l.applyTo === 'balance') return s;
     if (String(l.takenDate || '').slice(0, 7) !== ym) return s;
     return s + (Number(l.amount) || 0);
   }, 0));
@@ -7215,6 +7220,50 @@ async function openEfLoanForm(existing) {
   }));
   const takenDate = el('input', { type: 'date', value: r.takenDate || todayISO() });
   const expectedDate = el('input', { type: 'date', value: r.expectedDate || '' });
+  // An emergency draw is interest-free for EF_FREE_MONTHS.emergency months, so
+  // the end of that window is the date worth aiming at — repay by then and the
+  // draw costs nothing. Filled in when the type is chosen, never overwritten:
+  // a date already on the record, or one just typed, is the user's own call.
+  const freeWindowEnd = () => {
+    const free = mod.EF_FREE_MONTHS[loanKind.value] || 0;
+    const from = takenDate.value || todayISO();
+    if (!free || !/^\d{4}-\d{2}-\d{2}$/.test(from)) return '';
+    const d = new Date(Number(from.slice(0, 4)), Number(from.slice(5, 7)) - 1 + free, Number(from.slice(8, 10)));
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  };
+  let expectedTouched = !!r.expectedDate;
+  expectedDate.addEventListener('input', () => { expectedTouched = true; });
+  const syncExpected = () => {
+    if (expectedTouched) return;
+    const d = freeWindowEnd();
+    if (d) expectedDate.value = d;
+  };
+
+  // Where an emergency draw shows up outside this page. 'kitty' adds it to that
+  // month's household budget, so the month an emergency happened is not
+  // reported as overspending. 'balance' leaves it against the fund alone, for a
+  // draw that never became household spending.
+  const APPLY_TO = [
+    ['kitty', 'Monthly kitty', 'Adds to that month\u2019s household budget'],
+    ['balance', 'Balance only', 'Already out of the fund \u2014 nothing added anywhere'],
+  ];
+  let applyTo = r.applyTo === 'balance' ? 'balance' : 'kitty';
+  const applyBtns = [];
+  const applyRow = el('div', { class: 'seg ef-apply' }, APPLY_TO.map(([v, label, why]) => {
+    const btn = el('button', { type: 'button', class: v === applyTo ? 'active' : '', text: label, title: why });
+    btn.addEventListener('click', () => {
+      applyTo = v;
+      applyBtns.forEach((x) => x.classList.toggle('active', x === btn));
+      applyWhy.textContent = why;
+    });
+    applyBtns.push(btn);
+    return btn;
+  }));
+  const applyWhy = el('p', { class: 'hint ef-apply-why', style: 'margin:5px 0 0',
+    text: (APPLY_TO.find(([v]) => v === applyTo) || [])[2] || '' });
+  // Only an emergency draw can raise a kitty, so the choice is only offered for
+  // one. A self loan or a gift is not household spending and never was.
+  const applyBlock = field('Load this against', el('div', {}, [applyRow, applyWhy]));
   const rate = numInput(r.rate, `% (blank = ${mod.EF_RATE}%)`);
   const interestOverride = numInput(r.interestOverride, '₹ (blank = use the rule)');
   const interestPaid = numInput(r.interestPaid, '₹ interest collected');
@@ -7227,6 +7276,13 @@ async function openEfLoanForm(existing) {
   const closedBlock = el('div', { class: 'sold-only' + (closedChk.checked ? '' : ' hidden') }, [field('Settled on', closedDate)]);
   closedChk.addEventListener('change', () => { closedBlock.classList.toggle('hidden', !closedChk.checked); refresh(); });
 
+  const syncApplyVisible = () => applyBlock.classList.toggle('hidden', loanKind.value !== 'emergency');
+  loanKind.addEventListener('change', () => { syncExpected(); syncApplyVisible(); });
+  takenDate.addEventListener('change', syncExpected);
+  syncApplyVisible();
+  // Fill the date on OPEN too, so adding an emergency draw needs no extra taps.
+  syncExpected();
+
   const repayEditor = buildEfRepayEditor(r.repayments, () => refresh());
 
   const buildRec = () => ({
@@ -7237,6 +7293,9 @@ async function openEfLoanForm(existing) {
     amount: num(amount.value) || 0,
     takenDate: takenDate.value || null,
     expectedDate: expectedDate.value || null,
+    // Only meaningful on an emergency draw; stored as null elsewhere so the
+    // record never implies a choice that was not offered.
+    applyTo: loanKind.value === 'emergency' ? applyTo : null,
     // Gate on the checkbox, not on the date having a value — the date defaults to
     // today, so unticking must be what clears it.
     closedDate: closedChk.checked ? (closedDate.value || todayISO()) : null,
@@ -7297,6 +7356,7 @@ async function openEfLoanForm(existing) {
     field('Purpose', purpose),
     field('Type', loanKind),
     el('div', { class: 'field-row' }, [field('Taken on', takenDate), field('Expected back', expectedDate)]),
+    applyBlock,
     el('div', { class: 'field-row' }, [field('Rate % override', rate), field('Interest override (₹)', interestOverride)]),
     field('Interest collected (₹)', interestPaid),
     field('Settled', closedSwitch),

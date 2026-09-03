@@ -1999,3 +1999,7 @@ html[data-theme="light"] {
   background: rgba(248,113,113,0.16); border: 1px solid rgba(248,113,113,0.42);
   color: var(--bad); text-transform: none; letter-spacing: 0;
 }
+/* EF loan form: where an emergency draw is loaded. Two equal choices, so the
+   segmented control matches the Paid-by row on the spend form. */
+.ef-apply button { flex: 1; }
+.ef-apply-why { font-size: 0.66rem; line-height: 1.4; }
