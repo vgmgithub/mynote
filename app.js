@@ -3379,13 +3379,8 @@ async function renderSpendTracker(host, token) {
   })));
   timelineWrap.appendChild(timelineRow);
   host.appendChild(timelineWrap);
-  // A fresh render is a fresh scroll container, so scrollLeft resets to 0 —
-  // pull the selected chip back to centre. Animated only when the render came
-  // from a click, so it doesn't slide for no reason on load.
-  const activeChip = timelineRow.querySelector('.cc-timeline-chip.active');
-  const behavior = _trkTimelineClicked ? 'smooth' : 'auto';
+  _mountMonthStrip('tracker', timelineWrap, _trkTimelineClicked);
   _trkTimelineClicked = false;
-  if (activeChip) activeChip.scrollIntoView({ inline: 'center', block: 'nearest', behavior });
   // Same swipe as the Review tab. The two share this month, so leaving one
   // swipeable and the other not would read as broken rather than deliberate.
   _attachMonthSwipe(host, timelineYms, ym, (k) => { _trkYm = k; _trkTimelineClicked = true; renderHomeExpense(); });
@@ -3892,6 +3887,56 @@ async function openSpendForm(budget, existing, defaultDate) {
 // The move must also be mostly horizontal. Without that, a diagonal flick while
 // scrolling the page changes month underneath you, which reads as the app
 // losing your place.
+// ---------- Month-timeline scroll behaviour (shared) ----------
+// Every month strip in the Expense section - Credit Card, Tracker, Review - is
+// rebuilt from scratch on each render, which means its scroll container is new
+// and its scrollLeft starts at 0. Centring the selected chip from there made a
+// click on "three months back" animate all the way from the FIRST month, and a
+// re-render for any other reason (saving a spend, switching the inner view)
+// threw away wherever the strip had been scrolled to.
+//
+// So the offset is remembered per strip and restored before anything is
+// animated: a pick then slides only the remaining distance, and a plain
+// re-render leaves the strip exactly where it was.
+const _monthStripScroll = new Map();
+
+// Mounts a month strip. `key` names the strip (its own scroll memory), `wrap`
+// is the overflow container, `animate` says the user just picked a month, so
+// the move to centre is worth showing.
+function _mountMonthStrip(key, wrap, animate) {
+  const saved = _monthStripScroll.get(key);
+  const hadSaved = saved != null && saved > 0;
+  if (hadSaved) wrap.scrollLeft = saved;
+  // Manual scrolling is what most of these offsets come from.
+  wrap.addEventListener('scroll', () => { _monthStripScroll.set(key, wrap.scrollLeft); }, { passive: true });
+
+  // Centring needs real geometry, and the strip has none until it is laid out.
+  // One frame is enough, and it is after the restore above, so nothing is ever
+  // seen at 0.
+  requestAnimationFrame(() => {
+    if (!wrap.isConnected) return;
+    const chip = wrap.querySelector('.cc-timeline-chip.active');
+    if (!chip) return;
+    const view = wrap.clientWidth;
+    const max = Math.max(0, wrap.scrollWidth - view);
+    const centre = Math.max(0, Math.min(max, chip.offsetLeft - (view - chip.offsetWidth) / 2));
+    // On a plain re-render the user's own scroll position wins - unless the
+    // selected month has been left off-screen by it, which would hide the one
+    // chip the rest of the page is about.
+    if (!animate && hadSaved) {
+      const l = chip.offsetLeft - wrap.scrollLeft;
+      if (l >= 0 && l + chip.offsetWidth <= view) return;
+    }
+    if (Math.abs(centre - wrap.scrollLeft) < 2) return;
+    // scrollTo on the strip, not scrollIntoView on the chip: these strips are
+    // sticky, and scrollIntoView walks up the ancestors and moves the PAGE's
+    // scroll too.
+    _monthStripScroll.set(key, centre);
+    if (animate && typeof wrap.scrollTo === 'function') wrap.scrollTo({ left: centre, behavior: 'smooth' });
+    else wrap.scrollLeft = centre;
+  });
+}
+
 function _attachMonthSwipe(node, months, curYm, pick) {
   let x0 = 0, y0 = 0, startedIn = null;
   const THRESHOLD = 50;
@@ -4291,10 +4336,8 @@ async function renderReview(host, token) {
   })));
   timelineWrap.appendChild(timelineRow);
   host.appendChild(timelineWrap);
-  const activeChip = timelineRow.querySelector('.cc-timeline-chip.active');
-  const behavior = _trkTimelineClicked ? 'smooth' : 'auto';
+  _mountMonthStrip('review', timelineWrap, _trkTimelineClicked);
   _trkTimelineClicked = false;
-  if (activeChip) activeChip.scrollIntoView({ inline: 'center', block: 'nearest', behavior });
   _attachMonthSwipe(host, timelineYms, ym, (k) => { _trkYm = k; _trkTimelineClicked = true; renderHomeExpense(); });
 
   if (!a.spent) {
@@ -7912,16 +7955,8 @@ async function renderCreditCards(host, token) {
   })));
   timelineWrap.appendChild(timelineRow);
   host.appendChild(timelineWrap);
-  // Keep the selected chip centred in view instead of the whole strip
-  // snapping back to its start on every re-render (a fresh render means a
-  // fresh scroll container, so scrollLeft resets to 0 unless corrected).
-  // Smooth-animated when this render came from an actual click; instant on
-  // any other render (initial page load, or a re-render after saving a
-  // card) so it lands in place rather than visibly sliding for no reason.
-  const activeChip = timelineRow.querySelector('.cc-timeline-chip.active');
-  const scrollBehavior = _ccTimelineClicked ? 'smooth' : 'auto';
+  _mountMonthStrip('cc', timelineWrap, _ccTimelineClicked);
   _ccTimelineClicked = false;
-  if (activeChip) activeChip.scrollIntoView({ inline: 'center', block: 'nearest', behavior: scrollBehavior });
 
   // Summary: the SELECTED month's figures (not always "latest"), so the
   // summary and timeline never disagree about which month is on screen.
