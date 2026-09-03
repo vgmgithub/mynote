@@ -2003,3 +2003,27 @@ html[data-theme="light"] {
    segmented control matches the Paid-by row on the spend form. */
 .ef-apply button { flex: 1; }
 .ef-apply-why { font-size: 0.66rem; line-height: 1.4; }
+/* EF loan: repayment plan boxes, one per month between the draw and its return */
+.ef-plan { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.ef-plan-cell { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.ef-plan-mon { font-size: 0.58rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.3px; }
+.ef-plan-cell input { width: 100%; text-align: right; padding: 6px 7px; font-size: 0.8rem; font-weight: 700; }
+.ef-plan-foot { margin-top: 7px; text-align: right; }
+/* Turns amber only when the plan and the amount lent disagree — a schedule
+   that does not add up is worth noticing before it silently reduces months. */
+.ef-plan-total { font-size: 0.66rem; font-weight: 700; color: var(--muted); }
+.ef-plan-total.is-off { color: var(--warn); }
+@media (max-width: 340px) { .ef-plan { grid-template-columns: repeat(2, 1fr); } }
+/* Planned against repaid, on the Repayments tab */
+.ef-sched { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin: 0 0 12px; }
+.ef-sched-head { font-size: 0.6rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); padding: 7px 10px; background: var(--card-2); border-bottom: 1px solid var(--line); }
+.ef-sched-row { display: flex; align-items: baseline; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--line); font-size: 0.72rem; }
+.ef-sched-row:last-child { border-bottom: none; }
+.ef-sched-row.is-done { color: var(--muted); }
+.ef-sched-mon { flex: 0 0 52px; font-weight: 700; }
+.ef-sched-plan { flex: 0 0 auto; font-weight: 700; }
+.ef-sched-got { flex: 1; color: var(--muted); font-size: 0.66rem; }
+.ef-sched-left { flex: 0 0 auto; font-size: 0.66rem; font-weight: 700; }
+.ef-sched-row.is-done .ef-sched-left { color: var(--good); }
+/* A repayment earmark is a commitment, not an emergency — amber, not red. */
+.trk-draw-badge.is-repay { background: rgba(245,158,11,0.16); border-color: rgba(245,158,11,0.45); color: #b45309; }

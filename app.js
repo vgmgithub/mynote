@@ -3339,8 +3339,12 @@ async function renderSpendTracker(host, token) {
   // each of us, so what the household actually has to spend is twice the line
   // on the Allocation tab.
   const share = alloc ? Number(alloc.houseExp) || 0 : 0;
+  // Through _kittyFor, so this agrees with the Expense sheet and the Review
+  // tab. Computing it inline here is what let the repayment earmark go missing
+  // from this one surface while the other two had it.
   const drawn = _emergencyDrawIn(ym, efLoans);
-  const budget = round2(share * 2 + drawn);
+  const earmark = _repayEarmarkIn(ym, efLoans);
+  const budget = _kittyFor(ym, allocs, efLoans);
   const totalOf = (k) => round2((byYm.get(k) || []).reduce((s, r) => s + (Number(r.amount) || 0), 0));
   const spends = (byYm.get(ym) || []).slice().sort((a, b2) => String(b2.date || '').localeCompare(String(a.date || '')) || (b2.id - a.id));
   const spent = totalOf(ym);
@@ -3397,11 +3401,15 @@ async function renderSpendTracker(host, token) {
       el('div', { class: 'trk-sum-label trk-label-row' }, [
         el('span', { text: 'Kitty' }),
         drawn > 0
-          ? el('span', { class: 'trk-draw-badge', title: 'Emergency draw this month', text: '🚨' + fmtSheetCur(drawn) })
-          : document.createTextNode(''),
+          ? el('span', { class: 'trk-draw-badge', title: 'Emergency draw added this month', text: '🚨' + fmtSheetCur(drawn) })
+          : (earmark > 0
+            ? el('span', { class: 'trk-draw-badge is-repay', title: 'Emergency loan repayment due this month', text: '↩' + fmtSheetCur(earmark) })
+            : document.createTextNode('')),
       ]),
       el('div', { class: 'trk-sum-val', text: fmtSheetCur(budget) }),
-      el('div', { class: 'trk-sum-note', text: share > 0 ? fmtSheetCur(share) + ' × 2' : 'set House Exp for ' + year }),
+      el('div', { class: 'trk-sum-note', text: share > 0
+        ? fmtSheetCur(share) + ' × 2' + (drawn > 0 && earmark > 0 ? ' − ' + fmtSheetCur(earmark) : '')
+        : 'set House Exp for ' + year }),
     ]),
     el('div', { class: 'trk-sum-cell' }, [
       el('div', { class: 'trk-sum-label', text: 'Spent' }),
@@ -4078,10 +4086,38 @@ function _emergencyDrawIn(ym, loans) {
   }, 0));
 }
 
+// An emergency draw taken with "Monthly kitty" raises the month it arrived in,
+// and its repayment schedule lowers the months it is paid back over. Both are
+// derived from the loan record; nothing about the kitty is stored.
+//
+// The subtraction is only for what is still OUTSTANDING in that month. Once a
+// repayment is actually recorded it becomes a Tracker entry under the loan's
+// category, and that entry already consumes the month's budget — so leaving
+// the earmark in place as well would charge the same rupee twice. Either way a
+// month ends up down by its planned amount: as a smaller kitty before the
+// repayment, as a logged spend after it.
+function _loanPlannedFor(loan, ym) {
+  return round2((loan.plan || []).reduce((s, p) => (String(p.ym) === ym ? s + (Number(p.amount) || 0) : s), 0));
+}
+function _loanRepaidIn(loan, ym) {
+  return round2((loan.repayments || []).reduce((s, rp) => (String(rp.date || '').slice(0, 7) === ym ? s + (Number(rp.amount) || 0) : s), 0));
+}
+// What a month's kitty gives up to loans still being repaid.
+function _repayEarmarkIn(ym, loans) {
+  return round2((loans || []).reduce((s, l) => {
+    if (l.kind !== 'loan' || l.loanKind !== 'emergency' || l.applyTo === 'balance') return s;
+    const outstanding = _loanPlannedFor(l, ym) - _loanRepaidIn(l, ym);
+    return s + Math.max(0, outstanding);
+  }, 0));
+}
+
 function _kittyFor(ym, allocs, loans) {
   const al = (allocs || []).find((x) => Number(x.year) === Number(String(ym).slice(0, 4)));
   const share = al ? Number(al.houseExp) || 0 : 0;
-  return round2(share * 2 + _emergencyDrawIn(ym, loans));
+  // Floored at zero: a schedule bigger than the month's own budget would
+  // otherwise produce a negative kitty, which reads as a bug rather than as
+  // "everything this month is already committed".
+  return Math.max(0, round2(share * 2 + _emergencyDrawIn(ym, loans) - _repayEarmarkIn(ym, loans)));
 }
 
 // Categories where being "over" isn't a decision anyone can act on this month.
@@ -7203,6 +7239,39 @@ function _efAddMonths(iso, months) {
   return isNaN(d) ? todayISO() : d.toISOString().slice(0, 10);
 }
 
+// Keeps the Tracker entries that mirror a loan's repayments in step with it.
+//
+// Rebuilt wholesale rather than diffed: a repayment can be edited, re-dated or
+// removed, and re-deriving the whole set is the only version of this that
+// cannot leave an orphan entry behind quietly inflating some month.
+//
+// Entries carry `efLoanId`, which is what makes them findable — and what stops
+// a second save from adding a duplicate instead of replacing.
+async function _syncLoanAutoSpends(loan) {
+  if (loan == null || loan.id == null) return;
+  try {
+    const all = (await DB.all('spends').catch(() => [])) || [];
+    for (const sp of all) {
+      if (sp.efLoanId === loan.id) await DB.del('spends', sp.id).catch(() => {});
+    }
+    // Only a kitty-loaded emergency draw with a category has anything to
+    // mirror. Anything else repays out of the fund's own balance and never
+    // touched a month's spending.
+    if (loan.loanKind !== 'emergency' || loan.applyTo !== 'kitty' || !loan.category) return;
+    const nowIso = new Date().toISOString();
+    for (const rp of loan.repayments || []) {
+      const amt = round2(Number(rp.amount) || 0);
+      const d = String(rp.date || '').slice(0, 10);
+      if (!(amt > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
+      await DB.put('spends', {
+        ym: d.slice(0, 7), date: d, category: loan.category, amount: amt,
+        method: 'UPI', cardId: null, note: 'Emergency loan repayment',
+        efLoanId: loan.id, createdAt: nowIso, updatedAt: nowIso,
+      }).catch(() => {});
+    }
+  } catch (_) { /* the loan itself is already saved; this is the mirror */ }
+}
+
 async function openEfLoanForm(existing) {
   const isEdit = !!(existing && existing.id != null);
   const mod = await import('./emergency.js');
@@ -7264,6 +7333,102 @@ async function openEfLoanForm(existing) {
   // Only an emergency draw can raise a kitty, so the choice is only offered for
   // one. A self loan or a gift is not household spending and never was.
   const applyBlock = field('Load this against', el('div', {}, [applyRow, applyWhy]));
+
+  // What the draw was spent on. Only asked for a kitty-loaded emergency draw,
+  // because it is only there that it matters: the category is what the
+  // repayment entries get filed under in the Tracker later.
+  const categorySel = el('select', {}, [el('option', { value: '', text: 'Choose a category' })].concat(
+    SPEND_CATEGORIES.reduce((acc, g) => acc.concat(g.items.map((name) => {
+      const o = el('option', { value: name, text: g.group + ' \u2014 ' + name });
+      if (name === r.category) o.selected = true;
+      return o;
+    })), [])));
+
+  // Repayment schedule: one box per month from the month AFTER the draw through
+  // the month it is expected back. The draw month itself is excluded — that is
+  // the month the money arrived and was spent, not one it is paid back over.
+  const planWrap = el('div', { class: 'ef-plan' });
+  const planInputs = new Map();
+  const planTotalEl = el('span', { class: 'ef-plan-total' });
+  const syncPlanTotal = () => {
+    let sum = 0;
+    planInputs.forEach((inp) => { sum = round2(sum + (num(inp.value) || 0)); });
+    const amt = round2(num(amount.value) || 0);
+    const diff = round2(amt - sum);
+    planTotalEl.textContent = fmtSheetCur(sum) + ' of ' + fmtSheetCur(amt)
+      + (Math.abs(diff) < 0.5 ? ' \u00b7 balances' : (diff > 0 ? ' \u00b7 ' + fmtSheetCur(diff) + ' unplanned' : ' \u00b7 ' + fmtSheetCur(-diff) + ' over'));
+    planTotalEl.classList.toggle('is-off', Math.abs(diff) >= 0.5);
+  };
+  // Months between the draw and its expected return, exclusive of the draw's
+  // own month. Empty when either date is missing, rather than guessing a span.
+  const planMonths = () => {
+    const from = takenDate.value, to = expectedDate.value;
+    if (!/^\d{4}-\d{2}/.test(from || '') || !/^\d{4}-\d{2}/.test(to || '')) return [];
+    const out = [];
+    let y = Number(from.slice(0, 4)), m = Number(from.slice(5, 7)) + 1;
+    if (m > 12) { m = 1; y++; }
+    const endY = Number(to.slice(0, 4)), endM = Number(to.slice(5, 7));
+    // Capped so a mistyped year cannot generate hundreds of boxes.
+    while ((y < endY || (y === endY && m <= endM)) && out.length < 24) {
+      out.push(y + '-' + String(m).padStart(2, '0'));
+      m++; if (m > 12) { m = 1; y++; }
+    }
+    return out;
+  };
+  const rebuildPlan = () => {
+    const months = planMonths();
+    const existingPlan = new Map((r.plan || []).map((pp) => [String(pp.ym), Number(pp.amount) || 0]));
+    // Anything already typed wins over both the record and the even split, so
+    // rebuilding after a date change does not wipe work in progress.
+    const typed = new Map();
+    planInputs.forEach((inp, k) => { if (inp.value !== '') typed.set(k, inp.value); });
+    planWrap.innerHTML = '';
+    planInputs.clear();
+    if (!months.length) {
+      planWrap.appendChild(el('p', { class: 'hint', style: 'margin:0', text: 'Set the taken and expected-back dates to plan the repayments.' }));
+      planTotalEl.textContent = '';
+      return;
+    }
+    const amt = round2(num(amount.value) || 0);
+    const even = amt > 0 ? round2(amt / months.length) : 0;
+    months.forEach((k, i) => {
+      // The last month absorbs the rounding remainder, so an even split of an
+      // amount that does not divide cleanly still adds up to the whole.
+      const fallback = amt > 0
+        ? (i === months.length - 1 ? round2(amt - even * (months.length - 1)) : even)
+        : '';
+      const start = typed.has(k) ? typed.get(k)
+        : (existingPlan.has(k) ? existingPlan.get(k) : fallback);
+      const inp = el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: start === '' ? '' : start });
+      inp.addEventListener('input', syncPlanTotal);
+      planInputs.set(k, inp);
+      planWrap.appendChild(el('label', { class: 'ef-plan-cell' }, [
+        el('span', { class: 'ef-plan-mon', text: _spendMonthLabel(k) }),
+        inp,
+      ]));
+    });
+    syncPlanTotal();
+  };
+  const collectPlan = () => {
+    const out = [];
+    planInputs.forEach((inp, k) => {
+      const v = round2(num(inp.value) || 0);
+      if (v > 0) out.push({ ym: k, amount: v });
+    });
+    return out.sort((a, b) => a.ym.localeCompare(b.ym));
+  };
+
+  const planBlock = field('Repayment plan', el('div', {}, [
+    el('p', { class: 'hint', style: 'margin:0 0 7px', text: 'Each of these months has its kitty reduced by the amount below, until that repayment is recorded.' }),
+    planWrap,
+    el('div', { class: 'ef-plan-foot' }, [planTotalEl]),
+  ]));
+  const categoryBlock = field('Spent on', el('div', {}, [
+    categorySel,
+    el('p', { class: 'hint', style: 'margin:5px 0 0', text: 'Repayments you record get logged in the Tracker under this category.' }),
+  ]));
+
+
   const rate = numInput(r.rate, `% (blank = ${mod.EF_RATE}%)`);
   const interestOverride = numInput(r.interestOverride, '₹ (blank = use the rule)');
   const interestPaid = numInput(r.interestPaid, '₹ interest collected');
@@ -7276,9 +7441,19 @@ async function openEfLoanForm(existing) {
   const closedBlock = el('div', { class: 'sold-only' + (closedChk.checked ? '' : ' hidden') }, [field('Settled on', closedDate)]);
   closedChk.addEventListener('change', () => { closedBlock.classList.toggle('hidden', !closedChk.checked); refresh(); });
 
-  const syncApplyVisible = () => applyBlock.classList.toggle('hidden', loanKind.value !== 'emergency');
+  const syncApplyVisible = () => {
+    const isEmergency = loanKind.value === 'emergency';
+    applyBlock.classList.toggle('hidden', !isEmergency);
+    const onKitty = isEmergency && applyTo === 'kitty';
+    categoryBlock.classList.toggle('hidden', !onKitty);
+    planBlock.classList.toggle('hidden', !onKitty);
+    if (onKitty) rebuildPlan();
+  };
+  applyBtns.forEach((b) => b.addEventListener('click', syncApplyVisible));
   loanKind.addEventListener('change', () => { syncExpected(); syncApplyVisible(); });
-  takenDate.addEventListener('change', syncExpected);
+  takenDate.addEventListener('change', () => { syncExpected(); rebuildPlan(); });
+  expectedDate.addEventListener('change', rebuildPlan);
+  amount.addEventListener('input', syncPlanTotal);
   syncApplyVisible();
   // Fill the date on OPEN too, so adding an emergency draw needs no extra taps.
   syncExpected();
@@ -7296,6 +7471,11 @@ async function openEfLoanForm(existing) {
     // Only meaningful on an emergency draw; stored as null elsewhere so the
     // record never implies a choice that was not offered.
     applyTo: loanKind.value === 'emergency' ? applyTo : null,
+    // Both only mean anything for a kitty-loaded emergency draw. Cleared
+    // otherwise, so switching type does not leave a schedule behind still
+    // quietly reducing months.
+    category: (loanKind.value === 'emergency' && applyTo === 'kitty') ? (categorySel.value || null) : null,
+    plan: (loanKind.value === 'emergency' && applyTo === 'kitty') ? collectPlan() : [],
     // Gate on the checkbox, not on the date having a value — the date defaults to
     // today, so unticking must be what clears it.
     closedDate: closedChk.checked ? (closedDate.value || todayISO()) : null,
@@ -7340,6 +7520,10 @@ async function openEfLoanForm(existing) {
 
   const del = async () => {
     if (!window.confirm('Delete this loan? This cannot be undone.')) return;
+    // Clear the mirrored Tracker entries first. Doing it after the delete would
+    // work too, but a failure between the two would leave repayment entries
+    // pointing at a loan that no longer exists.
+    await _syncLoanAutoSpends({ id: r.id, loanKind: null });
     await DB.del('emergency', r.id); closeModal(); toast('Loan deleted'); renderEmergency();
   };
   const save = async () => {
@@ -7348,7 +7532,11 @@ async function openEfLoanForm(existing) {
     if (!takenDate.value) { toast('Enter the date it was taken'); return; }
     const rec = buildRec();
     if (isEdit) rec.id = r.id;
-    await DB.put('emergency', rec); closeModal(); toast(isEdit ? 'Loan updated' : 'Loan added'); renderEmergency();
+    const key = await DB.put('emergency', rec);
+    // A new loan has no id until it is written, and the mirrored entries need
+    // one to point at.
+    await _syncLoanAutoSpends(Object.assign({}, rec, { id: rec.id != null ? rec.id : key }));
+    closeModal(); toast(isEdit ? 'Loan updated' : 'Loan added'); renderEmergency();
   };
 
   const detailsContent = el('div', {}, [
@@ -7357,6 +7545,8 @@ async function openEfLoanForm(existing) {
     field('Type', loanKind),
     el('div', { class: 'field-row' }, [field('Taken on', takenDate), field('Expected back', expectedDate)]),
     applyBlock,
+    categoryBlock,
+    planBlock,
     el('div', { class: 'field-row' }, [field('Rate % override', rate), field('Interest override (₹)', interestOverride)]),
     field('Interest collected (₹)', interestPaid),
     field('Settled', closedSwitch),
@@ -7364,8 +7554,37 @@ async function openEfLoanForm(existing) {
     field('Note', note),
     readout,
   ]);
+  // The schedule, against what has actually been repaid in each of its months.
+  // Rebuilt whenever the tab is opened, since both the plan and the repayments
+  // can have changed on the other tab since it was last looked at.
+  const schedule = el('div', { class: 'ef-sched' });
+  const rebuildSchedule = () => {
+    schedule.innerHTML = '';
+    const plan = collectPlan();
+    if (!plan.length || loanKind.value !== 'emergency' || applyTo !== 'kitty') {
+      schedule.classList.add('hidden');
+      return;
+    }
+    schedule.classList.remove('hidden');
+    const reps = repayEditor.collect();
+    const repaidIn = (k) => round2((reps || []).reduce((a, rp) => (String(rp.date || '').slice(0, 7) === k ? a + (Number(rp.amount) || 0) : a), 0));
+    schedule.appendChild(el('div', { class: 'ef-sched-head', text: 'Planned against repaid' }));
+    plan.forEach((pp) => {
+      const got = repaidIn(pp.ym);
+      const left = round2(pp.amount - got);
+      const done = left <= 0.5;
+      schedule.appendChild(el('div', { class: 'ef-sched-row' + (done ? ' is-done' : '') }, [
+        el('span', { class: 'ef-sched-mon', text: _spendMonthLabel(pp.ym) }),
+        el('span', { class: 'ef-sched-plan', text: fmtSheetCur(pp.amount) }),
+        el('span', { class: 'ef-sched-got', text: done ? 'repaid' : fmtSheetCur(got) + ' in' }),
+        el('span', { class: 'ef-sched-left', text: done ? '✓' : fmtSheetCur(left) + ' to go' }),
+      ]));
+    });
+  };
+
   const repayContent = el('div', { class: 'hidden' }, [
-    el('p', { class: 'hint', text: 'Log each repayment. Once they cover the amount lent, the loan counts as settled and its interest stops climbing bands.' }),
+    el('p', { class: 'hint', text: 'Log each repayment. Once they cover the amount lent, the loan counts as settled and its interest stops climbing bands. A repayment on a kitty-loaded emergency draw is also logged in the Tracker, under the category on the Details tab.' }),
+    schedule,
     repayEditor.node,
   ]);
   const detailsTabBtn = el('button', { class: 'active', type: 'button', text: 'Details' });
@@ -7373,7 +7592,7 @@ async function openEfLoanForm(existing) {
   const tabs = [{ btn: detailsTabBtn, content: detailsContent }, { btn: repayTabBtn, content: repayContent }];
   const showTab = (w) => tabs.forEach((t) => { const on = t === w; t.btn.classList.toggle('active', on); t.content.classList.toggle('hidden', !on); });
   detailsTabBtn.addEventListener('click', () => showTab(tabs[0]));
-  repayTabBtn.addEventListener('click', () => { showTab(tabs[1]); refresh(); });
+  repayTabBtn.addEventListener('click', () => { showTab(tabs[1]); rebuildSchedule(); refresh(); });
 
   const btns = [el('button', { class: 'btn primary', text: 'Save', onclick: save })];
   if (isEdit) btns.push(el('button', { class: 'btn danger', text: 'Delete', onclick: del }));
