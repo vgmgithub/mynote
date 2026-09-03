@@ -7268,13 +7268,27 @@ async function _syncLoanAutoSpends(loan) {
     // touched a month's spending.
     if (loan.loanKind !== 'emergency' || loan.applyTo !== 'kitty' || !loan.category) return;
     const nowIso = new Date().toISOString();
-    for (const rp of loan.repayments || []) {
+    // Ordered by date so the instalment numbering follows the schedule rather
+    // than the order rows happened to be typed in.
+    const reps = (loan.repayments || [])
+      .filter((rp) => round2(Number(rp.amount) || 0) > 0 && /^\d{4}-\d{2}-\d{2}$/.test(String(rp.date || '').slice(0, 10)))
+      .slice()
+      .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    // "of" counts the PLANNED instalments where there is a plan: paying 1 of 3
+    // is the useful reading, and it stays true before the rest are recorded.
+    const of = Math.max((loan.plan || []).length, reps.length);
+    for (let i = 0; i < reps.length; i++) {
+      const rp = reps[i];
       const amt = round2(Number(rp.amount) || 0);
-      const d = String(rp.date || '').slice(0, 10);
-      if (!(amt > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
+      const d = String(rp.date).slice(0, 10);
+      // Says which loan and where in the schedule, so an entry found months
+      // later in the Tracker explains itself without opening the fund.
+      const bits = ['Loan repaid ' + (i + 1) + ' of ' + of];
+      if (loan.purpose) bits.push(loan.purpose);
+      bits.push('drew ' + fmtSheetCur(loan.amount) + ' ' + _spendMonthLabel(String(loan.takenDate || '').slice(0, 7)));
       await DB.put('spends', {
         ym: d.slice(0, 7), date: d, category: loan.category, amount: amt,
-        method: 'UPI', cardId: null, note: 'Emergency loan repayment',
+        method: 'UPI', cardId: null, note: bits.join(' · '),
         efLoanId: loan.id, createdAt: nowIso, updatedAt: nowIso,
       }).catch(() => {});
     }
