@@ -17,7 +17,7 @@
 //   { id, kind:'loan', loanKind:'self'|'emergency'|'gift',
 //     who, purpose, amount,
 //     takenDate, expectedDate, closedDate,             // closedDate set = settled; else derived from repayments covering the amount
-//     rate,                                             // optional per-loan override of EF_RATE
+//     rate,                                             // % this loan was priced at - stamped from the fund's rate setting when it is saved, so changing that later never re-prices a loan already agreed
 //     interestOverride,                                 // optional — replaces the computed figure outright when reality differed from the rule
 //     interestPaid,                                     // ₹ interest actually collected
 //     repayments:[{ date:'YYYY-MM-DD', amount }],       // instalment ledger — an emergency draw can be repaid across several months
@@ -39,7 +39,11 @@ export const EF_KINDS = [
   ['emergency', 'Emergency draw'],
   ['gift', 'Gift to family'],
 ];
-export const EF_RATE = 2;         // % — the fund's own lending rate
+// The fund's own lending rate. This is the BUILT-IN default: the live figure is
+// a setting (meta/efLoanRate, editable on the Loans tab), which app.js reads and
+// passes in as `defaultRate`. A loan carrying its own `rate` was priced at that
+// figure and keeps it, whatever the setting says now.
+export const EF_RATE = 2;         // %
 export const EF_ROUND_TO = 100;   // interest rounds UP to the next ₹100 (the fund's convention)
 // Rule 7: an emergency draw repaid inside 3 months costs nothing. Rule 9: a gift
 // to family returned inside 5 months costs nothing. A self loan is priced from
@@ -82,21 +86,27 @@ export function multiplierFor(months) {
 
 // Interest on one loan, priced through `throughISO`.
 // Formula: CEILING(amount × rate% × multiplier, ₹100).
-export function loanInterest(loan, throughISO) {
+export function loanInterest(loan, throughISO, defaultRate) {
   // A typed figure wins outright: the rule is the default, not a straitjacket.
   if (loan.interestOverride != null && loan.interestOverride !== '') return Number(loan.interestOverride) || 0;
   const amt = Number(loan.amount) || 0;
   if (!(amt > 0) || !loan.takenDate || !throughISO) return 0;
   const months = monthsBetween(loan.takenDate, throughISO);
   const free = EF_FREE_MONTHS[loan.loanKind] || 0;
-  if (months <= free) return 0;
-  const rate = Number(loan.rate != null && loan.rate !== '' ? loan.rate : EF_RATE) || 0;
+  // Only a kind that HAS a free window can be inside it. A self loan's window is
+  // zero months, and `months` is also 0 in the month it was taken — so testing
+  // `months <= free` alone made it free for its first month, which is the
+  // opposite of rule 4 (a self loan is priced from day one).
+  if (free > 0 && months <= free) return 0;
+  const rate = Number(loan.rate != null && loan.rate !== ''
+    ? loan.rate
+    : (defaultRate != null && defaultRate !== '' ? defaultRate : EF_RATE)) || 0;
   const raw = amt * (rate / 100) * multiplierFor(months);
   return Math.ceil(raw / EF_ROUND_TO) * EF_ROUND_TO;
 }
 
 // Per-loan derived figures.
-export function computeLoan(loan, nowMs) {
+export function computeLoan(loan, nowMs, defaultRate) {
   const todayISO = new Date(nowMs || Date.now()).toISOString().slice(0, 10);
   const amt = Number(loan.amount) || 0;
   const reps = Array.isArray(loan.repayments) ? loan.repayments : [];
@@ -117,9 +127,9 @@ export function computeLoan(loan, nowMs) {
   // Two figures, because they answer different questions on an open loan:
   // accrued = what it has cost so far; projected = what it will cost if repaid
   // on the expected date. The sheet's own open-loan numbers are the projection.
-  const interestAccrued = loanInterest(loan, throughNow);
+  const interestAccrued = loanInterest(loan, throughNow, defaultRate);
   const projectThrough = (!isClosed && loan.expectedDate && loan.expectedDate > throughNow) ? loan.expectedDate : throughNow;
-  const interestProjected = loanInterest(loan, projectThrough);
+  const interestProjected = loanInterest(loan, projectThrough, defaultRate);
   // The figure to actually charge: settled loans are final, open ones are quoted
   // to their expected return date.
   const interest = isClosed ? interestAccrued : interestProjected;
@@ -129,9 +139,17 @@ export function computeLoan(loan, nowMs) {
     amount: amt, repaid, outstanding, isClosed, closureDate, lastRepay,
     monthsElapsed, multiplier: multiplierFor(monthsElapsed),
     freeMonths,
+    // The rate this loan is actually priced at, so callers can show the
+    // arithmetic without repeating the fallback chain.
+    rate: Number(loan.rate != null && loan.rate !== ''
+      ? loan.rate
+      : (defaultRate != null && defaultRate !== '' ? defaultRate : EF_RATE)) || 0,
     // Still inside its grace window — and, for an open loan, how long is left.
-    isFree: monthsElapsed <= freeMonths,
-    freeMonthsLeft: isClosed ? 0 : Math.max(0, freeMonths - monthsElapsed),
+    // A kind with no free window (a self loan) is never "free": it has nothing
+    // to be inside, which is why the zero case is excluded rather than left to
+    // fall out of the comparison.
+    isFree: freeMonths > 0 && monthsElapsed <= freeMonths,
+    freeMonthsLeft: (isClosed || freeMonths <= 0) ? 0 : Math.max(0, freeMonths - monthsElapsed),
     interestAccrued, interestProjected, interest, interestPaid,
     interestDue: Math.max(0, interest - interestPaid),
     isOverridden: loan.interestOverride != null && loan.interestOverride !== '',
@@ -193,6 +211,9 @@ export function computeEmergencyFund(data, nowMs) {
   // cash below rises by it automatically; this adds the gain on top, which is
   // real money the fund received and would otherwise vanish from the corpus.
   const parkedRealised = Number(data && data.parkedRealised) || 0;
+  // The fund's current lending rate, passed in from the stored setting. Only
+  // used for loans that carry no rate of their own.
+  const rate = Number(data && data.rate) > 0 ? Number(data.rate) : EF_RATE;
 
   let contributedTotal = 0, mineTotal = 0, spouseTotal = 0, lastContribution = null;
   for (const c of contributions) {
@@ -201,7 +222,7 @@ export function computeEmergencyFund(data, nowMs) {
     if (c.date && c.date > (lastContribution || '')) lastContribution = c.date;
   }
 
-  const loans = rawLoans.map((l) => Object.assign({ rec: l }, computeLoan(l, now)));
+  const loans = rawLoans.map((l) => Object.assign({ rec: l }, computeLoan(l, now, rate)));
   let lentOut = 0, loanInterestRealised = 0, loanInterestPending = 0;
   let openCount = 0, overdueCount = 0, freeExpiringCount = 0;
   for (const l of loans) {
@@ -241,6 +262,8 @@ export function computeEmergencyFund(data, nowMs) {
     // Passed straight back so the Log tab can list them without a second read.
     contributionRows: contributions,
     loans, loanCount: loans.length, openCount, overdueCount, freeExpiringCount,
+    // Handed back so the surface can show and edit it without a second read.
+    rate,
     lentOut, loanInterestRealised, loanInterestPending,
     parkedInvested, parkedValue, parkedCount, marketInterest, parkedRealised,
     corpusIn, cashInHand, fundValue,

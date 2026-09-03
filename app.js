@@ -6751,6 +6751,15 @@ async function efParked(nowMs) {
 }
 
 // All three logical tables plus the parked figures, in one pass.
+// The fund's lending rate: one figure for the whole fund, stored in `meta` and
+// edited on the Loans tab. EF_RATE is only the built-in default, used until it
+// has been changed. Kept out of emergency.js, which reads no store.
+async function efStoredRate(mod) {
+  const row = await DB.get('meta', 'efLoanRate').catch(() => null);
+  const v = row ? Number(row.value) : 0;
+  return v > 0 ? v : mod.EF_RATE;
+}
+
 async function efLoad() {
   const now = Date.now();
   const [rows, parked] = await Promise.all([
@@ -6759,7 +6768,9 @@ async function efLoad() {
   ]);
   const of = (k) => (rows || []).filter((r) => r.kind === k);
   const mod = await import('./emergency.js');
+  const rate = await efStoredRate(mod);
   const c = mod.computeEmergencyFund({
+    rate,
     contributions: of('contribution'),
     targets: of('target'),
     loans: of('loan'),
@@ -6816,7 +6827,7 @@ async function renderEmergency() {
   if (_efTab === 'fund') host.appendChild(efFundTab(c, parked));
   else if (_efTab === 'targets') host.appendChild(efTargetsTab(c));
   else if (_efTab === 'loans') host.appendChild(efLoansTab(c, mod));
-  else if (_efTab === 'terms') host.appendChild(efTermsTab(mod));
+  else if (_efTab === 'terms') host.appendChild(efTermsTab(mod, c.rate));
   else host.appendChild(efLogTab(c));
 }
 
@@ -7072,6 +7083,40 @@ function efTargetsTab(c) {
 // ---- Loans tab
 function efLoansTab(c, mod) {
   const wrap = el('div', { class: 'tab-content' });
+  // ---- The fund's lending rate ----
+  // One figure for the whole fund, so it lives on the tab that lists what the
+  // fund has lent rather than being re-typed inside every loan. Editing it
+  // prices loans taken FROM NOW ON: each loan stores the rate it was saved
+  // with, so a change here never quietly re-prices a loan already agreed.
+  const rateInput = el('input', {
+    type: 'number', inputmode: 'decimal', step: '0.25', min: '0',
+    class: 'ef-rate-input', value: c.rate,
+  });
+  const rateSave = el('button', { class: 'btn primary ef-rate-save hidden', type: 'button', text: 'Save' });
+  // The button only appears once the figure actually differs, so the card reads
+  // as a statement of the rate and not as an unfinished form.
+  const syncRateSave = () => {
+    const v = num(rateInput.value);
+    rateSave.classList.toggle('hidden', !(v > 0) || Math.abs(v - c.rate) < 0.001);
+  };
+  rateInput.addEventListener('input', syncRateSave);
+  rateSave.addEventListener('click', async () => {
+    const v = round2(num(rateInput.value));
+    if (!(v > 0)) { toast('Enter a rate above 0'); return; }
+    await DB.put('meta', { key: 'efLoanRate', value: v, updatedAt: new Date().toISOString() });
+    toast('Lending rate set to ' + v + '%');
+    renderEmergency();
+  });
+  wrap.appendChild(el('div', { class: 'ef-rate-card' }, [
+    el('div', { class: 'ef-rate-icon', text: '💰' }),
+    el('div', { class: 'ef-rate-body' }, [
+      el('div', { class: 'ef-rate-label', text: 'Lending rate' }),
+      el('div', { class: 'ef-rate-sub', text: 'Charged on every new loan. Emergency draws are free for '
+        + mod.EF_FREE_MONTHS.emergency + ' months, gifts for ' + mod.EF_FREE_MONTHS.gift + '.' }),
+    ]),
+    el('div', { class: 'ef-rate-edit' }, [rateInput, el('span', { class: 'ef-rate-pct', text: '%' }), rateSave]),
+  ]));
+
   const seg = el('div', { class: 'seg' }, [
     ['open', `Open (${c.openCount})`],
     ['closed', `Closed (${c.loanCount - c.openCount})`],
@@ -7188,7 +7233,7 @@ function efLogTab(c) {
 // tab. Figures the app actually computes from (the free-months windows, the
 // rate, the rounding) are pulled from emergency.js's own constants, so this
 // text can never drift out of sync with what the Loans tab actually charges.
-function efTermsTab(mod) {
+function efTermsTab(mod, ratePct) {
   const wrap = el('div', { class: 'tab-content' });
   const card = el('div', { class: 'chart-card' }, [el('h3', { text: 'Emergency Fund Terms' })]);
   const list = el('div', { class: 'ef-rules' });
@@ -7224,8 +7269,30 @@ function efTermsTab(mod) {
 
   card.appendChild(list);
   wrap.appendChild(card);
+
+  // ---- What counts as an emergency ----
+  // Rule 1 turns on the word "genuine", and a rulebook that leaves its central
+  // term undefined is the one that gets argued about at the worst moment. This
+  // is the agreed list, with the catch-all spelled out rather than assumed.
+  const REASONS = [
+    ['🏥', 'Medical needs'],
+    ['💼', 'Job loss'],
+    ['✈️', 'Unplanned travel for family emergencies'],
+    ['📦', 'Relocation costs'],
+    ['🚗', 'Vehicle repairs'],
+    ['🔌', 'Essential appliance breakdown'],
+  ];
+  const reasonCard = el('div', { class: 'chart-card' }, [el('h3', { text: 'Emergency Reasons' })]);
+  reasonCard.appendChild(el('div', { class: 'ef-reasons' }, REASONS.map(([ico, text]) => el('div', { class: 'ef-reason' }, [
+    el('span', { class: 'ef-reason-ico', text: ico }),
+    el('span', { class: 'ef-reason-text', text }),
+  ]))));
+  reasonCard.appendChild(el('p', { class: 'ef-reason-note', text:
+    'Any other situation that threatens basic living, health, or safety can be considered an emergency — to be decided together.' }));
+  wrap.appendChild(reasonCard);
+
   wrap.appendChild(el('p', { class: 'hint mf-foot', text:
-    `This is the written policy — the Loans tab computes interest from it automatically: CEILING(amount × ${mod.EF_RATE}% × multiplier, ₹${mod.EF_ROUND_TO}), with the multiplier from rule 6 and the free windows from rules 2, 7 and 9.` }));
+    `This is the written policy — the Loans tab computes interest from it automatically: CEILING(amount × ${ratePct != null ? ratePct : mod.EF_RATE}% × multiplier, ₹${mod.EF_ROUND_TO}), with the multiplier from rule 6 and the free windows from rules 2, 7 and 9.` }));
   return wrap;
 }
 
@@ -7337,18 +7404,41 @@ async function _syncLoanAutoSpends(loan) {
 async function openEfLoanForm(existing) {
   const isEdit = !!(existing && existing.id != null);
   const mod = await import('./emergency.js');
+  // The rate a NEW loan will be priced at. Read once here so the form quotes
+  // one figure throughout, even if the setting is edited elsewhere while this
+  // is open.
+  const ratePct = await efStoredRate(mod);
   const r = Object.assign({ loanKind: 'self', repayments: [] }, existing || {});
 
   const numInput = (v, ph) => el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: v != null && v !== '' ? v : '', placeholder: ph });
   const who = el('input', { type: 'text', value: r.who || '', placeholder: 'Who took it' });
   const purpose = el('input', { type: 'text', value: r.purpose || '', placeholder: 'What for' });
   const amount = numInput(r.amount, '₹ lent');
-  const loanKind = el('select', {}, mod.EF_KINDS.map(([v, l]) => {
-    const free = mod.EF_FREE_MONTHS[v] || 0;
-    const o = el('option', { value: v, text: l + (free ? ` — free for ${free} months` : ` — ${mod.EF_RATE}% from day one`) });
-    if (v === r.loanKind) o.selected = true;
-    return o;
-  }));
+  // Type decides how the loan is priced AND how much of the rest of this form
+  // applies, so it goes at the top as a segmented control: all three options
+  // visible at once, with the consequence of the chosen one spelled out
+  // underneath instead of buried in a dropdown's option text.
+  const TYPE_SHORT = { self: 'Self', emergency: 'Emergency', gift: 'Gift' };
+  // A loan already carrying a rate is priced at THAT, whatever the fund's rate
+  // is now, so the line quotes the loan's own figure — otherwise it would
+  // contradict the arithmetic printed in the readout further down.
+  const loanRate = (r.rate != null && r.rate !== '') ? (num(r.rate) || ratePct) : ratePct;
+  const typeWhy = el('p', { class: 'hint', style: 'margin:6px 0 0' });
+  const syncTypeWhy = () => {
+    const kind = loanKind.value;
+    const label = (mod.EF_KINDS.find(([v]) => v === kind) || [null, 'Loan'])[1];
+    const free = mod.EF_FREE_MONTHS[kind] || 0;
+    const drifted = Math.abs(loanRate - ratePct) > 0.001
+      ? ' The fund now lends at ' + ratePct + '%; this loan keeps the ' + loanRate + '% it was agreed at.'
+      : '';
+    typeWhy.textContent = (free
+      ? label + ' · interest-free for the first ' + free + ' months, then ' + loanRate + '% per 3-month band.'
+      : label + ' · priced at ' + loanRate + '% from day one, one more band every 3 months.') + drifted;
+  };
+  const loanKind = segChoice(
+    mod.EF_KINDS.map(([v, l]) => [v, TYPE_SHORT[v] || l]),
+    r.loanKind,
+    () => { syncTypeWhy(); syncExpected(); syncApplyVisible(); refresh(); });
   const takenDate = el('input', { type: 'date', value: r.takenDate || todayISO() });
   const expectedDate = el('input', { type: 'date', value: r.expectedDate || '' });
   // An emergency draw is interest-free for EF_FREE_MONTHS.emergency months, so
@@ -7489,10 +7579,16 @@ async function openEfLoanForm(existing) {
     categorySel,
     el('p', { class: 'hint', style: 'margin:5px 0 0', text: 'Repayments you record get logged in the Tracker under this category.' }),
   ]));
+  // Built here, with the blocks it wraps, because the visibility sync runs
+  // while the form is still being assembled and needs it to exist already.
+  const emergencySec = formSection('🚨', 'Emergency draw', [applyBlock, categoryBlock, planBlock]);
 
 
-  const rate = numInput(r.rate, `% (blank = ${mod.EF_RATE}%)`);
-  const interestOverride = numInput(r.interestOverride, '₹ (blank = use the rule)');
+  // No rate or interest box here any more: the rate is one fund-wide setting
+  // (edited on the Loans tab) and gets stamped onto the record below, so there
+  // is nothing per-loan left to type. A figure entered by hand on an older
+  // record is still honoured and still carried through a save — the readout
+  // says so when it is in play.
   const interestPaid = numInput(r.interestPaid, '₹ interest collected');
   const note = el('input', { type: 'text', value: r.note || '', placeholder: 'Note (optional)' });
 
@@ -7505,6 +7601,9 @@ async function openEfLoanForm(existing) {
 
   const syncApplyVisible = () => {
     const isEmergency = loanKind.value === 'emergency';
+    // The whole section goes, heading included - an empty "Emergency draw"
+    // header over nothing reads as something failing to load.
+    emergencySec.classList.toggle('hidden', !isEmergency);
     applyBlock.classList.toggle('hidden', !isEmergency);
     const onKitty = isEmergency && applyTo === 'kitty';
     categoryBlock.classList.toggle('hidden', !onKitty);
@@ -7512,11 +7611,11 @@ async function openEfLoanForm(existing) {
     if (onKitty) rebuildPlan();
   };
   applyBtns.forEach((b) => b.addEventListener('click', syncApplyVisible));
-  loanKind.addEventListener('change', () => { syncExpected(); syncApplyVisible(); });
   takenDate.addEventListener('change', () => { syncExpected(); rebuildPlan(); });
   expectedDate.addEventListener('change', rebuildPlan);
   amount.addEventListener('input', syncPlanTotal);
   syncApplyVisible();
+  syncTypeWhy();
   // Fill the date on OPEN too, so adding an emergency draw needs no extra taps.
   syncExpected();
 
@@ -7541,8 +7640,14 @@ async function openEfLoanForm(existing) {
     // Gate on the checkbox, not on the date having a value — the date defaults to
     // today, so unticking must be what clears it.
     closedDate: closedChk.checked ? (closedDate.value || todayISO()) : null,
-    rate: rate.value !== '' ? num(rate.value) : null,
-    interestOverride: interestOverride.value !== '' ? num(interestOverride.value) : null,
+    // The rate is STAMPED onto the loan rather than read live, so changing the
+    // fund's rate prices new loans and leaves ones already agreed alone. A loan
+    // that already carries a rate keeps it; one saved before the rate became a
+    // setting picks up the current figure the next time it is saved.
+    rate: (r.rate != null && r.rate !== '') ? num(r.rate) : ratePct,
+    // Kept, not cleared: the box is gone, but an older record that had its
+    // interest typed in by hand should not be silently re-priced by the rule.
+    interestOverride: (r.interestOverride != null && r.interestOverride !== '') ? num(r.interestOverride) : null,
     interestPaid: interestPaid.value !== '' ? num(interestPaid.value) : null,
     repayments: repayEditor.collect(),
     note: note.value.trim(),
@@ -7554,7 +7659,7 @@ async function openEfLoanForm(existing) {
   const refresh = () => {
     readout.innerHTML = '';
     const rec = buildRec();
-    const c = mod.computeLoan(rec, Date.now());
+    const c = mod.computeLoan(rec, Date.now(), ratePct);
     readout.appendChild(el('div', { class: 'mf-bench-now' }, [
       el('span', {}, ['Outstanding ', b(fmtIntCur(c.outstanding))]),
       el('span', {}, [c.isClosed ? 'Interest ' : 'If repaid on time ', b(fmtIntCur(c.interest))]),
@@ -7566,18 +7671,18 @@ async function openEfLoanForm(existing) {
       readout.appendChild(el('p', { class: 'hint', text:
         `Interest-free for the first ${c.freeMonths} months` + (c.isClosed ? ' — settled inside that window.' : ` · ${c.freeMonthsLeft} month${c.freeMonthsLeft === 1 ? '' : 's'} left before interest starts.`) }));
     } else if (!c.isOverridden && rec.amount > 0) {
-      const rt = rec.rate != null ? rec.rate : mod.EF_RATE;
+      const rt = c.rate;
       readout.appendChild(el('p', { class: 'hint', text:
         `${fmtIntCur(rec.amount)} × ${rt}% × ${c.multiplier} (${c.monthsElapsed} months) = ${fmtIntCur(rec.amount * (rt / 100) * c.multiplier)}, rounded up to ${fmtIntCur(c.interest)}.` }));
     }
-    if (c.isOverridden) readout.appendChild(el('p', { class: 'hint warn', text: 'Using the amount you typed instead of the rule.' }));
+    if (c.isOverridden) readout.appendChild(el('p', { class: 'hint warn', text: 'This loan has an interest figure entered by hand, so the rule above is not applied to it.' }));
     if (c.overdue) readout.appendChild(el('p', { class: 'hint warn', text: 'Past its expected return date.' }));
     if (!c.isClosed && !c.isFree) {
       const nextBand = (Math.floor(c.monthsElapsed / 3) + 1) * 3;
       readout.appendChild(el('p', { class: 'hint', text: `Next band at ${nextBand + 1} months → ${c.multiplier + 1}× interest.` }));
     }
   };
-  [amount, loanKind, takenDate, expectedDate, rate, interestOverride, interestPaid, closedDate].forEach((i) => i.addEventListener('input', refresh));
+  [amount, takenDate, expectedDate, interestPaid, closedDate].forEach((i) => i.addEventListener('input', refresh));
   refresh();
 
   const del = async () => {
@@ -7612,20 +7717,20 @@ async function openEfLoanForm(existing) {
     closeModal(); toast(isEdit ? 'Loan updated' : 'Loan added'); renderEmergency();
   };
 
-  const detailsContent = el('div', {}, [
-    el('div', { class: 'field-row' }, [field('Who', who), field('Amount (₹)', amount)]),
-    field('Purpose', purpose),
-    field('Type', loanKind),
-    el('div', { class: 'field-row' }, [field('Taken on', takenDate), field('Expected back', expectedDate)]),
-    applyBlock,
-    categoryBlock,
-    planBlock,
-    el('div', { class: 'field-row' }, [field('Rate % override', rate), field('Interest override (₹)', interestOverride)]),
-    field('Interest collected (₹)', interestPaid),
-    field('Settled', closedSwitch),
-    closedBlock,
-    field('Note', note),
-    readout,
+  // Grouped rather than stacked: what the loan is, the emergency-only extras,
+  // what it costs, whether it is done. Read top to bottom it now follows the
+  // life of the loan instead of the order the fields happened to be added in.
+  const detailsContent = el('div', { class: 'form-secs' }, [
+    formSection('🤝', 'The loan', [
+      field('Type', el('div', {}, [loanKind.node, typeWhy])),
+      el('div', { class: 'field-row' }, [field('Who', who), field('Amount (₹)', amount)]),
+      field('Purpose', purpose),
+      el('div', { class: 'field-row' }, [field('Taken on', takenDate), field('Expected back', expectedDate)]),
+    ]),
+    emergencySec,
+    formSection('🧮', 'Interest', [readout, field('Collected so far (₹)', interestPaid)]),
+    formSection('✅', 'Settlement', [field('Settled', closedSwitch), closedBlock]),
+    formSection('📝', 'Note', [note]),
   ]);
   // The schedule, against what has actually been repaid in each of its months.
   // Rebuilt whenever the tab is opened, since both the plan and the repayments
@@ -9564,6 +9669,39 @@ function closeModal() {
   if (escHandler) { document.removeEventListener('keydown', escHandler); escHandler = null; }
 }
 const field = (labelText, inputNode) => el('div', { class: 'field' }, [el('label', { text: labelText }), inputNode]);
+
+// A segmented control over a short list of options, exposing the same `.value`
+// a <select> does so a caller reading it does not care which one it got. For a
+// choice with two or three options that CHANGES WHAT THE REST OF THE FORM
+// SHOWS — there, hiding the options behind a closed dropdown hides the
+// consequence too.
+function segChoice(options, initial, onChange) {
+  const btns = [];
+  let cur = initial;
+  const node = el('div', { class: 'seg' }, options.map(([v, label]) => {
+    const btn = el('button', { type: 'button', class: v === cur ? 'active' : '', text: label });
+    btn.addEventListener('click', () => {
+      if (cur === v) return;
+      cur = v;
+      btns.forEach((x) => x.classList.toggle('active', x === btn));
+      if (onChange) onChange(v);
+    });
+    btns.push(btn);
+    return btn;
+  }));
+  return { node, get value() { return cur; } };
+}
+
+// A form section: an uppercase heading over a group of fields. Same shape as the
+// Allocation form's sections, which is where the pattern comes from.
+function formSection(icon, title, children) {
+  return el('div', { class: 'form-sec' }, [
+    el('div', { class: 'form-sec-head' }, [
+      el('span', { class: 'form-sec-icon', text: icon }),
+      el('h3', { class: 'form-sec-title', text: title }),
+    ]),
+  ].concat(children));
+}
 
 // Editable list of month-end returns. Dedupes by month (last wins) so re-entering
 // a month never creates duplicate history.

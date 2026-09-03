@@ -2027,3 +2027,47 @@ html[data-theme="light"] {
 .ef-sched-row.is-done .ef-sched-left { color: var(--good); }
 /* A repayment earmark is a commitment, not an emergency — amber, not red. */
 .trk-draw-badge.is-repay { background: rgba(245,158,11,0.16); border-color: rgba(245,158,11,0.45); color: #b45309; }
+
+/* ---- Form sections (loan form; same shape as the Allocation form's) ---- */
+/* A flat stack of a dozen fields gives no clue which of them belong together,
+   so the loan form is grouped under quiet uppercase headings. The heading is
+   part of the section, so hiding the section hides its label too. */
+.form-secs { display: flex; flex-direction: column; gap: 18px; }
+.form-sec { display: flex; flex-direction: column; gap: 10px; }
+.form-sec-head { display: flex; align-items: center; gap: 8px; padding: 0 2px; }
+.form-sec-icon { font-size: 0.95rem; }
+.form-sec-title { margin: 0; font-size: 0.7rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
+/* The sections already space themselves, so the fields inside drop their own
+   bottom margins rather than compounding the gap. */
+.form-sec .field { margin: 0; }
+
+/* ---- The fund's lending rate, on the Loans tab ---- */
+/* One rate for the whole fund, stated where the loans are listed. Editable in
+   place: the Save button only appears once the figure has actually changed, so
+   at rest this reads as a fact about the fund rather than an open form. */
+.ef-rate-card { display: flex; align-items: center; gap: 10px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin: 0 0 10px; }
+.ef-rate-icon { font-size: 1.15rem; flex: 0 0 auto; }
+.ef-rate-body { flex: 1; min-width: 0; }
+.ef-rate-label { font-size: 0.78rem; font-weight: 700; }
+.ef-rate-sub { font-size: 0.62rem; color: var(--muted); margin-top: 1px; }
+.ef-rate-edit { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+.ef-rate-input { width: 56px; padding: 6px 7px; border: 1px solid var(--line); border-radius: 7px; background: var(--card-2); color: var(--text); font-size: 0.95rem; font-weight: 800; text-align: center; }
+.ef-rate-pct { font-size: 0.8rem; font-weight: 700; color: var(--muted); }
+.ef-rate-save { padding: 6px 10px; font-size: 0.7rem; }
+/* Under ~330px the sub line and the input compete for the same row; the card
+   stacks rather than squeezing the input to nothing. */
+@media (max-width: 330px) {
+  .ef-rate-card { flex-wrap: wrap; }
+  .ef-rate-edit { width: 100%; justify-content: flex-end; }
+}
+
+/* ---- What counts as an emergency (Rules tab) ---- */
+/* Rule 1 hinges on the word "genuine"; this is the agreed list behind it. Red
+   accent because it belongs to the same idea as the fund's siren, and the
+   catch-all sits in its own panel so it reads as the clause it is, not as a
+   seventh reason. */
+.ef-reasons { display: flex; flex-direction: column; gap: 2px; }
+.ef-reason { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 8px; border-left: 3px solid var(--bad); background: var(--card-2); }
+.ef-reason-ico { font-size: 0.95rem; flex: 0 0 auto; }
+.ef-reason-text { font-size: 0.8rem; font-weight: 600; }
+.ef-reason-note { margin: 10px 0 0; padding: 9px 11px; background: var(--card-2); border: 1px solid var(--line); border-radius: 8px; font-size: 0.68rem; line-height: 1.45; color: var(--muted); }
