@@ -3472,8 +3472,12 @@ async function renderSpendTracker(host, token) {
   // which is what makes a long list scannable — the eye finds "that's all
   // grocery" without reading a single label.
   //
-  // Groups are ordered by spend, not by the picker's order: the question this
-  // view answers is where the money went, so the biggest block belongs first.
+  // Groups keep the picker's own order — Fixed, Home, Grocery, Lifestyle,
+  // Other — rather than being ranked by spend. A fixed order means the same
+  // group sits in the same place every month, so the list can be read from
+  // memory; ranking by size moved everything around whenever one month
+  // happened to differ. Categories WITHIN a group still lead with the biggest,
+  // where the ordering is the useful part.
   const grouped = new Map();
   cats.forEach(([name, c]) => {
     const g = _spendGroupOf(name);
@@ -3482,7 +3486,12 @@ async function renderSpendTracker(host, token) {
     bucket.total = round2(bucket.total + c.total);
     bucket.rows.push([name, c]);
   });
-  const groupList = [...grouped.entries()].sort((a, b2) => b2[1].total - a[1].total);
+  // Only groups that actually have entries this month. Ordered by their
+  // position in SPEND_CATEGORIES, so the order can never drift from the
+  // picker's; anything unrecognised sorts last.
+  const groupOrder = SPEND_CATEGORIES.map((g) => g.group);
+  const rank = (name) => { const i = groupOrder.indexOf(name); return i === -1 ? groupOrder.length : i; };
+  const groupList = [...grouped.entries()].sort((a, b2) => rank(a[0]) - rank(b2[0]));
 
   const catWrap = el('div', { class: 'trk-groups' });
   groupList.forEach(([gname, g]) => {
