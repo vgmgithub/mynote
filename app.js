@@ -6827,7 +6827,7 @@ async function renderEmergency() {
   if (_efTab === 'fund') host.appendChild(efFundTab(c, parked));
   else if (_efTab === 'targets') host.appendChild(efTargetsTab(c));
   else if (_efTab === 'loans') host.appendChild(efLoansTab(c, mod));
-  else if (_efTab === 'terms') host.appendChild(efTermsTab(mod, c.rate));
+  else if (_efTab === 'terms') host.appendChild(efTermsTab(mod, c));
   else host.appendChild(efLogTab(c));
 }
 
@@ -7233,7 +7233,8 @@ function efLogTab(c) {
 // tab. Figures the app actually computes from (the free-months windows, the
 // rate, the rounding) are pulled from emergency.js's own constants, so this
 // text can never drift out of sync with what the Loans tab actually charges.
-function efTermsTab(mod, ratePct) {
+function efTermsTab(mod, c) {
+  const ratePct = c && c.rate != null ? c.rate : mod.EF_RATE;
   const wrap = el('div', { class: 'tab-content' });
   const card = el('div', { class: 'chart-card' }, [el('h3', { text: 'Emergency Fund Terms' })]);
   const list = el('div', { class: 'ef-rules' });
@@ -7264,8 +7265,8 @@ function efTermsTab(mod, ratePct) {
   ]);
   rule(7, `The rule above applies to both emergency and non-emergency usage. Only emergency use within ${mod.EF_FREE_MONTHS.emergency} months is interest-free.`);
   rule(8, 'These rules apply to our personal use only.');
-  rule(9, `For helping others, up to 25% of the fund can be given without interest or reason, but must be returned within 3–${mod.EF_FREE_MONTHS.gift} months.`);
-  rule(10, 'Only one allocation of the 25% for others is allowed per cycle. After repayment, the amount can be given again — not multiple times simultaneously.');
+  rule(9, `For helping others, up to ${mod.EF_HELP_SHARE}% of the fund can be given without interest or reason, but must be returned within 3–${mod.EF_FREE_MONTHS.gift} months.`);
+  rule(10, `Only one allocation of the ${mod.EF_HELP_SHARE}% for others is allowed per cycle. After repayment, the amount can be given again — not multiple times simultaneously.`);
 
   card.appendChild(list);
   wrap.appendChild(card);
@@ -7290,6 +7291,48 @@ function efTermsTab(mod, ratePct) {
   reasonCard.appendChild(el('p', { class: 'ef-reason-note', text:
     'Any other situation that threatens basic living, health, or safety can be considered an emergency — to be decided together.' }));
   wrap.appendChild(reasonCard);
+
+  // ---- Loan Rules: rules 9 and 10 in rupees ----
+  // The policy states a percentage; what anyone actually needs to know is the
+  // figure it comes to today and who each allocation belongs to. Derived from
+  // the fund's current value, so it moves as the fund does instead of being a
+  // number copied out of the sheet once.
+  //
+  // Every party gets the SAME cap: this is one allowance repeated, not a
+  // quarter split four ways.
+  const HELP_PARTIES = ['Appa · Amma', 'Athai · Mama', 'Others', 'Ours'];
+  const helpCap = round2(((c && c.fundValue) || 0) * (mod.EF_HELP_SHARE / 100));
+  const loanCard = el('div', { class: 'chart-card' }, [el('h3', { text: 'Loan Rules' })]);
+  loanCard.appendChild(el('div', { class: 'ef-lr-head' }, [
+    el('div', { class: 'ef-lr-head-cell' }, [
+      el('div', { class: 'ef-lr-head-label', text: mod.EF_HELP_SHARE + '% can be used with no interest' }),
+      el('div', { class: 'ef-lr-head-big', text: fmtIntCur(helpCap) }),
+    ]),
+    el('div', { class: 'ef-lr-head-cell is-side' }, [
+      el('div', { class: 'ef-lr-head-label', text: 'Repay period' }),
+      el('div', { class: 'ef-lr-head-val', text: '3 – ' + mod.EF_FREE_MONTHS.gift + ' months' }),
+    ]),
+  ]));
+  loanCard.appendChild(el('div', { class: 'ef-lr-rows' }, HELP_PARTIES.map((name) => el('div', { class: 'ef-lr-row' }, [
+    el('span', { class: 'ef-lr-share', text: mod.EF_HELP_SHARE + '%' }),
+    el('span', { class: 'ef-lr-who', text: name }),
+    el('span', { class: 'ef-lr-amt', text: fmtIntCur(helpCap) }),
+  ]))));
+  // A percentage of the fund is a policy cap, not a promise that the money is
+  // to hand - what can actually be lent is limited by cash as well, and that
+  // is the constraint that bites at the moment of asking.
+  if (helpCap > 0 && (c ? c.cashInHand : 0) < helpCap) {
+    loanCard.appendChild(el('p', { class: 'hint warn', style: 'margin:9px 0 0',
+      text: 'Only ' + fmtIntCur(Math.max(0, c.cashInHand)) + ' is in cash right now, so the full '
+        + fmtIntCur(helpCap) + ' could not be lent today without selling something the fund holds.' }));
+  }
+  loanCard.appendChild(el('p', { class: 'ef-reason-note', text: helpCap > 0
+    ? 'Each of these is the same allowance, not a share of one — ' + mod.EF_HELP_SHARE
+      + '% of the fund per party, one allocation at a time (rules 9 and 10). ' + mod.EF_HELP_SHARE
+      + '% of the current fund value of ' + fmtIntCur((c && c.fundValue) || 0) + '.'
+    : 'Each of these is the same allowance, not a share of one — ' + mod.EF_HELP_SHARE
+      + '% of the fund per party, one allocation at a time (rules 9 and 10). The figures fill in once the fund has a value.' }));
+  wrap.appendChild(loanCard);
 
   wrap.appendChild(el('p', { class: 'hint mf-foot', text:
     `This is the written policy — the Loans tab computes interest from it automatically: CEILING(amount × ${ratePct != null ? ratePct : mod.EF_RATE}% × multiplier, ₹${mod.EF_ROUND_TO}), with the multiplier from rule 6 and the free windows from rules 2, 7 and 9.` }));

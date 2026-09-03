@@ -2071,3 +2071,26 @@ html[data-theme="light"] {
 .ef-reason-ico { font-size: 0.95rem; flex: 0 0 auto; }
 .ef-reason-text { font-size: 0.8rem; font-weight: 600; }
 .ef-reason-note { margin: 10px 0 0; padding: 9px 11px; background: var(--card-2); border: 1px solid var(--line); border-radius: 8px; font-size: 0.68rem; line-height: 1.45; color: var(--muted); }
+
+/* ---- Loan Rules: rules 9 and 10 in rupees (Rules tab) ---- */
+/* The headline pair reads as one statement — what a quarter of the fund comes
+   to, and how long it may be held — so they share a row and the figure gets
+   the weight. */
+.ef-lr-head { display: flex; align-items: stretch; gap: 10px; background: var(--card-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 0 0 8px; }
+.ef-lr-head-cell { min-width: 0; flex: 1; }
+.ef-lr-head-cell.is-side { flex: 0 0 auto; text-align: right; border-left: 1px solid var(--line); padding-left: 10px; display: flex; flex-direction: column; justify-content: center; }
+.ef-lr-head-label { font-size: 0.6rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; line-height: 1.35; }
+.ef-lr-head-big { font-size: 1.35rem; font-weight: 800; margin-top: 3px; }
+.ef-lr-head-val { font-size: 0.82rem; font-weight: 700; margin-top: 3px; white-space: nowrap; }
+/* One row per party, all showing the same cap. The share sits on the left as a
+   fixed-width badge so the four rows line up and the repetition is the point
+   being made: this is one allowance each, not a quarter divided up. */
+.ef-lr-rows { display: flex; flex-direction: column; gap: 2px; }
+.ef-lr-row { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 8px; background: var(--card-2); border-left: 3px solid var(--accent); }
+.ef-lr-share { flex: 0 0 34px; font-size: 0.66rem; font-weight: 800; color: var(--accent); }
+.ef-lr-who { flex: 1; min-width: 0; font-size: 0.8rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ef-lr-amt { flex: 0 0 auto; font-size: 0.82rem; font-weight: 800; }
+@media (max-width: 330px) {
+  .ef-lr-head { flex-direction: column; gap: 8px; }
+  .ef-lr-head-cell.is-side { text-align: left; border-left: none; padding-left: 0; border-top: 1px solid var(--line); padding-top: 7px; }
+}

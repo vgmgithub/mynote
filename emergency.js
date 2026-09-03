@@ -49,6 +49,11 @@ export const EF_ROUND_TO = 100;   // interest rounds UP to the next ₹100 (the 
 // to family returned inside 5 months costs nothing. A self loan is priced from
 // day one (rule 4).
 export const EF_FREE_MONTHS = { emergency: 3, gift: 5, self: 0 };
+// Rule 9: up to a quarter of the fund can be lent out interest-free, and rule
+// 10 allows one such allocation per party at a time. Named rather than written
+// as "25%" in three places, so the cap and the figures derived from it can
+// never drift apart.
+export const EF_HELP_SHARE = 25;  // % of the fund, per party
 export const EF_LADDER = [
   ['add', 'Adds on top of the previous target'],
   ['absorb', 'Replaces the previous target'],
