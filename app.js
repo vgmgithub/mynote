@@ -4191,6 +4191,280 @@ const _median = (nums) => {
   return a.length % 2 ? round2(a[mid]) : round2((a[mid - 1] + a[mid]) / 2);
 };
 
+// ---------- Forecasting the rest of a month ----------
+//
+// The obvious way to forecast a month is spent / days-so-far * days-in-month.
+// It is also wrong in the way that matters most: household spending is not
+// spread evenly across a month. Rent, EMIs and bills land in the first week,
+// so on the 6th that formula projects a fortune, and by the 25th it quietly
+// under-counts everything still to come. Both errors are large AND
+// predictable, which is exactly what makes them removable.
+//
+// So this builds the estimate the other way round. What has already been spent
+// is a FACT, not an estimate; only the remainder is estimated, and it is
+// estimated from what the days after today's date actually cost in each
+// earlier month, compared at the same day of the month. Rent that has already
+// gone out on the 5th is therefore not counted again, and rent that has not
+// gone out yet is.
+//
+// The median across those months is the central figure and their spread is the
+// range, so one wild month widens the range instead of moving the answer.
+const REVIEW_FORECAST_MIN = 2;   // earlier months needed before forecasting at all
+const REVIEW_FORECAST_GOOD = 8;  // % median error at or under which the method is doing well
+const REVIEW_FORECAST_FAIR = 18; // ...and under which it is still worth quoting
+
+const _daysInYm = (k) => new Date(Number(String(k).slice(0, 4)), Number(String(k).slice(5, 7)), 0).getDate();
+
+// One month's spending by day-of-month. Indexed by day, so day 1 is at [1].
+function _spendDayTotals(rows, dim) {
+  const out = new Array(dim + 2).fill(0);
+  (rows || []).forEach((r) => {
+    const d = Number(String(r.date || '').slice(8, 10)) || 0;
+    if (d >= 1 && d <= dim) out[d] = round2(out[d] + (Number(r.amount) || 0));
+  });
+  return out;
+}
+
+// For each earlier month: what it spent BY `day`, what it spent AFTER `day`,
+// and what it came to. A month shorter than `day` has no remainder, which is
+// correct rather than a gap - by that day of the month it was already over.
+function _monthSplitsAt(yms, byYm, day) {
+  return (yms || []).map((k) => {
+    const dim = _daysInYm(k);
+    const days = _spendDayTotals(byYm.get(k) || [], dim);
+    let by = 0, rest = 0, total = 0;
+    for (let d = 1; d <= dim; d++) {
+      total = round2(total + days[d]);
+      if (d <= day) by = round2(by + days[d]);
+      else rest = round2(rest + days[d]);
+    }
+    return { ym: k, by, rest, total };
+  }).filter((r) => r.total > 0);
+}
+
+// The estimator itself, deliberately factored out so the live forecast and its
+// own backtest below run the identical code path. Anything else would make the
+// reported accuracy a claim about a different method than the one on screen.
+function _forecastFrom(targetYm, priorYms, byYm, day) {
+  const dim = _daysInYm(targetYm);
+  const cut = Math.min(day, dim);
+  const days = _spendDayTotals(byYm.get(targetYm) || [], dim);
+  let spent = 0;
+  for (let d = 1; d <= cut; d++) spent = round2(spent + days[d]);
+  // Already booked for days still to come - rare, but a spend can be entered
+  // with a later date, and it must not drop out of the month.
+  let loggedAfter = 0;
+  for (let d = cut + 1; d <= dim; d++) loggedAfter = round2(loggedAfter + days[d]);
+  const splits = _monthSplitsAt(priorYms, byYm, cut);
+  if (splits.length < REVIEW_FORECAST_MIN) return null;
+  const rests = splits.map((r) => r.rest).sort((x, y) => x - y);
+  return {
+    dim, day: cut, spent, splits, loggedAfter,
+    rest: _median(rests),
+    restLo: rests[0], restHi: rests[rests.length - 1],
+    // What a usual month had spent by this same day - the honest pacing
+    // comparison, and the one figure a naive average gets most wrong.
+    usualByNow: _median(splits.map((r) => r.by)),
+  };
+}
+
+// The live forecast, plus its measured track record.
+//
+// How well the method actually does is not a matter of opinion: run it against
+// each earlier month at the same day of the month, using only the months
+// before that one, and compare with what the month really came to. The median
+// absolute error rides alongside the forecast, so the figure carries its own
+// evidence instead of an assurance.
+function _reviewForecast(ym, byYm, nowDate, dueTotal, kitty) {
+  const dim = _daysInYm(ym);
+  const day = Math.min(nowDate.getDate(), dim);
+  const totalOf = (k) => round2((byYm.get(k) || []).reduce((s, r) => s + (Number(r.amount) || 0), 0));
+  const hist = [...byYm.keys()].filter((k) => k < ym && totalOf(k) > 0).sort();
+  const f = _forecastFrom(ym, hist, byYm, day);
+  if (!f) return null;
+
+  // Recurring items that have NOT landed yet are a floor under the remainder,
+  // not an addition to it: the median already contains them for the months
+  // they occurred in, so taking the larger of the two avoids counting the same
+  // rent twice while still refusing to forecast below a bill known to be due.
+  const due = round2(dueTotal || 0);
+  const rest = Math.max(f.rest, due, f.loggedAfter);
+  const forecast = round2(f.spent + rest);
+
+  const back = [];
+  hist.forEach((k, i) => {
+    const priors = hist.slice(0, i);
+    if (priors.length < REVIEW_FORECAST_MIN) return;
+    const g = _forecastFrom(k, priors, byYm, day);
+    const actual = totalOf(k);
+    if (!g || !(actual > 0)) return;
+    const est = round2(g.spent + g.rest);
+    back.push({ ym: k, est, actual, errPct: round2((Math.abs(est - actual) / actual) * 100) });
+  });
+  const errPct = back.length ? _median(back.map((b) => b.errPct)) : null;
+  const grade = errPct == null
+    ? (hist.length >= 4 ? 'fair' : 'rough')
+    : errPct <= REVIEW_FORECAST_GOOD ? 'good' : errPct <= REVIEW_FORECAST_FAIR ? 'fair' : 'rough';
+
+  const daysLeft = dim - day;
+  return {
+    dim, day, daysLeft, months: hist.length,
+    spent: f.spent, rest, due,
+    restIsDueFloor: due > f.rest && due >= f.loggedAfter,
+    loggedAfter: f.loggedAfter,
+    forecast,
+    // The range is the observed spread of remainders, never narrower than the
+    // central figure it brackets.
+    lo: round2(f.spent + Math.min(f.restLo, rest)),
+    hi: round2(f.spent + Math.max(f.restHi, rest)),
+    usualByNow: f.usualByNow,
+    vsUsualByNow: round2(f.spent - f.usualByNow),
+    restPerDay: daysLeft > 0 ? round2(rest / daysLeft) : null,
+    // What is affordable per day from here to finish inside the kitty. Negative
+    // is meaningful and is shown as such: the kitty is already gone.
+    fitPerDay: (kitty > 0 && daysLeft > 0) ? round2((kitty - f.spent) / daysLeft) : null,
+    overKitty: kitty > 0 ? round2(forecast - kitty) : null,
+    backtests: back, errPct, grade,
+  };
+}
+
+// ---------- The shape of a month ----------
+//
+// A total says how much; this says WHEN, which is the half that changes
+// behaviour. Knowing that half of every month is gone by the 9th, or that a
+// weekend day costs twice a weekday, is what makes an ordinary Saturday a
+// decision rather than a surprise at month end.
+//
+// Read in thirds rather than per day: a household does not repeat the 14th, it
+// repeats "early", "middle" and "late".
+const CYCLE_MIN_MONTHS = 3;
+const CYCLE_LOOKBACK = 12;
+const _DOW = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+function _reviewCycle(ym, byYm, nowDate, isCurrent) {
+  const totalOf = (k) => round2((byYm.get(k) || []).reduce((s, r) => s + (Number(r.amount) || 0), 0));
+  const hist = [...byYm.keys()].filter((k) => k < ym && totalOf(k) > 0).sort().slice(-CYCLE_LOOKBACK);
+  if (hist.length < CYCLE_MIN_MONTHS) return null;
+
+  const thirds = [[], [], []];
+  const halfDays = [], noSpend = [], wkEndPerDay = [], wkDayPerDay = [], wkEndShare = [];
+  const dowAmt = new Array(7).fill(0), dowDays = new Array(7).fill(0);
+
+  hist.forEach((k) => {
+    const dim = _daysInYm(k);
+    const y = Number(k.slice(0, 4)), mo = Number(k.slice(5, 7));
+    const days = _spendDayTotals(byYm.get(k) || [], dim);
+    const total = totalOf(k);
+    const t = [0, 0, 0];
+    let run = 0, half = null, zero = 0, we = 0, weD = 0, wd = 0, wdD = 0;
+    for (let d = 1; d <= dim; d++) {
+      const amt = days[d];
+      run = round2(run + amt);
+      if (half == null && total > 0 && run >= total / 2) half = d;
+      if (amt <= 0) zero++;
+      const dow = new Date(y, mo - 1, d).getDay();
+      dowAmt[dow] = round2(dowAmt[dow] + amt); dowDays[dow]++;
+      if (dow === 0 || dow === 6) { we = round2(we + amt); weD++; } else { wd = round2(wd + amt); wdD++; }
+      t[d <= 10 ? 0 : d <= 20 ? 1 : 2] += amt;
+    }
+    if (total > 0) {
+      t.forEach((v, i) => thirds[i].push(round2((v / total) * 100)));
+      wkEndShare.push(round2((we / total) * 100));
+    }
+    if (half != null) halfDays.push(half);
+    noSpend.push(zero);
+    if (weD) wkEndPerDay.push(round2(we / weD));
+    if (wdD) wkDayPerDay.push(round2(wd / wdD));
+  });
+
+  // This month against that shape. Only for the current month - a finished
+  // month has no "so far".
+  const dim = _daysInYm(ym);
+  const day = isCurrent ? Math.min(nowDate.getDate(), dim) : dim;
+  const nowDays = _spendDayTotals(byYm.get(ym) || [], dim);
+  let noSpendSoFar = 0;
+  for (let d = 1; d <= day; d++) if (nowDays[d] <= 0) noSpendSoFar++;
+
+  const perDow = _DOW.map((name, i) => ({
+    name, i, perDay: dowDays[i] ? round2(dowAmt[i] / dowDays[i]) : 0,
+  }));
+  const busiest = perDow.slice().sort((a, b) => b.perDay - a.perDay)[0];
+  const quietest = perDow.slice().filter((r) => r.perDay > 0).sort((a, b) => a.perDay - b.perDay)[0] || null;
+
+  const wePerDay = _median(wkEndPerDay), wdPerDay = _median(wkDayPerDay);
+  return {
+    months: hist.length,
+    // Rounded to whole percent and normalised so the three read as one month
+    // rather than summing to 99 or 101 through rounding.
+    thirds: (() => {
+      const raw = thirds.map((v) => _median(v));
+      const sum = raw.reduce((a, b) => a + b, 0) || 1;
+      const pct = raw.map((v) => Math.round((v / sum) * 100));
+      pct[2] = Math.max(0, 100 - pct[0] - pct[1]);
+      return pct;
+    })(),
+    halfBy: halfDays.length ? Math.round(_median(halfDays)) : null,
+    noSpendTypical: Math.round(_median(noSpend)),
+    noSpendSoFar, daysSoFar: day, dim,
+    weekendPerDay: wePerDay, weekdayPerDay: wdPerDay,
+    weekendGap: round2(wePerDay - wdPerDay),
+    weekendShare: wkEndShare.length ? Math.round(_median(wkEndShare)) : null,
+    busiest, quietest,
+  };
+}
+
+// A usual month's worth of small change, for comparison against this one.
+function _smallTicketUsual(ym, byYm) {
+  const vals = [...byYm.keys()].filter((k) => k < ym).sort().slice(-CYCLE_LOOKBACK)
+    .map((k) => round2((byYm.get(k) || [])
+      .filter((r) => (Number(r.amount) || 0) > 0 && (Number(r.amount) || 0) <= SMALL_TICKET)
+      .reduce((s, r) => s + (Number(r.amount) || 0), 0)))
+    .filter((v) => v > 0);
+  return vals.length >= REVIEW_FORECAST_MIN ? _median(vals) : null;
+}
+
+// ---------- Where the money could actually stay ----------
+//
+// Every line here is measured against something this household has ALREADY
+// done in some earlier month, which is what separates a saving from a wish.
+// Nothing is invented: a category's own median month, its own usual number of
+// visits, its own weekday spending.
+//
+// These overlap on purpose and are NOT summed. The same 180 rupees can be a
+// small spend, a Saturday and an over-median Snacks entry all at once; three
+// ways of seeing one leak is useful, adding them up three times is not. The
+// only figure quoted as a total is the category one, which cannot overlap
+// itself.
+function _reviewSavings(a, cycle, small, smallUsual) {
+  const out = [];
+  a.actionable.forEach((r) => {
+    const fewer = r.usualCount && r.count > r.usualCount ? r.count - r.usualCount : 0;
+    out.push({
+      name: r.name, group: r.group, save: r.over, kind: 'category',
+      how: (r.driver === 'more often' && fewer)
+        ? fewer + (fewer === 1 ? ' fewer time' : ' fewer times') + ' this month would do it'
+        : 'back to its usual ' + fmtSheetCur(r.usual) + ' a month',
+    });
+  });
+  if (small && smallUsual != null) {
+    const excess = round2(small.total - smallUsual);
+    if (excess > 0) out.push({
+      name: 'Small spends under ' + fmtSheetCur(small.threshold), group: 'Other',
+      save: excess, kind: 'small',
+      how: small.count + ' of them so far, ' + fmtSheetCur(small.total) + ' in all \u00b7 a usual month runs ' + fmtSheetCur(smallUsual),
+    });
+  }
+  if (cycle && cycle.weekendGap > 0 && cycle.weekendPerDay > 0) {
+    out.push({
+      name: 'Weekend days', group: 'Lifestyle', save: cycle.weekendGap, kind: 'weekend',
+      how: 'weekends run ' + fmtIntCur(cycle.weekendPerDay) + ' a day against '
+        + fmtIntCur(cycle.weekdayPerDay) + ' on weekdays \u2014 that is the gap for each one you keep quiet',
+    });
+  }
+  out.sort((x, y) => y.save - x.save);
+  return { rows: out.slice(0, 6) };
+}
+
 // Pure: (selected month, all months by ym, this month, kitty, clock) → findings.
 function _reviewAnalysis(ym, byYm, thisYm, kitty, nowDate) {
   const year = Number(ym.slice(0, 4)), mon = Number(ym.slice(5, 7));
@@ -4362,7 +4636,10 @@ async function renderReview(host, token) {
       : fmtSheetCur(-overKitty) + ' still in the kitty');
   }
   if (a.isCurrent) headNotes.push(a.daysLeft + (a.daysLeft === 1 ? ' day left' : ' days left'));
-  if (a.pace != null) headNotes.push('about ' + fmtSheetCur(a.pace) + ' by month end at this pace');
+  // No straight-line pace figure here any more. Dividing by days elapsed and
+  // multiplying by days in the month ignores that rent lands on the 5th, which
+  // makes it wildly high early in a month and low late in one. The forecast
+  // card below replaces it with an estimate built only from the remainder.
   headBits.push(el('div', { class: 'rvw-head-note', text: headNotes.join(' · ') }));
   host.appendChild(el('div', { class: 'rvw-head' }, headBits));
 
@@ -4375,6 +4652,113 @@ async function renderReview(host, token) {
         + ', so this tab holds off rather than calling something unusual on one data point.' }),
     ]));
     return;
+  }
+
+  // Computed together, before anything is rendered: the savings list reads
+  // across all three, and the forecast wants the recurring-due total that the
+  // section further down also uses.
+  const due = a.isCurrent ? _recurringDue(ym, byYm) : [];
+  const dueTotal = round2(due.reduce((sum, r) => sum + r.amount, 0));
+  const small = _reviewSmallTickets(ym, byYm);
+  const cycle = _reviewCycle(ym, byYm, now, a.isCurrent);
+  const forecast = a.isCurrent ? _reviewForecast(ym, byYm, now, dueTotal, kitty) : null;
+  const savings = _reviewSavings(a, cycle, small, _smallTicketUsual(ym, byYm));
+
+  // ---- Month-end forecast ----
+  if (forecast) {
+    const f = forecast;
+    host.appendChild(el('h3', { class: 'div-group-head rvw-head-row' }, [
+      el('span', { text: '🔮 Where this month lands' }),
+      el('span', { class: 'rvw-grade is-' + f.grade,
+        text: f.errPct != null ? f.grade + ' · ' + '±' + f.errPct + '%' : f.grade }),
+    ]));
+    const bar = [];
+    const scale = Math.max(f.forecast, kitty, 1);
+    bar.push(el('span', { class: 'rvw-fc-seg is-spent', style: 'width:' + (f.spent / scale * 100).toFixed(1) + '%' }));
+    bar.push(el('span', { class: 'rvw-fc-seg is-rest', style: 'width:' + (f.rest / scale * 100).toFixed(1) + '%' }));
+    host.appendChild(el('div', { class: 'rvw-fc' }, [
+      el('div', { class: 'rvw-fc-top' }, [
+        el('div', {}, [
+          el('div', { class: 'rvw-fc-big' + (f.overKitty > 0 ? ' is-over' : ''), text: fmtSheetCur(f.forecast) }),
+          el('div', { class: 'rvw-fc-lbl', text: 'forecast for ' + mod.monthLabel(ym) }),
+        ]),
+        el('div', { class: 'rvw-fc-range' }, [
+          el('div', { class: 'rvw-fc-range-lbl', text: 'likely between' }),
+          el('div', { class: 'rvw-fc-range-val', text: fmtSheetCur(f.lo) + ' – ' + fmtSheetCur(f.hi) }),
+        ]),
+      ]),
+      el('div', { class: 'rvw-fc-bar' }, bar.concat(
+        kitty > 0 && kitty < scale
+          ? [el('span', { class: 'rvw-fc-kitty', style: 'left:' + (kitty / scale * 100).toFixed(1) + '%' })]
+          : [])),
+      el('div', { class: 'rvw-fc-split' }, [
+        el('span', {}, [el('i', { class: 'rvw-dot is-spent' }), fmtSheetCur(f.spent) + ' spent']),
+        el('span', {}, [el('i', { class: 'rvw-dot is-rest' }), fmtSheetCur(f.rest) + ' still to come']),
+        kitty > 0 ? el('span', { class: 'rvw-fc-kitty-lbl', text: 'kitty ' + fmtSheetCur(kitty) }) : document.createTextNode(''),
+      ]),
+    ]));
+
+    // The lines that actually decide today, in the order they get acted on:
+    // what the rest of the month usually costs, what is affordable if the
+    // kitty is to hold, and where this month sits against a usual one.
+    const lines = [];
+    if (f.restPerDay != null) {
+      lines.push(['–', 'The rest of your month usually costs ' + fmtIntCur(f.restPerDay)
+        + ' a day · ' + f.daysLeft + (f.daysLeft === 1 ? ' day' : ' days') + ' left']);
+    }
+    if (f.fitPerDay != null) {
+      lines.push(f.fitPerDay > 0
+        ? ['OK', fmtIntCur(f.fitPerDay) + ' a day from here keeps this month inside the ' + fmtSheetCur(kitty) + ' kitty']
+        : ['NO', 'The kitty is already spent · anything from here is over it']);
+    }
+    if (f.overKitty != null && f.overKitty > 0) {
+      lines.push(['NO', 'On this estimate the month ends ' + fmtSheetCur(f.overKitty) + ' over the kitty']);
+    } else if (f.overKitty != null) {
+      lines.push(['OK', 'On this estimate the month ends ' + fmtSheetCur(-f.overKitty) + ' inside the kitty']);
+    }
+    if (f.usualByNow > 0) {
+      lines.push([f.vsUsualByNow > 0 ? 'UP' : 'DOWN', 'By the ' + f.day + _ordinalSuffix(f.day)
+        + ' a usual month is at ' + fmtIntCur(f.usualByNow) + ' · you are '
+        + fmtIntCur(Math.abs(f.vsUsualByNow)) + (f.vsUsualByNow > 0 ? ' above that' : ' below that')]);
+    }
+    if (f.restIsDueFloor && f.due > 0) {
+      lines.push(['–', 'Held up to ' + fmtSheetCur(f.due) + ' by items listed below as still expected, which is more than a usual remainder']);
+    }
+    host.appendChild(el('div', { class: 'rvw-lines' }, lines.map(([kind, text]) => el('div', {
+      class: 'rvw-line is-' + kind.toLowerCase(),
+    }, [
+      el('span', { class: 'rvw-line-mark', text: kind === 'OK' ? '✓' : kind === 'NO' ? '!' : kind === 'UP' ? '↑' : kind === 'DOWN' ? '↓' : '•' }),
+      el('span', { text }),
+    ]))));
+
+    host.appendChild(el('p', { class: 'hint rvw-note', text: f.errPct != null
+      ? 'Only the REMAINDER is estimated · what is already spent is counted, and the days still to come are priced from what the same days cost in your last '
+        + f.months + ' months. Run against those months at the same point in the month, this came out a median '
+        + f.errPct + '% away from what they actually cost.'
+      : 'Only the REMAINDER is estimated · what is already spent is counted, and the days still to come are priced from what the same days cost in your last '
+        + f.months + ' months. Too few months to have tested it against yet, so treat it as a rough shape.' }));
+  }
+
+  // ---- Where the money could stay ----
+  if (savings.rows.length) {
+    host.appendChild(el('h3', { class: 'div-group-head', text: '💡 Where you could keep money' }));
+    host.appendChild(el('div', { class: 'rvw-save-list' }, savings.rows.map((r) => el('div', {
+      class: 'rvw-save-row ' + _spendGroupClass(r.group),
+    }, [
+      el('div', { class: 'rvw-save-body' }, [
+        el('div', { class: 'rvw-save-name', text: r.name }),
+        el('div', { class: 'rvw-save-how', text: r.how }),
+      ]),
+      el('div', { class: 'rvw-save-fig' }, [
+        el('div', { class: 'rvw-save-val', text: r.kind === 'weekend' ? fmtIntCur(r.save) : fmtSheetCur(r.save) }),
+        el('div', { class: 'rvw-save-unit', text: r.kind === 'weekend' ? 'a day' : 'this month' }),
+      ]),
+    ]))));
+    // The category total lives under "Worth a look" below, where the evidence
+    // for it is. Repeating it here would be the same figure twice.
+    host.appendChild(el('p', { class: 'hint rvw-note', text: 'These overlap on purpose and are not added up — the same '
+      + 'spend can be a small one, a weekend one and an over-median one at once. Three ways of seeing one leak is useful; '
+      + 'counting it three times is not. The one figure that IS a total is under Worth a look below, where the evidence for it sits.' }));
   }
 
   // ---- Where there is something to act on ----
@@ -4433,7 +4817,6 @@ async function renderReview(host, token) {
   }
 
   // ---- Small spends ----
-  const small = _reviewSmallTickets(ym, byYm);
   if (small) {
     host.appendChild(el('h3', { class: 'div-group-head', text: '🪙 Small spends add up' }));
     host.appendChild(el('div', { class: 'rvw-panel' }, [
@@ -4448,6 +4831,40 @@ async function renderReview(host, token) {
         el('span', { class: 'rvw-mini-meta', text: t.count + '× · ' + fmtSheetCur(t.total) }),
       ]))),
     ]));
+  }
+
+  // ---- The shape of a month ----
+  if (cycle) {
+    host.appendChild(el('h3', { class: 'div-group-head', text: '🔁 Your spending cycle' }));
+    const THIRDS = [['Early', '1–10'], ['Middle', '11–20'], ['Late', '21–' + cycle.dim]];
+    host.appendChild(el('div', { class: 'rvw-cyc' }, [
+      el('div', { class: 'rvw-cyc-bar' }, cycle.thirds.map((pct, i) => el('span', {
+        class: 'rvw-cyc-seg is-t' + i, style: 'width:' + pct + '%',
+        text: pct >= 12 ? pct + '%' : '',
+      }))),
+      el('div', { class: 'rvw-cyc-legend' }, THIRDS.map(([name, range], i) => el('span', { class: 'rvw-cyc-key' }, [
+        el('i', { class: 'rvw-dot is-t' + i }),
+        el('span', { class: 'rvw-cyc-key-name', text: name }),
+        el('span', { class: 'rvw-cyc-key-range', text: range }),
+      ]))),
+    ]));
+    const cycRows = [];
+    if (cycle.halfBy) cycRows.push(['Half a month is gone by', 'the ' + cycle.halfBy + _ordinalSuffix(cycle.halfBy)]);
+    if (cycle.weekendPerDay > 0) cycRows.push(['Weekend vs weekday, per day',
+      fmtIntCur(cycle.weekendPerDay) + ' vs ' + fmtIntCur(cycle.weekdayPerDay)]);
+    if (cycle.weekendShare != null) cycRows.push(['Lands on a Saturday or Sunday', cycle.weekendShare + '% of a month']);
+    if (cycle.busiest && cycle.busiest.perDay > 0) cycRows.push(['Heaviest day of the week',
+      cycle.busiest.name + ' · ' + fmtIntCur(cycle.busiest.perDay) + ' a day']);
+    if (cycle.quietest && cycle.quietest.name !== (cycle.busiest || {}).name) cycRows.push(['Lightest day of the week',
+      cycle.quietest.name + ' · ' + fmtIntCur(cycle.quietest.perDay) + ' a day']);
+    cycRows.push(['Days with nothing spent', a.isCurrent
+      ? cycle.noSpendSoFar + ' of the first ' + cycle.daysSoFar + ' · usually ' + cycle.noSpendTypical + ' in a month'
+      : 'usually ' + cycle.noSpendTypical + ' in a month']);
+    host.appendChild(el('div', { class: 'rvw-flat' }, cycRows.map(([k, v]) =>
+      el('div', { class: 'rvw-flat-row' }, [el('span', { text: k }), el('span', { class: 'rvw-flat-meta', text: v })]))));
+    host.appendChild(el('p', { class: 'hint rvw-note', text: 'From your last ' + cycle.months
+      + ' months. This is the WHEN behind the total — the half of a spending habit that a monthly figure hides, '
+      + 'and the reason a forecast on the 6th and one on the 26th cannot use the same arithmetic.' }));
   }
 
   // ---- Context: what wasn't judged, and what can't be ----
@@ -4470,9 +4887,7 @@ async function renderReview(host, token) {
 
   // ---- Recurring items not yet logged this month ----
   if (a.isCurrent) {
-    const due = _recurringDue(ym, byYm);
     if (due.length) {
-      const dueTotal = round2(due.reduce((s, r) => s + r.amount, 0));
       host.appendChild(el('h3', { class: 'div-group-head', text: '📅 Still expected this month' }));
       host.appendChild(el('div', { class: 'rvw-due' }, due.map((r) => el('div', { class: 'rvw-due-row' }, [
         el('div', { class: 'rvw-due-when' }, [
@@ -4484,18 +4899,11 @@ async function renderReview(host, token) {
           el('div', { class: 'rvw-due-meta', text: r.months + ' of the last ' + r.window + ' months'
             + (r.day ? '' : ' · no settled date') + (r.fixed ? ' · fixed' : '') }),
         ]),
-        el('span', { class: 'rvw-due-amt', text: '~' + fmtSheetCur(r.amount) }),
+        el('span', { class: 'rvw-due-amt', text: '~' + fmtIntCur(r.amount) }),
       ]))));
-      // Spent-plus-expected against the kitty: the figure that decides whether
-      // there is actually room left. The only forward-looking number here, and
-      // it is built from items that have recurred, not from a trend.
-      if (a.kitty > 0) {
-        const committed = round2(a.spent + dueTotal);
-        host.appendChild(el('div', { class: 'rvw-total' + (committed > a.kitty ? ' is-neg' : '') }, [
-          el('span', { class: 'rvw-total-label', text: 'Spent + still expected' }),
-          el('span', { class: 'rvw-total-val', text: fmtSheetCur(committed) + ' of ' + fmtSheetCur(a.kitty) }),
-        ]));
-      }
+      // No running total here. It would only ever count items that RECUR, so it
+      // sat below the forecast above by everything ordinary a month also costs,
+      // and two forward totals that disagree are worse than one.
     }
   }
 

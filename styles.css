@@ -2094,3 +2094,69 @@ html[data-theme="light"] {
   .ef-lr-head { flex-direction: column; gap: 8px; }
   .ef-lr-head-cell.is-side { text-align: left; border-left: none; padding-left: 0; border-top: 1px solid var(--line); padding-top: 7px; }
 }
+
+/* ---- Review: where the month lands, and the shape it lands in ---- */
+/* The heading carries a grade badge, so it becomes a row rather than a label. */
+.div-group-head.rvw-head-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.rvw-grade { font-size: 0.58rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.4px; padding: 3px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); background: var(--card-2); white-space: nowrap; }
+/* Graded from its own measured error, not from a feeling about the method. */
+.rvw-grade.is-good { color: var(--good); border-color: rgba(52,211,153,0.5); }
+.rvw-grade.is-fair { color: var(--warn); border-color: rgba(245,158,11,0.5); }
+.rvw-grade.is-rough { color: var(--bad); border-color: rgba(248,113,113,0.45); }
+
+.rvw-fc { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 13px 14px; }
+.rvw-fc-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.rvw-fc-big { font-size: 1.5rem; font-weight: 800; line-height: 1.1; }
+.rvw-fc-big.is-over { color: var(--bad); }
+.rvw-fc-lbl { font-size: 0.62rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; font-weight: 700; margin-top: 2px; }
+.rvw-fc-range { text-align: right; flex: 0 0 auto; }
+.rvw-fc-range-lbl { font-size: 0.58rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; font-weight: 700; }
+.rvw-fc-range-val { font-size: 0.76rem; font-weight: 700; margin-top: 2px; white-space: nowrap; }
+/* Spent is settled, the remainder is an estimate — so the estimate is hatched
+   rather than solid. The kitty is a line across it, because the question is
+   which side of that line the month ends on. */
+.rvw-fc-bar { position: relative; display: flex; height: 10px; border-radius: 999px; overflow: hidden; background: var(--card-2); margin: 11px 0 8px; }
+.rvw-fc-seg.is-spent { background: var(--accent); }
+.rvw-fc-seg.is-rest { background: repeating-linear-gradient(45deg, rgba(148,163,184,0.55) 0 4px, rgba(148,163,184,0.22) 4px 8px); }
+.rvw-fc-kitty { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--good); border-radius: 2px; }
+.rvw-fc-split { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; font-size: 0.66rem; color: var(--muted); font-weight: 600; }
+.rvw-fc-kitty-lbl { color: var(--good); font-weight: 700; }
+.rvw-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; vertical-align: baseline; }
+.rvw-dot.is-spent { background: var(--accent); }
+.rvw-dot.is-rest { background: rgba(148,163,184,0.6); }
+
+/* The lines that decide today. Marked rather than bulleted, so a "you are
+   fine" and a "you are over" are told apart without reading them. */
+.rvw-lines { display: flex; flex-direction: column; gap: 1px; margin: 9px 0 0; }
+.rvw-line { display: flex; align-items: flex-start; gap: 8px; padding: 7px 10px; font-size: 0.74rem; line-height: 1.4; background: var(--card); border-radius: 8px; }
+.rvw-line-mark { flex: 0 0 15px; text-align: center; font-weight: 800; font-size: 0.72rem; color: var(--muted); }
+.rvw-line.is-ok .rvw-line-mark { color: var(--good); }
+.rvw-line.is-no .rvw-line-mark { color: var(--bad); }
+.rvw-line.is-up .rvw-line-mark { color: var(--warn); }
+.rvw-line.is-down .rvw-line-mark { color: var(--good); }
+
+/* Where you could keep money: the figure is the point, so it gets its own
+   column and the "how" sits under the name as the instruction it is. */
+.rvw-save-list { display: flex; flex-direction: column; gap: 5px; }
+.rvw-save-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--g, var(--line)); border-radius: 10px; }
+.rvw-save-body { flex: 1; min-width: 0; }
+.rvw-save-name { font-size: 0.8rem; font-weight: 700; }
+.rvw-save-how { font-size: 0.64rem; color: var(--muted); margin-top: 2px; line-height: 1.4; }
+.rvw-save-fig { flex: 0 0 auto; text-align: right; }
+.rvw-save-val { font-size: 0.95rem; font-weight: 800; color: var(--good); }
+.rvw-save-unit { font-size: 0.55rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; font-weight: 700; }
+
+/* The month in thirds: one bar, because the three shares are one month. */
+.rvw-cyc { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 13px; margin-bottom: 8px; }
+.rvw-cyc-bar { display: flex; height: 24px; border-radius: 7px; overflow: hidden; background: var(--card-2); }
+.rvw-cyc-seg { display: flex; align-items: center; justify-content: center; font-size: 0.62rem; font-weight: 800; color: #0b1220; min-width: 2px; }
+.rvw-cyc-seg.is-t0 { background: #60a5fa; }
+.rvw-cyc-seg.is-t1 { background: #a78bfa; }
+.rvw-cyc-seg.is-t2 { background: #f59e0b; }
+.rvw-dot.is-t0 { background: #60a5fa; }
+.rvw-dot.is-t1 { background: #a78bfa; }
+.rvw-dot.is-t2 { background: #f59e0b; }
+.rvw-cyc-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 9px; }
+.rvw-cyc-key { display: flex; align-items: baseline; gap: 4px; font-size: 0.66rem; }
+.rvw-cyc-key-name { font-weight: 700; }
+.rvw-cyc-key-range { color: var(--muted); }
