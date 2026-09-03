@@ -3005,12 +3005,13 @@ async function renderExpenseSheet(host, token) {
   const ym = _expSheetYm;
   const year = Number(ym.slice(0, 4));
 
-  const [allocs, reimb, sheetRow, ef, spendRows] = await Promise.all([
+  const [allocs, reimb, sheetRow, ef, spendRows, efLoans] = await Promise.all([
     DB.all('allocations').catch(() => []),
     DB.get('ccReimbursements', ym).catch(() => null),
     DB.get('monthlySheet', ym).catch(() => null),
     efLoad().catch(() => null),
     DB.byIndex('spends', 'ym', ym).catch(() => []),
+    DB.byIndex('emergency', 'kind', 'loan').catch(() => []),
   ]);
   if (expRenderStale(token)) return;
   const alloc = (allocs || []).find((a) => Number(a.year) === year) || null;
@@ -3019,7 +3020,7 @@ async function renderExpenseSheet(host, token) {
   // What the Tracker tab has left in the household kitty for this month —
   // House Exp doubled, less everything logged against it. Feeds the Monthly
   // Expense row so the two surfaces can't disagree about the same figure.
-  const kitty = round2((alloc ? Number(alloc.houseExp) || 0 : 0) * 2);
+  const kitty = _kittyFor(ym, allocs, efLoans);
   const kittySpent = round2((spendRows || []).reduce((s, r) => s + (Number(r.amount) || 0), 0));
   const kittyLeft = round2(kitty - kittySpent);
   const efAvail = ef ? round2(Math.max(0, ef.c.cashInHand)) : 0;
@@ -3306,10 +3307,11 @@ async function renderSpendTracker(host, token) {
   // compare against previous months, so they need the whole history anyway —
   // and a household's spend rows are a few hundred a year, not a scale where
   // one read per month would pay for itself.
-  const [allocs, allSpends, cards] = await Promise.all([
+  const [allocs, allSpends, cards, efLoans] = await Promise.all([
     DB.all('allocations').catch(() => []),
     DB.all('spends').catch(() => []),
     DB.all('creditCards').catch(() => []),
+    DB.byIndex('emergency', 'kind', 'loan').catch(() => []),
   ]);
   if (expRenderStale(token)) return;
   const cardName = new Map((cards || []).map((c) => [c.id, c.name || 'Card']));
@@ -3337,11 +3339,18 @@ async function renderSpendTracker(host, token) {
   // each of us, so what the household actually has to spend is twice the line
   // on the Allocation tab.
   const share = alloc ? Number(alloc.houseExp) || 0 : 0;
-  const budget = round2(share * 2);
+  const drawn = _emergencyDrawIn(ym, efLoans);
+  const budget = round2(share * 2 + drawn);
   const totalOf = (k) => round2((byYm.get(k) || []).reduce((s, r) => s + (Number(r.amount) || 0), 0));
   const spends = (byYm.get(ym) || []).slice().sort((a, b2) => String(b2.date || '').localeCompare(String(a.date || '')) || (b2.id - a.id));
   const spent = totalOf(ym);
   const left = round2(budget - spent);
+  // Days remaining INCLUDING today, since today can still be spent on. Only
+  // meaningful for the month in progress, and only while something is left —
+  // dividing an overspend across the days ahead would read as an allowance.
+  const daysInMonth = new Date(year, Number(ym.slice(5, 7)), 0).getDate();
+  const daysRemaining = ym === thisYm ? Math.max(1, daysInMonth - now.getDate() + 1) : 0;
+  const perDayLeft = daysRemaining > 0 && left > 0 ? round2(left / daysRemaining) : null;
 
   // ---- Month timeline, same as the Credit Card tab ----
   // Fixed under the app header while the rest scrolls, so the month picker
@@ -3382,7 +3391,11 @@ async function renderSpendTracker(host, token) {
     el('div', { class: 'trk-sum-cell' }, [
       el('div', { class: 'trk-sum-label', text: 'Kitty' }),
       el('div', { class: 'trk-sum-val', text: fmtSheetCur(budget) }),
-      el('div', { class: 'trk-sum-note', text: share > 0 ? fmtSheetCur(share) + ' × 2' : 'set House Exp for ' + year }),
+      // Says where the kitty came from. With an emergency draw in it, the
+      // basis alone would understate the figure above and read as a bug.
+      el('div', { class: 'trk-sum-note' + (drawn > 0 ? ' is-wrap' : ''), text: share > 0
+        ? fmtSheetCur(share) + ' × 2' + (drawn > 0 ? ' + ' + fmtSheetCur(drawn) + ' EF draw' : '')
+        : 'set House Exp for ' + year }),
     ]),
     el('div', { class: 'trk-sum-cell' }, [
       el('div', { class: 'trk-sum-label', text: 'Spent' }),
@@ -3392,7 +3405,13 @@ async function renderSpendTracker(host, token) {
     el('div', { class: 'trk-sum-cell trk-left' + (left < 0 ? ' is-neg' : '') }, [
       el('div', { class: 'trk-sum-label', text: 'Left' }),
       el('div', { class: 'trk-sum-val', text: fmtSheetCur(left) }),
-      el('div', { class: 'trk-sum-note', text: budget > 0 ? Math.round((spent / budget) * 100) + '% used' : '—' }),
+      // For the CURRENT month, what's left per remaining day is the figure that
+      // actually guides a decision today; the percentage used is already drawn
+      // as the bar underneath. Whole rupees on purpose — a daily allowance
+      // quoted to the paisa is precision nobody spends to.
+      el('div', { class: 'trk-sum-note', text: perDayLeft != null
+        ? fmtIntCur(perDayLeft) + '/day'
+        : (budget > 0 ? Math.round((spent / budget) * 100) + '% used' : '—') }),
     ]),
   ]));
 
@@ -3693,10 +3712,12 @@ function _spendDayLabel(iso) {
 // that's where we are, and this month everywhere else.
 async function openSpendQuick() {
   const now = new Date();
-  const onTracker = state.appMode === 'expense' && _expTab === 'tracker' && _trkYm;
-  const ym = onTracker ? _trkYm : (now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0'));
-  const allocs = await DB.all('allocations').catch(() => []);
-  const alloc = (allocs || []).find((a) => Number(a.year) === Number(ym.slice(0, 4))) || null;
+  const onMonthTab = state.appMode === 'expense' && (_expTab === 'tracker' || _expTab === 'review') && _trkYm;
+  const ym = onMonthTab ? _trkYm : (now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0'));
+  const [allocs, efLoans] = await Promise.all([
+    DB.all('allocations').catch(() => []),
+    DB.byIndex('emergency', 'kind', 'loan').catch(() => []),
+  ]);
   // Dates default INTO the month being viewed. Back-filling an old month and
   // having every entry land on today would file them all under the wrong
   // month — and silently, since the form would look right while saving wrong.
@@ -3704,7 +3725,7 @@ async function openSpendQuick() {
   // clearly provisional day to correct rather than a guess at the real one.
   const today = todayISO();
   const defaultDate = ym === today.slice(0, 7) ? today : ym + '-01';
-  openSpendForm(round2((alloc ? Number(alloc.houseExp) || 0 : 0) * 2), null, defaultDate);
+  openSpendForm(_kittyFor(ym, allocs, efLoans), null, defaultDate);
 }
 
 // Add one spend: category, amount, how it was paid. Deliberately that short —
@@ -4022,6 +4043,36 @@ function _reviewMethods(ym, byYm, prevYm) {
 // handful of months on record one holiday, one hospital trip or one deposit
 // drags a mean far enough to make every other month look thrifty.
 
+// The household kitty for one month: the Allocation tab's House Exp doubled
+// (the same figure from each of us), PLUS any emergency draw taken from the
+// Emergency Fund that month.
+//
+// An emergency draw is money that genuinely left the fund and became spendable
+// that month, so a month that had one is not overspending its budget — it had
+// a bigger budget. Without this, the month an emergency happened would be the
+// month the Tracker and Review both shout loudest about, which is both wrong
+// and the least useful moment to be shouted at.
+//
+// Only loanKind 'emergency' counts. A self loan is borrowing for something that
+// could have waited, and a gift to family is money out of the household, not
+// into its spending — neither should quietly raise the budget.
+//
+// `loans` is the raw `emergency` store rows of kind 'loan'; passing them in
+// keeps this pure and lets each surface load them however it already loads.
+function _emergencyDrawIn(ym, loans) {
+  return round2((loans || []).reduce((s, l) => {
+    if (l.kind !== 'loan' || l.loanKind !== 'emergency') return s;
+    if (String(l.takenDate || '').slice(0, 7) !== ym) return s;
+    return s + (Number(l.amount) || 0);
+  }, 0));
+}
+
+function _kittyFor(ym, allocs, loans) {
+  const al = (allocs || []).find((x) => Number(x.year) === Number(String(ym).slice(0, 4)));
+  const share = al ? Number(al.houseExp) || 0 : 0;
+  return round2(share * 2 + _emergencyDrawIn(ym, loans));
+}
+
 // Categories where being "over" isn't a decision anyone can act on this month.
 // The Fixed group is contractual; Medicine is not a lifestyle choice, and
 // listing it under "spend less" would be both useless and crass.
@@ -4137,9 +4188,10 @@ async function renderReview(host, token) {
   const now = new Date();
   const thisYm = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
 
-  const [allocs, allSpends] = await Promise.all([
+  const [allocs, allSpends, efLoans] = await Promise.all([
     DB.all('allocations').catch(() => []),
     DB.all('spends').catch(() => []),
+    DB.byIndex('emergency', 'kind', 'loan').catch(() => []),
   ]);
   if (expRenderStale(token)) return;
 
@@ -4161,10 +4213,7 @@ async function renderReview(host, token) {
 
   // House Exp is per YEAR, so a window spanning a year boundary has more than
   // one kitty in it. Looked up by month rather than assumed constant.
-  const kittyOf = (k) => {
-    const al = (allocs || []).find((x) => Number(x.year) === Number(String(k).slice(0, 4)));
-    return round2((al ? Number(al.houseExp) || 0 : 0) * 2);
-  };
+  const kittyOf = (k) => _kittyFor(k, allocs, efLoans);
   const kitty = kittyOf(ym);
   const a = _reviewAnalysis(ym, byYm, thisYm, kitty, now);
 

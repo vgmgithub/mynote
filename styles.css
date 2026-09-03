@@ -1991,3 +1991,6 @@ html[data-theme="light"] {
 .rvw-meth-amt { flex: 0 0 auto; font-size: 0.74rem; font-weight: 700; white-space: nowrap; }
 .rvw-meth-pct { flex: 0 0 32px; font-size: 0.64rem; color: var(--muted); text-align: right; }
 .rvw-note { font-size: 0.68rem; line-height: 1.5; margin: 8px 0 0; }
+/* Kitty note wraps only when it has an emergency draw to declare — a truncated
+   "10,000 x 2 + 15,0..." would be worse than two short lines. */
+.trk-sum-note.is-wrap { white-space: normal; line-height: 1.3; }
