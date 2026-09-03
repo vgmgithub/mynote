@@ -16,7 +16,7 @@
 //
 //   { id, kind:'loan', loanKind:'self'|'emergency'|'gift',
 //     who, purpose, amount,
-//     takenDate, expectedDate, closedDate,             // closedDate set = settled; else derived from repayments covering the amount
+//     takenDate, expectedDate, closedDate,             // closedDate set = settled; else derived from repayments covering the amount. expectedDate is the agreed TERM, and what an open loan's interest is quoted over - not the same as time elapsed
 //     rate,                                             // % this loan was priced at - stamped from the fund's rate setting when it is saved, so changing that later never re-prices a loan already agreed
 //     interestOverride,                                 // optional — replaces the computed figure outright when reality differed from the rule
 //     interestPaid,                                     // ₹ interest actually collected
@@ -140,9 +140,25 @@ export function computeLoan(loan, nowMs, defaultRate) {
   const interest = isClosed ? interestAccrued : interestProjected;
   const interestPaid = Number(loan.interestPaid) || 0;
 
+  // Three different month counts, which is the whole source of confusion on an
+  // open loan and so all three are handed out rather than one being made to
+  // stand for the others:
+  //   monthsElapsed - how long it has actually been out. 0 in the month it was
+  //                   taken, whatever its term.
+  //   plannedMonths - the term agreed, taken to expected back.
+  //   quotedMonths  - what the INTEREST FIGURE is priced over, which for an
+  //                   open loan is the term and for a settled one is how long
+  //                   it really ran.
+  // A card that prints one of these next to a figure priced on another reads as
+  // a bug: a loan taken this month for six months is "0 months in" and costs a
+  // 2x band, both true at once.
+  const plannedMonths = loan.expectedDate ? monthsBetween(loan.takenDate, loan.expectedDate) : null;
+  const quotedMonths = monthsBetween(loan.takenDate, projectThrough);
+
   return {
     amount: amt, repaid, outstanding, isClosed, closureDate, lastRepay,
     monthsElapsed, multiplier: multiplierFor(monthsElapsed),
+    plannedMonths, quotedMonths, quotedMultiplier: multiplierFor(quotedMonths),
     freeMonths,
     // The rate this loan is actually priced at, so callers can show the
     // arithmetic without repeating the fallback chain.

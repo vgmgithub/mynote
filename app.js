@@ -7813,18 +7813,30 @@ function efLoansTab(c, mod) {
 function efLoanCard(l, mod) {
   const r = l.rec;
   const kindLabel = (mod.EF_KINDS.find(([v]) => v === r.loanKind) || [null, r.loanKind || 'Loan'])[1];
+  // "0m" on its own reads as a loan with no term, which is what it looked like
+  // on one taken this month. Elapsed OF the term agreed says the real thing:
+  // none of it has run yet, out of the six months it is meant to.
+  const span = l.isClosed
+    ? 'ran ' + l.monthsElapsed + (l.monthsElapsed === 1 ? ' month' : ' months')
+    : (l.plannedMonths != null
+      ? l.monthsElapsed + ' of ' + l.plannedMonths + (l.plannedMonths === 1 ? ' month' : ' months')
+      : l.monthsElapsed + 'm in · no return date');
   const badge = l.isClosed
     ? el('span', { class: 'badge muted mf-beat', text: 'closed' })
     : l.overdue
       ? el('span', { class: 'badge bad mf-beat', text: 'overdue' })
       : l.isFree
         ? el('span', { class: 'badge good mf-beat', text: l.freeMonthsLeft <= 1 ? 'free · ' + l.freeMonthsLeft + 'm left' : 'interest-free' })
-        : el('span', { class: 'badge warn mf-beat', text: l.multiplier + '× band' });
+        // The band the figure beside it is priced at, which on an open loan is
+        // the one it reaches by its expected date - not today's. Labelled, so
+        // it cannot be read as the band already being charged.
+        : el('span', { class: 'badge warn mf-beat',
+            text: l.isClosed ? l.multiplier + '× band' : l.quotedMultiplier + '× at return' });
   return el('div', { class: 'card', onclick: () => openEfLoanForm(r) }, [
     el('div', { class: 'top' }, [
       el('div', { class: 'card-left' }, [
         el('div', { class: 'name', text: (r.who || '—') + ' · ' + (r.purpose || 'Loan') }),
-        el('div', { class: 'cat mf-catline' }, [kindLabel + ' · ' + l.monthsElapsed + 'm', badge]),
+        el('div', { class: 'cat mf-catline' }, [kindLabel + ' · ' + span, badge]),
       ]),
       el('div', { class: 'card-right' }, [
         el('div', { class: 'pct ' + (l.interest > 0 ? 'warn' : 'pos'), text: l.interest > 0 ? fmtIntCur(l.interest) : '₹0' }),
@@ -8372,7 +8384,11 @@ async function openEfLoanForm(existing) {
     readout.appendChild(el('div', { class: 'mf-bench-now' }, [
       el('span', {}, ['Outstanding ', b(fmtIntCur(c.outstanding))]),
       el('span', {}, [c.isClosed ? 'Interest ' : 'If repaid on time ', b(fmtIntCur(c.interest))]),
-      el('span', {}, [c.monthsElapsed + 'm · ', b(c.multiplier + '×')]),
+      // Elapsed of term, and the band the figure to its left is priced at.
+      el('span', {}, [(c.isClosed || c.plannedMonths == null
+        ? c.monthsElapsed + 'm'
+        : c.monthsElapsed + '/' + c.plannedMonths + 'm') + ' · ',
+        b((c.isClosed ? c.multiplier : c.quotedMultiplier) + '×')]),
     ]));
     // The interest is DERIVED, so show the arithmetic — a wrong date silently
     // changes the band, and that's invisible otherwise.
@@ -8381,14 +8397,23 @@ async function openEfLoanForm(existing) {
         `Interest-free for the first ${c.freeMonths} months` + (c.isClosed ? ' — settled inside that window.' : ` · ${c.freeMonthsLeft} month${c.freeMonthsLeft === 1 ? '' : 's'} left before interest starts.`) }));
     } else if (!c.isOverridden && rec.amount > 0) {
       const rt = c.rate;
+      // Priced over the months the QUOTED figure covers - the term for an open
+      // loan, how long it ran for a settled one. Using elapsed months here
+      // printed arithmetic that did not come to the number above it: a loan
+      // taken this month for six showed "x 1 (0 months)" beside a figure
+      // charged at a 2x band.
+      const mult = c.isClosed ? c.multiplier : c.quotedMultiplier;
+      const mos = c.isClosed ? c.monthsElapsed : c.quotedMonths;
       readout.appendChild(el('p', { class: 'hint', text:
-        `${fmtIntCur(rec.amount)} × ${rt}% × ${c.multiplier} (${c.monthsElapsed} months) = ${fmtIntCur(rec.amount * (rt / 100) * c.multiplier)}, rounded up to ${fmtIntCur(c.interest)}.` }));
+        `${fmtIntCur(rec.amount)} × ${rt}% × ${mult} (${mos} month${mos === 1 ? '' : 's'}${c.isClosed ? '' : ' to the expected date'}) = ${fmtIntCur(rec.amount * (rt / 100) * mult)}, rounded up to ${fmtIntCur(c.interest)}.` }));
     }
     if (c.isOverridden) readout.appendChild(el('p', { class: 'hint warn', text: 'This loan has an interest figure entered by hand, so the rule above is not applied to it.' }));
     if (c.overdue) readout.appendChild(el('p', { class: 'hint warn', text: 'Past its expected return date.' }));
     if (!c.isClosed && !c.isFree) {
-      const nextBand = (Math.floor(c.monthsElapsed / 3) + 1) * 3;
-      readout.appendChild(el('p', { class: 'hint', text: `Next band at ${nextBand + 1} months → ${c.multiplier + 1}× interest.` }));
+      // Measured from the quoted months, so it reads as the next step UP from
+      // the price shown rather than from a band already passed.
+      const nextBand = (Math.floor(c.quotedMonths / 3) + 1) * 3;
+      readout.appendChild(el('p', { class: 'hint', text: `Held past ${nextBand} months and it moves to a ${c.quotedMultiplier + 1}× band.` }));
     }
   };
   [amount, takenDate, expectedDate, interestPaid, closedDate].forEach((i) => i.addEventListener('input', refresh));
