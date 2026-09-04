@@ -6,7 +6,7 @@
 //   { id, name,                                  // 'Swiggy HDFC CC'
 //     bank,                                      // 'HDFC' — the issuer, several cards can share one
 //     creditLimit,                               // ₹ sanctioned limit (optional — blank means "not tracked")
-//     cycleStartDay, cycleEndDay,                 // billing cycle, e.g. 5 -> 4 (day-of-month, 1-31). Drives cycleWindow(), which is what decides whether a spend is on this month's bill or last month's
+//     cycleStartDay, cycleEndDay,                 // billing cycle, e.g. 8 -> 7 (day-of-month, 1-31). Drives cycleWindow(), which decides which statement a spend lands on. A statement is named for the month its cycle CLOSES in - the month the bill is paid
 //     months: [{ ym:'YYYY-MM', billed, status, paidOn }],  // one row per statement month
 //     createdAt, updatedAt }
 //
@@ -60,17 +60,18 @@ export function monthRangeYm(fromYm, toYm) {
 
 // The dates a statement labelled `ym` actually covers on THIS card.
 //
-// A bill does not run 1st to 31st. A cycle of 5 → 4 means the August
-// statement covers 5 Aug to 4 Sep, so a swipe on the 2nd of August is on
-// JULY's bill and one on the 2nd of September is still on August's. Checking
+// A bill does not run 1st to 31st. A cycle of 8 → 7 closing in September
+// covers 8 Aug to 7 Sep, so a swipe on the 2nd of September is on SEPTEMBER's
+// bill while one on the 10th of September is already on October's. Checking
 // logged spends against a statement by calendar month therefore compares two
 // different sets of days and always disagrees, however carefully the spends
 // were entered.
 //
-// The statement is labelled by the month its cycle OPENS in, which is how the
-// day pair on the card reads: "5 – 4" starting in August is August's bill.
-// A cycle whose end day is not before its start (1 – 31, or 1 – 30)
-// closes inside its own month.
+// The statement is labelled by the month its cycle CLOSES in, because that is
+// the month the bill is paid and so the month anyone means when they say "the
+// September bill". A cycle of 8 – 7 labelled September therefore starts
+// on 8 August. A cycle whose end day is not before its start (1 – 31, or
+// 1 – 30) opens and closes inside the one month either way.
 //
 // With no cycle recorded the calendar month is used and `isCycle` says so:
 // nothing is known about when this card closes, and inventing a window would
@@ -90,8 +91,10 @@ export function cycleWindow(ym, card) {
     return { from: iso(y, mo, 1), to: iso(y, mo, lastDay(y, mo)), isCycle: false, startDay: null, endDay: null };
   }
   if (ed >= sd) return { from: iso(y, mo, sd), to: iso(y, mo, ed), isCycle: true, startDay: sd, endDay: ed };
-  const ny = mo === 12 ? y + 1 : y, nm = mo === 12 ? 1 : mo + 1;
-  return { from: iso(y, mo, sd), to: iso(ny, nm, ed), isCycle: true, startDay: sd, endDay: ed };
+  // Spans two months, and `ym` is the one it CLOSES in - so it opened in the
+  // month before, which rolls the year back in January.
+  const py = mo === 1 ? y - 1 : y, pm = mo === 1 ? 12 : mo - 1;
+  return { from: iso(py, pm, sd), to: iso(y, mo, ed), isCycle: true, startDay: sd, endDay: ed };
 }
 
 // Is this date inside that window? Kept beside it so callers cannot invent a

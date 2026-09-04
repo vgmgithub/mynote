@@ -2456,8 +2456,14 @@ async function renderPfCardCheck(host, token) {
   const [{ rows: pRows, byYm, cards }, houseRows] = await Promise.all([pfLoad(), DB.all('spends').catch(() => [])]);
   if (pfRenderStale(token)) return;
 
-  const months = pfMonths(byYm, thisYm, mod);
-  if (!_pfYm || !months.includes(_pfYm)) _pfYm = months[months.length - 1];
+  // One month PAST the current one, unlike the other tabs. A cycle that closes
+  // on the 7th means a swipe today is on next month's bill, and the statement
+  // being accumulated right now has to be reachable or the newest spends look
+  // as though they went nowhere.
+  const nd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const nextYm = nd.getFullYear() + '-' + String(nd.getMonth() + 1).padStart(2, '0');
+  const months = pfMonths(byYm, thisYm, mod).concat([nextYm]);
+  if (!_pfYm || !months.includes(_pfYm)) _pfYm = thisYm;
   const ym = _pfYm;
 
   // Same month strip as the other tabs. It matters more here than anywhere:
@@ -2472,7 +2478,7 @@ async function renderPfCardCheck(host, token) {
   timelineWrap.appendChild(el('div', { class: 'cc-timeline' }, months.slice().reverse().map((k) => el('button', {
     type: 'button',
     class: 'cc-timeline-chip' + (k === ym ? ' active' : '') + (k === thisYm ? ' is-current' : '')
-      + (totalOf(k) > 0 ? ' has-data' : ''),
+      + (k > thisYm ? ' is-ahead' : '') + (totalOf(k) > 0 ? ' has-data' : ''),
     text: mod.monthLabel(k),
     onclick: () => { if (k === ym) return; _pfYm = k; _pfTimelineClicked = true; renderPersonal(); },
   }))));
@@ -2543,7 +2549,7 @@ async function renderPfCardCheck(host, token) {
   });
 
   host.appendChild(el('p', { class: 'hint mf-foot', text: anyBilled
-    ? 'Each card is read over its OWN billing cycle, shown under its name — so a swipe early in the month can belong to last month\u2019s bill, and one just after the month turns can still be on this one. That is also why these card figures differ from the Spends tab, which measures a calendar month because the allowance is monthly. Logged is what the two trackers hold for that card in the window: household spends from the Tracker, personal ones from here. Nothing is written back to the card — the statement already contains every swipe, so adding a logged spend to it would count the same one twice. The gap is what was swiped and never written down.'
+    ? 'Each card is read over its OWN billing cycle, shown under its name, and a statement is named for the month it CLOSES in — the month you pay it. So a swipe early in the month is usually on that month\u2019s bill, while one later in it is already on next month\u2019s. That is also why these card figures differ from the Spends tab, which measures a calendar month because the allowance is monthly. Logged is what the two trackers hold for that card in the window: household spends from the Tracker, personal ones from here. Nothing is written back to the card — the statement already contains every swipe, so adding a logged spend to it would count the same one twice. The gap is what was swiped and never written down.'
     : 'Enter the month\u2019s billed figure on a card (Expense \u2192 Credit Card \u2192 tap a card \u2192 Months) and this will tell you how much of that bill your two trackers actually explain, read over the card\u2019s own billing cycle.' }));
   if (!anyCycle) {
     host.appendChild(el('p', { class: 'hint warn rvw-note', text: 'None of these cards has a billing cycle set, so each is being read as a calendar month. Add the cycle days on the card (Expense \u2192 Credit Card \u2192 tap a card) and the comparison lines up with what the bank actually bills.' }));
@@ -10043,7 +10049,7 @@ async function openCreditCardForm(existing) {
     field('Card name', name),
     el('div', { class: 'field-row' }, [field('Bank', bank), field('Credit limit (₹)', creditLimit)]),
     el('div', { class: 'field-row' }, [field('Cycle start day', cycleStartDay), field('Cycle end day', cycleEndDay)]),
-    el('p', { class: 'hint', style: 'margin:-6px 0 0', text: 'Day of month the billing cycle runs, e.g. 5 to 4. Personal Finance → Card check reads this to work out which bill a spend lands on, so a swipe on the 2nd goes to last month’s statement rather than this one.' }),
+    el('p', { class: 'hint', style: 'margin:-6px 0 0', text: 'Day of month the billing cycle runs, e.g. 8 to 7. A statement is named for the month it CLOSES in — the month you pay it — so September’s bill runs 8 Aug to 7 Sep. Personal Finance → Card check reads this to work out which bill each spend lands on.' }),
     readout,
   ]);
   const monthsContent = el('div', { class: 'hidden' }, [
