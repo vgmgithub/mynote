@@ -90,15 +90,63 @@ export function cycleWindow(ym, card) {
   if (!(sd >= 1 && sd <= 31) || !(ed >= 1 && ed <= 31)) {
     return { from: iso(y, mo, 1), to: iso(y, mo, lastDay(y, mo)), isCycle: false, startDay: null, endDay: null };
   }
-  if (ed >= sd) return { from: iso(y, mo, sd), to: iso(y, mo, ed), isCycle: true, startDay: sd, endDay: ed };
+  // A cycle that does not span two months is the calendar month, whole. The
+  // pair recorded gives no basis for splitting one month into two bills, so
+  // counting all of it is the only coherent reading - and it is what
+  // statementYmFor does, which is what keeps the two in step. It also stops
+  // the 31st falling out of every statement on a card entered as 1 to 30.
+  if (ed >= sd) return { from: iso(y, mo, 1), to: iso(y, mo, lastDay(y, mo)), isCycle: true, startDay: sd, endDay: ed };
   // Spans two months, and `ym` is the one it CLOSES in - so it opened in the
   // month before, which rolls the year back in January.
+  //
+  // The window ENDS the day before the next cycle opens, not on the recorded
+  // end day. On a real card those are the same day (8 to 7, 21 to 20), so this
+  // changes nothing for one. It matters for a pair that does not meet - 10 to
+  // 5 leaves the 6th to the 9th in no cycle at all - where the recorded end
+  // day would drop those four days out of every statement, and a spend on one
+  // of them would vanish from the Card check while still counting on the
+  // Spends tab. What actually rolls a statement over is the START day, so that
+  // is what bounds the window; the recorded end day stays for the label.
   const py = mo === 1 ? y - 1 : y, pm = mo === 1 ? 12 : mo - 1;
-  return { from: iso(py, pm, sd), to: iso(y, mo, ed), isCycle: true, startDay: sd, endDay: ed };
+  return { from: iso(py, pm, sd), to: iso(y, mo, sd - 1), isCycle: true, startDay: sd, endDay: ed };
 }
 
-// Is this date inside that window? Kept beside it so callers cannot invent a
-// subtly different comparison (inclusive at one end, exclusive at the other).
+// Which statement a date falls on: the inverse of cycleWindow, so it can
+// answer "which month does this spend count in" without walking every month.
+// The two MUST agree - inCycleWindow(d, cycleWindow(statementYmFor(d, c), c))
+// is true for every date, which is what stops a spend being counted twice or
+// dropping out of every month.
+//
+// On a 21 – 20 card, the 25th of August is on the statement that closes on
+// 20 September, so it counts as September's money. The 22nd of September is
+// already on October's.
+export function statementYmFor(dateISO, card) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateISO || '');
+  if (!m) return '';
+  const y = +m[1], mo = +m[2], d = +m[3];
+  const ym = (yy, mm) => yy + '-' + String(mm).padStart(2, '0');
+  const sd = Number(card && card.cycleStartDay) || 0;
+  const ed = Number(card && card.cycleEndDay) || 0;
+  // No cycle recorded, or one that opens and closes inside its own month: the
+  // calendar month is all there is to go on.
+  if (!(sd >= 1 && sd <= 31) || !(ed >= 1 && ed <= 31) || ed >= sd) return ym(y, mo);
+  // Spans two months. On or after the opening day the cycle has rolled over,
+  // and the statement it belongs to closes NEXT month - which is the month it
+  // is named for. Anything earlier is still inside the cycle that closes this
+  // month, including the days of a cycle with a gap in it (start 10, end 5
+  // leaves the 6th to the 9th, which belong to the bill just closed).
+  if (d >= sd) {
+    const ny = mo === 12 ? y + 1 : y, nm = mo === 12 ? 1 : mo + 1;
+    return ym(ny, nm);
+  }
+  return ym(y, mo);
+}
+
+// Is this date inside that window? For DISPLAY questions only - "does this
+// belong on that bill" is statementYmFor's to answer, and having one rule
+// decide membership is what stops two nearly-identical date tests disagreeing
+// on an edge (a cycle whose days clamp in a short month can produce windows
+// that overlap by a day; the mapping never double-counts).
 export function inCycleWindow(dateISO, win) {
   const d = String(dateISO || '').slice(0, 10);
   return !!win && /^\d{4}-\d{2}-\d{2}$/.test(d) && d >= win.from && d <= win.to;

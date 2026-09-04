@@ -1924,28 +1924,66 @@ async function renderPersonal() {
 // hundred a year, so loading every month costs less than a read per month and
 // the month-on-month comparisons need the history anyway.
 async function pfLoad() {
+  const mod = await import('./credit.js');
   const [rows, allocs, cards, upiLimit] = await Promise.all([
     DB.all('personalSpends').catch(() => []),
     DB.all('allocations').catch(() => []),
     DB.all('creditCards').catch(() => []),
     _pfUpiLimit(),
   ]);
-  const byYm = new Map();
+
+  // Which month a spend is COUNTED in, which is not the same question as when
+  // it happened - and differs by how it was paid, because the two allowances
+  // run on different clocks:
+  //
+  //   UPI  - a calendar-month allowance, so it counts in the month of the
+  //          spend. 1 Sep to 30 Sep is September.
+  //   Card - the allowance is really a bill, so it counts on the statement
+  //          that bill lands on: that card's own cycle. On a 21-20 card, the
+  //          25th of August is September's money and the 22nd of September is
+  //          October's. Two cards on different cycles therefore split the same
+  //          calendar month differently, which is correct rather than untidy.
+  //
+  // A card spend with no card chosen, or on a card with no cycle recorded,
+  // falls back to its calendar month: nothing is known about when that bill
+  // closes, and guessing would be worse than saying so.
+  const cardById = new Map((cards || []).map((c) => [c.id, c]));
+  const countedYm = (r) => {
+    const d = String(r.date || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return String(r.ym || '').slice(0, 7);
+    if (r.method !== 'Card' || r.cardId == null) return d.slice(0, 7);
+    const card = cardById.get(r.cardId);
+    return card ? mod.statementYmFor(d, card) : d.slice(0, 7);
+  };
+
+  const byYm = new Map();       // counted months - limits are measured on these
+  const byYmCal = new Map();    // calendar months - see the note below
   (rows || []).forEach((r) => {
-    const k = String(r.ym || '').slice(0, 7);
+    const cal = String(r.ym || '').slice(0, 7);
+    if (/^\d{4}-\d{2}$/.test(cal)) {
+      if (!byYmCal.has(cal)) byYmCal.set(cal, []);
+      byYmCal.get(cal).push(r);
+    }
+    const k = countedYm(r);
     if (!/^\d{4}-\d{2}$/.test(k)) return;
     if (!byYm.has(k)) byYm.set(k, []);
     byYm.get(k).push(r);
   });
-  return { rows: rows || [], byYm, allocs: allocs || [], cards: cards || [], upiLimit };
+  return { rows: rows || [], byYm, byYmCal, allocs: allocs || [], cards: cards || [], upiLimit, countedYm };
 }
 
 // The months the timeline offers: from the month tracking started to this one,
-// plus any month that actually has entries (a back-dated spend must not become
-// unreachable).
+// plus any month that actually holds entries.
+//
+// A month AHEAD of today is offered when it holds counted spends, which is not
+// hypothetical: on a 21-20 card a swipe on the 25th counts on the bill closing
+// next month, so the allowance it eats into is next month's. Filtering those
+// out left today's own spend unreachable. Empty future months stay out - they
+// appear the moment something lands in them, which is when they start to
+// matter.
 function pfMonths(byYm, thisYm, mod) {
-  const out = [...new Set(mod.monthRangeYm(PF_START_YM, thisYm).concat([...byYm.keys()], [thisYm]))]
-    .filter((k) => k <= thisYm).sort();
+  const range = mod.monthRangeYm(PF_START_YM, thisYm).filter((k) => k <= thisYm);
+  const out = [...new Set(range.concat([...byYm.keys()], [thisYm]))].sort();
   return out.length ? out : [thisYm];
 }
 
@@ -2013,7 +2051,7 @@ async function renderPfSpends(host, token) {
   timelineWrap.appendChild(el('div', { class: 'cc-timeline' }, months.slice().reverse().map((k) => el('button', {
     type: 'button',
     class: 'cc-timeline-chip' + (k === ym ? ' active' : '') + (k === thisYm ? ' is-current' : '')
-      + (totalOf(k) > 0 ? ' has-data' : ''),
+      + (k > thisYm ? ' is-ahead' : '') + (totalOf(k) > 0 ? ' has-data' : ''),
     text: mod.monthLabel(k),
     onclick: () => { if (k === ym) return; _pfYm = k; _pfTimelineClicked = true; renderPersonal(); },
   }))));
@@ -2027,6 +2065,24 @@ async function renderPfSpends(host, token) {
     pfLimitCard('Card', '\ud83d\udcb3', t.cardSpent, t.cardLimit, t.cardPct),
     pfLimitCard('UPI', '\ud83d\udcf1', t.upiSpent, t.upiLimit, t.upiPct),
   ]));
+
+  // The two halves are counted over different windows, so the windows are
+  // named. Without this a September list showing a spend dated 25 Aug looks
+  // like a filing mistake rather than the bill it actually lands on.
+  const cycleCards = (cards || []).filter((c) => {
+    const w = mod.cycleWindow(ym, c);
+    return w && w.isCycle;
+  });
+  if (cycleCards.length) {
+    const wins = cycleCards.slice(0, 3).map((c) => {
+      const w = mod.cycleWindow(ym, c);
+      return (c.name || 'Card') + ' ' + _spendDayLabel(w.from) + ' – ' + _spendDayLabel(w.to);
+    });
+    host.appendChild(el('p', { class: 'hint pf-window-note', text: 'UPI counted 1 – '
+      + _daysInYm(ym) + ' ' + _SPEND_MONS[Number(ym.slice(5, 7)) - 1]
+      + ' · card spends on the bill they land on: ' + wins.join(' · ')
+      + (cycleCards.length > 3 ? ' · and ' + (cycleCards.length - 3) + ' more' : '') }));
+  }
 
   // Both together, plus what a day can still take. The per-day figure is the
   // one that changes behaviour on the day, and it is only meaningful while the
@@ -2232,7 +2288,10 @@ async function renderPfLimits(host, token) {
   });
   host.appendChild(table);
   host.appendChild(el('p', { class: 'hint mf-foot', text: 'Card went over in ' + overCard + ' of these ' + rows.length
-    + ' months, UPI in ' + overUpi + '. The card limit is read from the year\u2019s Allocation, so a month before that year was set shows no limit rather than a false pass.' }));
+    + ' months, UPI in ' + overUpi + '. Each month counts UPI over the calendar month and card spends over the bill '
+    + 'they land on, so a card row here matches the statement you actually pay rather than a 1st-to-31st slice of it. '
+    + 'The card limit is read from the year\u2019s Allocation, so a month before that year was set shows no limit '
+    + 'rather than a false pass.' }));
 }
 
 // ---------- Review tab ----------
@@ -2244,7 +2303,7 @@ async function renderPfReview(host, token) {
   const mod = await import('./credit.js');
   const now = new Date();
   const thisYm = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
-  const { byYm, allocs, upiLimit } = await pfLoad();
+  const { byYm, byYmCal, allocs, upiLimit } = await pfLoad();
   if (pfRenderStale(token)) return;
 
   const months = pfMonths(byYm, thisYm, mod);
@@ -2261,7 +2320,7 @@ async function renderPfReview(host, token) {
   timelineWrap.appendChild(el('div', { class: 'cc-timeline' }, months.slice().reverse().map((k) => el('button', {
     type: 'button',
     class: 'cc-timeline-chip' + (k === ym ? ' active' : '') + (k === thisYm ? ' is-current' : '')
-      + (totalOf(k) > 0 ? ' has-data' : ''),
+      + (k > thisYm ? ' is-ahead' : '') + (totalOf(k) > 0 ? ' has-data' : ''),
     text: mod.monthLabel(k),
     onclick: () => { if (k === ym) return; _pfYm = k; _pfTimelineClicked = true; renderPersonal(); },
   }))));
@@ -2299,8 +2358,17 @@ async function renderPfReview(host, token) {
     return;
   }
 
-  const cycle = _reviewCycle(ym, byYm, now, a.isCurrent);
-  const forecast = a.isCurrent ? _reviewForecast(ym, byYm, now, 0, t.limit) : null;
+  // Totals and per-category comparisons run on the COUNTED months above, so
+  // they agree with the Spends and Limits tabs.
+  //
+  // The forecast and the spending cycle run on calendar days instead, and say
+  // so on screen. A day-of-month curve is only defined on a calendar month:
+  // inside one counted month a 21-20 card is 15 days into its own window while
+  // the calendar is on the 4th, and there is no single "today" across two
+  // cards on different cycles. Reading those two sections on calendar days
+  // keeps every figure in them computable and honest.
+  const cycle = _reviewCycle(ym, byYmCal, now, a.isCurrent);
+  const forecast = a.isCurrent ? _reviewForecast(ym, byYmCal, now, 0, t.limit) : null;
   const savings = _reviewSavings(a, cycle, _reviewSmallTickets(ym, byYm), _smallTicketUsual(ym, byYm));
 
   if (forecast) {
@@ -2308,7 +2376,7 @@ async function renderPfReview(host, token) {
     const grade = el('span', { class: 'rvw-grade is-' + f.grade,
       text: f.errPct != null ? f.grade + ' · \u00b1' + f.errPct + '%' : f.grade });
     rvwSection(host, 'pf-forecast', '\ud83d\udd2e', 'Where this month lands', grade, (body) => {
-      const curve = _reviewCurve(ym, byYm, f.day);
+      const curve = _reviewCurve(ym, byYmCal, f.day);
       body.appendChild(el('div', { class: 'rvw-fc' }, [
         el('div', { class: 'rvw-fc-top' }, [
           el('div', {}, [
@@ -2345,11 +2413,13 @@ async function renderPfReview(host, token) {
         el('span', { class: 'rvw-line-mark', text: kind === 'OK' ? '✓' : kind === 'NO' ? '!' : kind === 'UP' ? '\u2191' : kind === 'DOWN' ? '\u2193' : '\u2022' }),
         el('span', { text }),
       ]))));
-      body.appendChild(el('p', { class: 'hint rvw-note', text: f.errPct != null
+      body.appendChild(el('p', { class: 'hint rvw-note', text: (f.errPct != null
         ? 'Only the remainder is estimated, priced from what the same days cost in your last ' + f.months
           + ' months. Tested against those months at the same point, it came out a median ' + f.errPct + '% out.'
         : 'Only the remainder is estimated, priced from what the same days cost in your last ' + f.months
-          + ' months. Too few months to have tested it yet.' }));
+          + ' months. Too few months to have tested it yet.')
+        + ' Counted on CALENDAR days, unlike the totals above — a day-of-month curve needs one month with one '
+        + 'set of days in it, and two cards on different cycles do not share one.' }));
     });
   }
 
@@ -2438,10 +2508,12 @@ async function renderPfReview(host, token) {
           : 'usually ' + cycle.noSpendTypical + ' in a month']);
         body.appendChild(el('div', { class: 'rvw-flat' }, rows.map(([k, v]) =>
           el('div', { class: 'rvw-flat-row' }, [el('span', { text: k }), el('span', { class: 'rvw-flat-meta', text: v })]))));
+        body.appendChild(el('p', { class: 'hint rvw-note', text: 'Counted on calendar days, for the same reason as '
+          + 'the forecast: which day of the month you spend on is a question about the calendar.' }));
       });
   }
 
-  host.appendChild(el('p', { class: 'hint mf-foot', text: 'Each category is compared with its own median month from your own entries — not a target, and not an average, which one unusual month would skew.' }));
+  host.appendChild(el('p', { class: 'hint mf-foot', text: 'Each category is compared with its own median month from your own entries — not a target, and not an average, which one unusual month would skew. Month totals count UPI over the calendar month and card spends over the bill they land on, matching the Spends and Limits tabs.' }));
 }
 
 // ---------- Card check tab ----------
@@ -2506,8 +2578,14 @@ async function renderPfCardCheck(host, token) {
   // on 5 – 4 puts a swipe on the 2nd onto last month's bill, so matching
   // logged spends to a statement by calendar month compares two different sets
   // of days and can never agree however carefully the spends were entered.
-  const sumIn = (rows, id, win) => round2((rows || [])
-    .filter((r) => r.method === 'Card' && r.cardId === id && mod.inCycleWindow(r.date, win))
+  // Membership is decided by statementYmFor and nothing else. cycleWindow is
+  // for SHOWING the period; using it to filter as well meant two functions
+  // could disagree, and on a cycle whose days clamp in a short month (a card
+  // entered as 31 to 30) a single date could fall inside two windows and be
+  // counted on both bills.
+  const sumIn = (rows, cardRec, ym2) => round2((rows || [])
+    .filter((r) => r.method === 'Card' && r.cardId === cardRec.id
+      && mod.statementYmFor(r.date, cardRec) === ym2)
     .reduce((a, r) => a + (Number(r.amount) || 0), 0));
 
   let anyBilled = false, anyCycle = false;
@@ -2517,7 +2595,7 @@ async function renderPfCardCheck(host, token) {
     if (billed > 0) anyBilled = true;
     const win = mod.cycleWindow(ym, c);
     if (win && win.isCycle) anyCycle = true;
-    const house = sumIn(houseRows, c.id, win), personal = sumIn(pRows, c.id, win);
+    const house = sumIn(houseRows, c, ym), personal = sumIn(pRows, c, ym);
     const logged = round2(house + personal);
     const gap = round2(billed - logged);
     const pct = billed > 0 ? Math.min(100, (logged / billed) * 100) : 0;
@@ -9693,12 +9771,13 @@ async function renderCreditCards(host, token) {
   // the card, so it cannot drift from the entries it is a sum of, and cannot
   // double up with the statement figure typed in beside it.
   const loggedOn = (cardRec, ym) => {
-    const win = mod.cycleWindow(ym, cardRec);
+    // statementYmFor decides which bill a spend is on, here as everywhere.
     const sum = (rows) => round2((rows || [])
-      .filter((r) => r.method === 'Card' && r.cardId === cardRec.id && mod.inCycleWindow(r.date, win))
+      .filter((r) => r.method === 'Card' && r.cardId === cardRec.id
+        && mod.statementYmFor(r.date, cardRec) === ym)
       .reduce((a, r) => a + (Number(r.amount) || 0), 0));
     const house = sum(houseSpends), personal = sum(personalSpends);
-    return { win, house, personal, total: round2(house + personal) };
+    return { win: mod.cycleWindow(ym, cardRec), house, personal, total: round2(house + personal) };
   };
 
   if (!cards.length) {

@@ -2364,3 +2364,6 @@ body[data-mode="home"] .home-foot { padding-right: 76px; }
 button.msheet-follow { font-family: inherit; cursor: pointer; }
 .msheet-follow.is-override { border-color: rgba(245,158,11,0.5); color: var(--warn); }
 .msheet-follow.is-override:active { background: rgba(245,158,11,0.16); }
+/* Which window each half of the allowance is counted over. Stated, because a
+   September list can legitimately hold a spend dated 25 August. */
+.pf-window-note { margin: -4px 0 10px; font-size: 0.6rem; line-height: 1.45; }
