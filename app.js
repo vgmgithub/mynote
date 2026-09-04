@@ -1608,6 +1608,9 @@ function goHome() {
 }
 function applyAppMode(mode) {
   state.appMode = mode;
+  // Which screen is up, exposed for CSS. Home is the one screen with no bottom
+  // nav, so the offset the FABs use to clear one is dead space there.
+  document.body.setAttribute('data-mode', mode);
   const isHome = mode === 'home', isStocks = mode === 'stocks', isMF = mode === 'mf', isFD = mode === 'fd', isDiv = mode === 'div', isMetal = mode === 'metal', isBond = mode === 'bond', isEF = mode === 'ef', isBankSav = mode === 'banksav', isInvestment = mode === 'investment', isSavings = mode === 'savings', isExpense = mode === 'expense', isPersonal = mode === 'personal';
   $('#homeView').classList.toggle('hidden', !isHome);
   $('#investmentView').classList.toggle('hidden', !isInvestment);

@@ -2340,3 +2340,18 @@ input.pf-lim-input { width: 100%; padding: 9px 11px; border: 1px solid var(--lin
 .cc-logged-split .rvw-dot { margin: 0 2px 0 6px; }
 .cc-logged-split .rvw-dot:first-child { margin-left: 0; }
 .cc-logged-total { font-weight: 800; }
+
+/* Home is the only screen without a bottom nav, so the 78px every other
+   screen needs to clear one is just a gap underneath the buttons there. They
+   drop to the same 18px inset they already keep from the right edge, which
+   puts them squarely in the footer corner. */
+body[data-mode="home"] .fab { bottom: calc(18px + var(--safe-bottom)); }
+body[data-mode="home"] .fab.fab-personal.is-second { bottom: calc(18px + 56px + 12px + var(--safe-bottom)); }
+/* ...and the page then has to end above them, or the backup line underneath
+   the section cards sits behind the stack. Height of both buttons, their gap
+   and the inset, plus a little air. */
+body[data-mode="home"] #homeView { padding-bottom: calc(18px + 56px + 12px + 56px + 14px + var(--safe-bottom)); }
+/* The buttons are fixed, so on a short page that line can still end up beside
+   them however much padding follows it. Keeping the button column clear makes
+   it wrap early instead of running underneath. */
+body[data-mode="home"] .home-foot { padding-right: 76px; }
