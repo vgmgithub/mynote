@@ -2355,3 +2355,12 @@ body[data-mode="home"] #homeView { padding-bottom: calc(18px + 56px + 12px + 56p
    them however much padding follows it. Keeping the button column clear makes
    it wrap early instead of running underneath. */
 body[data-mode="home"] .home-foot { padding-right: 76px; }
+
+/* ---- Monthly sheet: is this row following its source, or set by hand? ---- */
+/* A derived row is worth nothing if you cannot tell whether the figure in it
+   is live. "auto" says it tracks its source; "set ↻" says someone typed it,
+   and is a button that puts it back to following in one tap. */
+.msheet-follow { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; padding: 1px 5px; border-radius: 999px; font-size: 0.5rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.4px; border: 1px solid var(--line); background: var(--card-2); color: var(--muted); vertical-align: middle; }
+button.msheet-follow { font-family: inherit; cursor: pointer; }
+.msheet-follow.is-override { border-color: rgba(245,158,11,0.5); color: var(--warn); }
+.msheet-follow.is-override:active { background: rgba(245,158,11,0.16); }

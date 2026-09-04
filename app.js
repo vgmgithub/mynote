@@ -3882,15 +3882,14 @@ async function renderExpenseSheet(host, token) {
   // on the way out so a box written before term-rounding existed (the emergency
   // fund's cash arrives as 140600.25999999999) reads back at 2dp.
   const exprOf = (r) => normaliseExpr(sheet[r.key]);
-  // A `single` row holds one plain number and falls back to its derived figure
-  // when nothing has been entered; the rest sum their expression.
-  const hasOwnVal = (r) => sheet[r.key] != null && String(sheet[r.key]).trim() !== '';
   // sumExpr on BOTH kinds, deliberately: a row that used to accumulate "+"
   // terms and is now a single figure still has months holding "70300+70300" on
   // record, and Number() on that is NaN — which would have silently read as
   // zero and quietly changed those months' closing balance.
+  // A `single` row shows its live source while it is following, and its own
+  // figure once it has genuinely been overridden.
   const boxOf = (r) => (r.single
-    ? (hasOwnVal(r) ? sumExpr(sheet[r.key]) : round2(r.fallback || 0))
+    ? (followsSource(r.key, sheet[r.key]) ? round2(r.fallback || 0) : sumExpr(sheet[r.key]))
     : sumExpr(exprOf(r)));
 
   // ---- Month stepper + the shared Fetch ----
@@ -3965,11 +3964,37 @@ async function renderExpenseSheet(host, token) {
   const table = el('div', { class: 'msheet' });
   let credits = 0;
 
-  const saveField = async (key, value) => {
-    await DB.put('monthlySheet', Object.assign({}, sheet, {
-      ym, [key]: value, updatedAt: new Date().toISOString(),
-    }));
+  // Saving a derived row records WHAT THE SOURCE SAID at the time, in
+  // `<key>Src`. That one extra number is what separates the two things a typed
+  // figure can mean:
+  //
+  //   typed 2,500 while the reimbursement was 2,500  -> a copy. Still meant to
+  //     follow, so when the reimbursement moves to 3,500 the row moves with it.
+  //   typed 9,999 while the reimbursement was 2,500  -> a real override, meant
+  //     to stay put whatever the reimbursement does next.
+  //
+  // Without it there is no way to tell them apart, and every row that was ever
+  // touched froze for good - which is exactly the bug this fixes.
+  const saveField = async (key, value, srcAtSave) => {
+    const patch = { ym, [key]: value, updatedAt: new Date().toISOString() };
+    if (srcAtSave !== undefined) patch[key + 'Src'] = value == null ? null : round2(srcAtSave || 0);
+    await DB.put('monthlySheet', Object.assign({}, sheet, patch));
     renderHomeExpense();
+  };
+
+  // Is this row still tracking its source, or has it been deliberately set?
+  // Nothing stored at all follows. A stored figure follows only while it still
+  // matches what the source read when it was saved.
+  //
+  // A row saved before `<key>Src` existed has no record of that, so it counts
+  // as an override and keeps the figure it has - the safe reading, since the
+  // alternative silently rewrites a number the user may have meant. Clearing
+  // the box resumes following.
+  const followsSource = (key, storedRaw) => {
+    if (storedRaw == null || String(storedRaw).trim() === '') return true;
+    const src = sheet[key + 'Src'];
+    if (src == null || String(src).trim() === '') return false;
+    return Math.abs(sumExpr(storedRaw) - (Number(src) || 0)) < 0.005;
   };
 
   // Green rows carry no second box: the headline figure IS the field. They hold
@@ -3978,34 +4003,44 @@ async function renderExpenseSheet(host, token) {
   // `fallback` is what shows when nothing has been entered for this month — In
   // Hand starts from the Allocation salary but is overridable, since actual
   // take-home moves around (a bonus, a deduction) while the plan stays put.
-  const creditInputRow = (label, key, note, fallback) => {
-    const stored = sheet[key];
-    const hasOwn = stored != null && String(stored).trim() !== '';
-    const amount = hasOwn ? Number(stored) || 0 : (fallback || 0);
+  const creditInputRow = (label, key, note, fallback, hasSource) => {
+    const follows = followsSource(key, sheet[key]);
+    const amount = follows ? round2(fallback || 0) : sumExpr(sheet[key]);
     credits += amount;
     const inp = el('input', {
       class: 'msheet-val-input',
       type: 'number', inputmode: 'decimal', step: 'any',
-      value: hasOwn ? amount : '', placeholder: fmtSheetCur(fallback || 0),
+      value: amount, placeholder: fmtSheetCur(fallback || 0),
       'aria-label': label,
     });
     inp.addEventListener('blur', () => {
       const raw = inp.value.trim();
       // Cleared back to empty means "use the planned figure again", not zero.
       const v = raw === '' ? null : round2(num(raw) || 0);
-      if (v !== (hasOwn ? amount : null)) saveField(key, v);
+      if (v !== amount || raw === '') saveField(key, v, fallback);
     });
+    const state = !hasSource ? document.createTextNode('')
+      : follows
+        ? el('span', { class: 'msheet-follow', text: 'auto' })
+        : el('button', {
+            class: 'msheet-follow is-override', type: 'button',
+            title: 'Set by you — tap to follow ' + fmtSheetCur(fallback || 0) + ' again',
+            text: 'set ↻',
+            onclick: (e) => { e.stopPropagation(); saveField(key, null, fallback); },
+          });
     table.appendChild(el('div', { class: 'msheet-row msheet-credit' }, [
       el('div', { class: 'msheet-label' }, [
-        el('span', { text: label }),
+        el('span', {}, [label, state]),
         el('span', { class: 'msheet-note', text: note }),
       ]),
       inp,
     ]));
   };
 
-  creditInputRow('In Hand', 'inHand', planNote + ' · ' + fmtSheetCur(perMonth('salary')), perMonth('salary'));
-  creditInputRow('Virtual Bal', 'virtualBalance', 'you enter', 0);
+  // In Hand follows the Allocation salary; Virtual Bal has no source at all,
+  // so it is a plain typed figure with no "auto" to claim.
+  creditInputRow('In Hand', 'inHand', planNote + ' · ' + fmtSheetCur(perMonth('salary')), perMonth('salary'), true);
+  creditInputRow('Virtual Bal', 'virtualBalance', 'you enter', 0, false);
 
   debitRows.forEach((r) => {
     const expr = exprOf(r);
@@ -4014,22 +4049,37 @@ async function renderExpenseSheet(host, token) {
     // green rows, since with nothing fetching into them a box under a
     // read-only total would just be the number twice.
     if (r.single) {
-      const own = hasOwnVal(r);
+      const follows = followsSource(r.key, sheet[r.key]);
+      // The figure is always IN the box, never only a placeholder. A row
+      // carrying a live 3,500 used to render as an empty field with a grey
+      // hint, which reads as "nothing here" rather than "this is the number".
       const inp = el('input', {
         class: 'msheet-val-input',
         type: 'number', inputmode: 'decimal', step: 'any',
-        value: own ? boxVal : '', placeholder: fmtSheetCur(r.fallback || 0),
+        value: boxVal, placeholder: fmtSheetCur(r.fallback || 0),
         'aria-label': r.label,
       });
       inp.addEventListener('blur', () => {
         const raw = inp.value.trim();
-        // Cleared means "follow the tracker again", not zero.
+        // Cleared means "follow the source again", not zero.
         const v = raw === '' ? null : round2(num(raw) || 0);
-        if (v !== (own ? boxVal : null)) saveField(r.key, v);
+        if (v !== boxVal || raw === '') saveField(r.key, v, r.fallback);
       });
+      // Which state the row is in, and a one-tap way out of an override. Only
+      // shown where there is a source to follow: Loan and Other Expense are
+      // typed figures with nothing behind them.
+      const state = r.fallback == null ? document.createTextNode('')
+        : follows
+          ? el('span', { class: 'msheet-follow', text: 'auto' })
+          : el('button', {
+              class: 'msheet-follow is-override', type: 'button',
+              title: 'Set by you — tap to follow ' + fmtSheetCur(r.fallback || 0) + ' again',
+              text: 'set ↻',
+              onclick: (e) => { e.stopPropagation(); saveField(r.key, null, r.fallback); },
+            });
       table.appendChild(el('div', { class: 'msheet-row msheet-debit' }, [
         el('div', { class: 'msheet-label' }, [
-          el('span', { text: r.label }),
+          el('span', {}, [r.label, state]),
           el('span', { class: 'msheet-note', text: r.note }),
         ]),
         inp,
