@@ -66,6 +66,9 @@ const TRACKER_START_YM = '2024-09';
 // Which half of the Tracker tab is showing. Defaults to the category roll-up:
 // the entry list grows all month, and "where did it go" is the usual question.
 let _trkView = 'category';   // 'category' | 'entries'
+// Entries filter on the Tracker: 'all', 'm:<method>' or 'card:<id>'. Same
+// component as Personal Finance uses.
+let _trkFilter = 'all';
 let _trkYm = null;           // month shown on the Tracker tab; null = this month
 let _trkTimelineClicked = false;
 // Every Expense render takes a ticket. Each tab's renderer loads its data
@@ -1905,6 +1908,63 @@ async function openPfSpendForm(existing, defaultDate) {
   if (!editing) amount.focus();
 }
 
+// ---------- Entries filter, shared by both trackers ----------
+//
+// All, then each way of paying that this month actually used, then one chip per
+// card that has an entry in it.
+//
+// Only options with rows BEHIND them are offered. A chip that filters to
+// nothing is a dead control, and going by what the month holds also means an
+// unused - or deleted - card drops out on its own, with no separate cleanup.
+//
+// A card spend saved without a card picked would otherwise be reachable only
+// under All, so a plain "Card" chip appears whenever any of those exist rather
+// than letting entries hide.
+const SPEND_FILTER_ALL = 'all';
+function spendEntryFilter(rows, cards, current, onPick) {
+  const has = (fn) => (rows || []).some(fn);
+  const opts = [[SPEND_FILTER_ALL, 'All']];
+  SPEND_METHODS.forEach((mth) => {
+    if (mth === 'Card') {
+      if (has((r) => r.method === 'Card' && r.cardId == null)) opts.push(['m:Card', 'Card']);
+    } else if (has((r) => r.method === mth)) {
+      opts.push(['m:' + mth, mth]);
+    }
+  });
+  (cards || []).forEach((c) => {
+    if (has((r) => r.method === 'Card' && r.cardId === c.id)) opts.push(['card:' + c.id, c.name || 'Card']);
+  });
+  const cur = opts.some(([v]) => v === current) ? current : SPEND_FILTER_ALL;
+  const matches = (r) => {
+    if (cur === SPEND_FILTER_ALL) return true;
+    if (cur.slice(0, 2) === 'm:') {
+      const mth = cur.slice(2);
+      return mth === 'Card' ? (r.method === 'Card' && r.cardId == null) : r.method === mth;
+    }
+    return r.method === 'Card' && String(r.cardId) === cur.slice(5);
+  };
+  // Nothing to filter by when every entry in the month is the same thing.
+  const node = opts.length > 1
+    ? el('div', { class: 'pf-filter' }, opts.map(([v, label]) => el('button', {
+        type: 'button', class: 'pf-filter-chip' + (v === cur ? ' active' : ''), text: label,
+        onclick: () => { if (v === cur) return; onPick(v); },
+      })))
+    : null;
+  return { node, matches, current: cur, label: (opts.find(([v]) => v === cur) || [null, 'All'])[1] };
+}
+
+// The line under the chips: what the filter is showing. The figures above an
+// entries list are the whole month's, so without this the two look as though
+// they disagree.
+function spendFilterNote(f, shown, extra) {
+  if (f.current === SPEND_FILTER_ALL) return null;
+  const sum = round2((shown || []).reduce((a, r) => a + (Number(r.amount) || 0), 0));
+  const bits = [f.label + ' · ' + fmtSheetCur(sum) + ' · '
+    + shown.length + (shown.length === 1 ? ' entry' : ' entries')];
+  if (extra) bits.push(extra);
+  return el('p', { class: 'hint pf-filter-note', text: bits.join('  ·  ') });
+}
+
 // ---------- Personal Finance: the section renderer ----------
 async function renderPersonal() {
   if (state.appMode !== 'personal') return;
@@ -2114,42 +2174,20 @@ async function renderPfSpends(host, token) {
   host.appendChild(seg);
 
   if (_pfView === 'entries') {
-    // Cards that could hold an entry, plus the two method-wide choices. A card
-    // deleted since the filter was set falls back to All rather than showing an
-    // empty list with no way to tell why.
-    const opts = [['all', 'All'], ['upi', 'UPI']]
-      .concat((cards || []).map((c) => ['card:' + c.id, c.name || 'Card']));
-    if (!opts.some(([v]) => v === _pfFilter)) _pfFilter = 'all';
-    const matches = (r) => {
-      if (_pfFilter === 'all') return true;
-      if (_pfFilter === 'upi') return r.method === 'UPI';
-      return r.method === 'Card' && String(r.cardId) === _pfFilter.slice(5);
-    };
-    // Only worth a filter row when there is something to filter BY: with no
-    // cards on record the only split is UPI against nothing.
-    if (cards && cards.length) {
-      host.appendChild(el('div', { class: 'pf-filter' }, opts.map(([v, label]) => el('button', {
-        type: 'button', class: 'pf-filter-chip' + (_pfFilter === v ? ' active' : ''), text: label,
-        onclick: () => { if (_pfFilter === v) return; _pfFilter = v; renderPersonal(); },
-      }))));
+    const f = spendEntryFilter(t.rows, cards, _pfFilter, (v) => { _pfFilter = v; renderPersonal(); });
+    _pfFilter = f.current;
+    if (f.node) host.appendChild(f.node);
+    const shown = t.rows.filter(f.matches);
+    // A card filter also names that card's window for the month, which is what
+    // decided which rows are in it.
+    let extra = null;
+    if (f.current.slice(0, 5) === 'card:') {
+      const c = (cards || []).find((x) => String(x.id) === f.current.slice(5));
+      const w = c ? mod.cycleWindow(ym, c) : null;
+      if (w) extra = _spendDayLabel(w.from) + ' – ' + _spendDayLabel(w.to);
     }
-
-    const shown = t.rows.filter(matches);
-    // What the filter is actually showing, since the figures above it are the
-    // whole month's and would otherwise look like they disagree.
-    if (_pfFilter !== 'all') {
-      const sum = round2(shown.reduce((a, r) => a + (Number(r.amount) || 0), 0));
-      const label = (opts.find(([v]) => v === _pfFilter) || [null, ''])[1];
-      const bits = [label + ' · ' + fmtSheetCur(sum) + ' · '
-        + shown.length + (shown.length === 1 ? ' entry' : ' entries')];
-      // A card's own window for this month, which is what decides the rows.
-      if (_pfFilter.startsWith('card:')) {
-        const c = (cards || []).find((x) => String(x.id) === _pfFilter.slice(5));
-        const w = c ? mod.cycleWindow(ym, c) : null;
-        if (w) bits.push(_spendDayLabel(w.from) + ' – ' + _spendDayLabel(w.to));
-      }
-      host.appendChild(el('p', { class: 'hint pf-filter-note', text: bits.join('  ·  ') }));
-    }
+    const note = spendFilterNote(f, shown, extra);
+    if (note) host.appendChild(note);
     if (!shown.length) {
       host.appendChild(el('p', { class: 'hint', style: 'text-align:center;padding:14px 0',
         text: 'Nothing on this filter for ' + mod.monthLabel(ym) + '.' }));
@@ -4569,8 +4607,18 @@ async function renderSpendTracker(host, token) {
     ]));
   });
   // ---- Every entry, newest first ----
+  // Filtered by how it was paid, and by which card. Built whether or not the
+  // entries view is showing, since which one is on screen is decided below -
+  // the filter row goes in the same wrapper so it travels with the list.
+  const entriesWrap = el('div', {});
+  const trkFilter = spendEntryFilter(spends, cards, _trkFilter, (v) => { _trkFilter = v; renderHomeExpense(); });
+  _trkFilter = trkFilter.current;
+  if (trkFilter.node) entriesWrap.appendChild(trkFilter.node);
+  const shownSpends = spends.filter(trkFilter.matches);
+  const trkNote = spendFilterNote(trkFilter, shownSpends);
+  if (trkNote) entriesWrap.appendChild(trkNote);
   const list = el('div', { class: 'msheet' });
-  spends.forEach((r) => {
+  shownSpends.forEach((r) => {
     list.appendChild(el('div', { class: 'msheet-row trk-entry is-tappable', onclick: () => openSpendForm(budget, r) }, [
       el('div', { class: 'msheet-label' }, [
         el('span', { text: r.category || '—' }),
@@ -4597,7 +4645,12 @@ async function renderSpendTracker(host, token) {
       ]),
     ]));
   });
-  host.appendChild(_trkView === 'entries' ? list : catWrap);
+  if (!shownSpends.length) {
+    list.appendChild(el('p', { class: 'hint', style: 'text-align:center;padding:14px 0;margin:0',
+      text: 'Nothing on this filter for ' + mod.monthLabel(ym) + '.' }));
+  }
+  entriesWrap.appendChild(list);
+  host.appendChild(_trkView === 'entries' ? entriesWrap : catWrap);
 
   // ---- Insights: this month read against the ones before it ----
   // Only under the category view — they're commentary on that roll-up, and the
