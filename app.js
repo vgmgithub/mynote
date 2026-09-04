@@ -1638,9 +1638,15 @@ function applyAppMode(mode) {
   $('#efAddBtn').classList.toggle('hidden', !isEF || _efTab === 'fund' || _efTab === 'terms');
   $('#bankSavAddBtn').classList.toggle('hidden', !isBankSav);
   $('#ccAddBtn').classList.toggle('hidden', !isExpense || _expTab !== 'cc');
-  // Logging a spend is the whole point of the Spends tab; the other three are
-  // settings and reports, where a + would add nothing.
-  $('#pfAddBtn').classList.toggle('hidden', !isPersonal || _pfTab !== 'spends');
+  // Reachable from Home as well as its own Spends tab, for the same reason the
+  // household one is: logging a spend is the most frequent thing done in the
+  // app, and burying it three taps deep is how a tracker stops being kept up.
+  // The other three Personal tabs are settings and reports, where a + would
+  // add nothing.
+  $('#pfAddBtn').classList.toggle('hidden', !(isHome || (isPersonal && _pfTab === 'spends')));
+  // On Home the corner slot is the household spend button's, so this one takes
+  // the seat beside it. In its own section it is alone and sits in the corner.
+  $('#pfAddBtn').classList.toggle('is-second', isHome);
   // Reachable from Home as well as the Tracker tab: logging a spend is the
   // most frequent thing done in the app, and burying it three taps deep is how
   // a tracker stops being kept up to date.
