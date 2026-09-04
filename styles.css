@@ -2235,3 +2235,74 @@ html[data-theme="light"] {
 textarea.note-input { display: block; width: 100%; min-height: 44px; background: transparent; border: none; padding: 0; color: var(--text); font-family: inherit; font-size: 0.9rem; line-height: 1.5; resize: none; outline: none; overflow-y: auto; }
 textarea.note-input::placeholder { color: var(--muted); opacity: 0.7; }
 .note-field-foot { font-size: 0.58rem; color: var(--muted); margin-top: 7px; }
+
+/* ---- Personal Finance ---- */
+/* Six groups of personal categories, coloured so the roll-up is scannable
+   without reading it. Separate hues from the household set on purpose: the two
+   trackers should not look like the same list at a glance. */
+.pf-g-food     { --g: #fb7185; }
+.pf-g-shopping { --g: #38bdf8; }
+.pf-g-travel   { --g: #34d399; }
+.pf-g-health   { --g: #a78bfa; }
+.pf-g-fun      { --g: #f59e0b; }
+.pf-g-other    { --g: #64748b; }
+.rvw-dot.is-house { background: #60a5fa; }
+.rvw-dot.is-personal { background: #f59e0b; }
+
+/* Two allowances side by side, because half-checking one is how a month comes
+   in "under" while the card is 3,000 over. */
+.pf-lims { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 2px 0 8px; }
+.pf-lim { background: var(--card); border: 1px solid var(--line); border-radius: 11px; padding: 9px 11px; min-width: 0; }
+.pf-lim.is-over { border-color: var(--bad); }
+.pf-lim-top { display: flex; align-items: baseline; gap: 5px; }
+.pf-lim-ico { font-size: 0.8rem; flex: 0 0 auto; }
+.pf-lim-name { font-size: 0.62rem; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; flex: 1; }
+.pf-lim-fig { font-size: 0.72rem; font-weight: 800; white-space: nowrap; }
+.pf-lim-track { height: 6px; border-radius: 999px; background: var(--card-2); overflow: hidden; margin: 7px 0 5px; }
+.pf-lim-fill { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
+.pf-lim.is-over .pf-lim-fill { background: var(--bad); }
+.pf-lim-foot { font-size: 0.6rem; color: var(--muted); font-weight: 600; }
+.pf-lim.is-over .pf-lim-foot { color: var(--bad); }
+/* The two read together, plus what a day can still take - the figure that
+   actually changes a decision on the day. */
+.pf-both { font-size: 0.68rem; font-weight: 700; color: var(--muted); text-align: center; padding: 8px 10px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; margin: 0 0 10px; }
+.pf-both.is-over { color: var(--bad); border-color: var(--bad); }
+
+/* Limits tab: both figures editable, Save appearing only once one changes. */
+.pf-lim-form { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 13px; }
+.pf-lim-edit { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.pf-lim-edit-cell { min-width: 0; }
+.pf-lim-edit-lbl { font-size: 0.66rem; font-weight: 700; color: var(--muted); margin-bottom: 5px; }
+input.pf-lim-input { width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; background: var(--card-2); color: var(--text); font-size: 1rem; font-weight: 800; }
+.pf-lim-edit-sub { font-size: 0.56rem; color: var(--muted); margin-top: 4px; line-height: 1.35; }
+.pf-lim-form-foot { display: flex; justify-content: flex-end; margin-top: 11px; }
+.pf-lim-save { padding: 8px 14px; font-size: 0.76rem; }
+
+/* Month by month against the limits: four columns, over months marked. */
+.pf-hist { border: 1px solid var(--line); border-radius: 11px; overflow: hidden; }
+.pf-hist-row { display: grid; grid-template-columns: 1.1fr 1fr 1fr 1fr; gap: 6px; padding: 8px 11px; border-bottom: 1px solid var(--line); font-size: 0.74rem; font-weight: 600; background: var(--card); }
+.pf-hist-row:last-child { border-bottom: none; }
+.pf-hist-row.is-head { background: var(--card-2); font-size: 0.6rem; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
+.pf-hist-row span:not(:first-child) { text-align: right; }
+.pf-hist-row .is-bad { color: var(--bad); font-weight: 800; }
+.pf-hist-row .is-good { color: var(--good); }
+
+/* Card check: one bar per card, house and personal stacked inside the bill. */
+.pf-card-check { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 11px 13px; margin-bottom: 8px; }
+.pf-cc-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.pf-cc-name { font-size: 0.85rem; font-weight: 700; }
+.pf-cc-billed { font-size: 0.7rem; font-weight: 700; color: var(--muted); white-space: nowrap; }
+/* The track is the BILL; what the two trackers explain fills it from the left,
+   so the empty remainder is literally the unaccounted part. */
+.pf-cc-track { display: flex; height: 9px; border-radius: 999px; overflow: hidden; background: var(--card-2); margin: 9px 0 7px; }
+.pf-cc-fill.is-house { background: #60a5fa; }
+.pf-cc-fill.is-personal { background: #f59e0b; }
+.pf-cc-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.64rem; color: var(--muted); font-weight: 600; }
+.pf-cc-gap { margin-top: 8px; font-size: 0.66rem; font-weight: 700; color: var(--muted); line-height: 1.4; }
+.pf-cc-gap.is-gap { color: var(--warn); }
+.pf-cc-gap.is-overlogged { color: var(--bad); }
+.pf-cc-gap.is-ok { color: var(--good); }
+
+@media (max-width: 340px) {
+  .pf-lims, .pf-lim-edit { grid-template-columns: 1fr; }
+}

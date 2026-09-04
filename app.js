@@ -1608,11 +1608,12 @@ function goHome() {
 }
 function applyAppMode(mode) {
   state.appMode = mode;
-  const isHome = mode === 'home', isStocks = mode === 'stocks', isMF = mode === 'mf', isFD = mode === 'fd', isDiv = mode === 'div', isMetal = mode === 'metal', isBond = mode === 'bond', isEF = mode === 'ef', isBankSav = mode === 'banksav', isInvestment = mode === 'investment', isSavings = mode === 'savings', isExpense = mode === 'expense';
+  const isHome = mode === 'home', isStocks = mode === 'stocks', isMF = mode === 'mf', isFD = mode === 'fd', isDiv = mode === 'div', isMetal = mode === 'metal', isBond = mode === 'bond', isEF = mode === 'ef', isBankSav = mode === 'banksav', isInvestment = mode === 'investment', isSavings = mode === 'savings', isExpense = mode === 'expense', isPersonal = mode === 'personal';
   $('#homeView').classList.toggle('hidden', !isHome);
   $('#investmentView').classList.toggle('hidden', !isInvestment);
   $('#savingsView').classList.toggle('hidden', !isSavings);
   $('#expenseView').classList.toggle('hidden', !isExpense);
+  $('#pfView').classList.toggle('hidden', !isPersonal);
   $('#mfView').classList.toggle('hidden', !isMF);
   $('#fdView').classList.toggle('hidden', !isFD);
   $('#divView').classList.toggle('hidden', !isDiv);
@@ -1629,6 +1630,7 @@ function applyAppMode(mode) {
   $('#bondBottomNav').classList.toggle('hidden', !isBond);
   $('#efBottomNav').classList.toggle('hidden', !isEF);
   $('#expBottomNav').classList.toggle('hidden', !isExpense);
+  $('#pfBottomNav').classList.toggle('hidden', !isPersonal);
   $('#mfAddBtn').classList.toggle('hidden', !isMF);
   $('#mfFetchBtn').classList.toggle('hidden', !isMF);
   $('#fdAddBtn').classList.toggle('hidden', !isFD);
@@ -1636,13 +1638,16 @@ function applyAppMode(mode) {
   $('#efAddBtn').classList.toggle('hidden', !isEF || _efTab === 'fund' || _efTab === 'terms');
   $('#bankSavAddBtn').classList.toggle('hidden', !isBankSav);
   $('#ccAddBtn').classList.toggle('hidden', !isExpense || _expTab !== 'cc');
+  // Logging a spend is the whole point of the Spends tab; the other three are
+  // settings and reports, where a + would add nothing.
+  $('#pfAddBtn').classList.toggle('hidden', !isPersonal || _pfTab !== 'spends');
   // Reachable from Home as well as the Tracker tab: logging a spend is the
   // most frequent thing done in the app, and burying it three taps deep is how
   // a tracker stops being kept up to date.
   $('#spendAddBtn').classList.toggle('hidden', !(isHome || (isExpense && _expTab === 'tracker')));
   if (!isMetal) $('#metalAddBtn').classList.add('hidden'); // renderMetal shows it on Gold/Silver only
   $('#backBtn').classList.toggle('hidden', isHome);
-  $('#appTitle').innerHTML = isHome ? '' : (isInvestment ? 'Investment' : isSavings ? 'Savings' : isExpense ? 'Expense' : isMF ? 'Mutual&nbsp;Funds' : isFD ? 'Fixed&nbsp;Deposits' : isDiv ? 'Dividends' : isMetal ? 'Metals' : isBond ? 'Bonds' : isEF ? 'Emergency&nbsp;Fund' : isBankSav ? 'Bank&nbsp;Savings' : 'MyNotes');
+  $('#appTitle').innerHTML = isHome ? '' : (isInvestment ? 'Investment' : isSavings ? 'Savings' : isExpense ? 'Expense' : isPersonal ? 'Personal&nbsp;Finance' : isMF ? 'Mutual&nbsp;Funds' : isFD ? 'Fixed&nbsp;Deposits' : isDiv ? 'Dividends' : isMetal ? 'Metals' : isBond ? 'Bonds' : isEF ? 'Emergency&nbsp;Fund' : isBankSav ? 'Bank&nbsp;Savings' : 'MyNotes');
   if (isStocks) {
     render();
   } else {
@@ -1652,6 +1657,7 @@ function applyAppMode(mode) {
     if (isInvestment) renderHomeInvestment();
     if (isSavings) renderHomeSavings();
     if (isExpense) { buildExpBottomNav(); renderHomeExpense(); }
+    if (isPersonal) { buildPfBottomNav(); renderPersonal(); }
     if (isMF) { buildMfBottomNav(); renderMF(); }
     if (isFD) { buildFdBottomNav(); renderFD(); }
     if (isDiv) { buildDivBottomNav(); renderDividend(); }
@@ -1762,6 +1768,764 @@ function buildEfBottomNav() {
 }
 function updateEfNavActive() {
   $('#efBottomNav').querySelectorAll('button').forEach((x) => x.classList.toggle('active', x.getAttribute('data-view') === _efTab));
+}
+
+// ---------- Logging a personal spend ----------
+//
+// Same shape as the household spend form, with two differences that matter:
+// Card and UPI only, and NOTHING is written to the credit card. The household
+// version credits a card spend back as a reimbursement, because the house owes
+// that money to the person who swiped. A personal spend is the swiper's own
+// bill - crediting it back would tell them they owe less than they do.
+//
+// The card is still recorded, and the Card check tab reads it: a statement is
+// household plus personal, so which card took a personal spend is exactly what
+// makes that bill add up.
+async function openPfSpendForm(existing, defaultDate) {
+  const editing = !!(existing && existing.id != null);
+  let chosenCat = editing ? existing.category : null;
+  let chosenMethod = editing ? (existing.method === 'UPI' ? 'UPI' : 'Card') : 'Card';
+  let chosenCardId = editing && existing.cardId != null ? existing.cardId : null;
+
+  const cards = (await DB.all('creditCards').catch(() => [])) || [];
+  const amount = el('input', { type: 'number', inputmode: 'decimal', step: 'any', placeholder: '0', value: editing ? existing.amount : '' });
+  const dateInp = el('input', { type: 'date', value: editing ? (existing.date || todayISO()) : (defaultDate || todayISO()) });
+  const noteBox = noteField(editing && existing.note ? existing.note : '', 'What it was for (optional)', null, 'Note');
+
+  const catBtns = [];
+  const catGrid = el('div', {}, PERSONAL_CATEGORIES.map((g) => el('div', { class: 'spend-cat-group' }, [
+    el('div', { class: 'spend-cat-group-label', text: g.group }),
+    el('div', { class: 'spend-cat-grid' }, g.items.map((name) => {
+      const btn = el('button', { class: 'spend-cat-btn' + (name === chosenCat ? ' active' : ''), type: 'button', text: name });
+      btn.addEventListener('click', () => {
+        chosenCat = name;
+        catBtns.forEach((x) => x.classList.toggle('active', x === btn));
+        amount.focus();
+      });
+      catBtns.push(btn);
+      return btn;
+    })),
+  ])));
+
+  const cardBtns = [];
+  const cardGrid = el('div', { class: 'spend-card-grid' }, cards.map((c) => {
+    const btn = el('button', { class: 'spend-card-btn' + (c.id === chosenCardId ? ' active' : ''), type: 'button' }, [
+      el('span', { class: 'spend-card-radio' }),
+      el('span', { class: 'spend-card-name', text: c.name || 'Card' }),
+    ]);
+    btn.addEventListener('click', () => {
+      chosenCardId = chosenCardId === c.id ? null : c.id;   // tap again to unset
+      cardBtns.forEach((x) => x.classList.toggle('active', x === btn && chosenCardId === c.id));
+    });
+    cardBtns.push(btn);
+    return btn;
+  }));
+  const cardField = field('Which card', cards.length
+    ? el('div', {}, [cardGrid, el('p', { class: 'hint', style: 'margin:6px 0 0',
+        text: 'Recorded against this card so the Card check tab can tell you how much of its bill is yours rather than the house\u2019s. The card\u2019s own totals are left alone.' })])
+    : el('p', { class: 'hint', style: 'margin:0', text: 'No credit cards yet — add one on the Expense \u2192 Credit Card tab.' }));
+  cardField.classList.toggle('hidden', chosenMethod !== 'Card');
+
+  const methodBtns = [];
+  const methodRow = el('div', { class: 'seg spend-method' }, PF_METHODS.map((m) => {
+    const btn = el('button', { type: 'button', class: m === chosenMethod ? 'active' : '', text: m });
+    btn.addEventListener('click', () => {
+      chosenMethod = m;
+      methodBtns.forEach((x) => x.classList.toggle('active', x === btn));
+      cardField.classList.toggle('hidden', m !== 'Card');
+      // Switching to UPI drops the card, so a UPI spend cannot sit against one
+      // and quietly widen a statement check.
+      if (m !== 'Card') { chosenCardId = null; cardBtns.forEach((x) => x.classList.remove('active')); }
+    });
+    methodBtns.push(btn);
+    return btn;
+  }));
+
+  const save = async () => {
+    if (!chosenCat) { toast('Pick a category'); return; }
+    const amt = round2(num(amount.value) || 0);
+    if (!(amt > 0)) { toast('Enter an amount'); return; }
+    const nowIso = new Date().toISOString();
+    // Filed under the month of the DATE CHOSEN, not today's - logging last
+    // night's spend after midnight must not land it in the wrong month.
+    const d = (dateInp.value || todayISO()).slice(0, 10);
+    const rec = {
+      ym: d.slice(0, 7), date: d, category: chosenCat, amount: amt,
+      method: chosenMethod, cardId: chosenMethod === 'Card' ? chosenCardId : null,
+      note: noteBox.input.value.trim() || null,
+      createdAt: editing ? (existing.createdAt || nowIso) : nowIso, updatedAt: nowIso,
+    };
+    if (editing) rec.id = existing.id;
+    await DB.put('personalSpends', rec);
+    closeModal();
+    toast((editing ? 'Updated ' : 'Added ') + fmtSheetCur(amt));
+    // The month just logged into becomes the one on screen, so a back-dated
+    // entry is visible instead of appearing to have done nothing.
+    _pfYm = rec.ym;
+    renderPersonal();
+  };
+  const del = async () => {
+    if (!editing) return;
+    if (!window.confirm('Delete this spend?')) return;
+    await DB.del('personalSpends', existing.id);
+    closeModal();
+    toast('Deleted');
+    renderPersonal();
+  };
+
+  const btns = [el('button', { class: 'btn primary', text: editing ? 'Save' : 'Add spend', onclick: save })];
+  if (editing) btns.push(el('button', { class: 'btn danger', text: 'Delete', onclick: del }));
+  btns.push(el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }));
+
+  openModal(el('div', { class: 'sheet has-fixed-footer' }, [
+    el('div', { class: 'sheet-scroll' }, [
+      el('h2', { text: editing ? 'Edit personal spend' : 'Personal spend' }),
+      el('div', { class: 'form-secs' }, [
+        formSection('\ud83c\udff7\ufe0f', 'What for', [catGrid]),
+        formSection('\ud83d\udcb0', 'How much', [
+          el('div', { class: 'field-row' }, [field('Amount (₹)', amount), field('Date', dateInp)]),
+          field('Paid by', methodRow),
+          cardField,
+        ]),
+        formSection('\ud83d\udcdd', 'Note', [noteBox.node]),
+      ]),
+    ]),
+    el('div', { class: 'sheet-footer' }, [el('div', { class: 'btn-row', style: 'flex-wrap:wrap' }, btns)]),
+  ]));
+  if (!editing) amount.focus();
+}
+
+// ---------- Personal Finance: the section renderer ----------
+async function renderPersonal() {
+  if (state.appMode !== 'personal') return;
+  const host = $('#pfView');
+  host.innerHTML = '';
+  updatePfNavActive();
+  $('#pfAddBtn').classList.toggle('hidden', _pfTab !== 'spends');
+
+  const token = ++_pfRenderToken;
+  if (_pfTab === 'limits') { await renderPfLimits(host, token); return; }
+  if (_pfTab === 'review') { await renderPfReview(host, token); return; }
+  if (_pfTab === 'cards') { await renderPfCardCheck(host, token); return; }
+  await renderPfSpends(host, token);
+}
+
+// Everything the section needs, read once. Personal spend rows are a few
+// hundred a year, so loading every month costs less than a read per month and
+// the month-on-month comparisons need the history anyway.
+async function pfLoad() {
+  const [rows, allocs, cards, upiLimit] = await Promise.all([
+    DB.all('personalSpends').catch(() => []),
+    DB.all('allocations').catch(() => []),
+    DB.all('creditCards').catch(() => []),
+    _pfUpiLimit(),
+  ]);
+  const byYm = new Map();
+  (rows || []).forEach((r) => {
+    const k = String(r.ym || '').slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(k)) return;
+    if (!byYm.has(k)) byYm.set(k, []);
+    byYm.get(k).push(r);
+  });
+  return { rows: rows || [], byYm, allocs: allocs || [], cards: cards || [], upiLimit };
+}
+
+// The months the timeline offers: from the month tracking started to this one,
+// plus any month that actually has entries (a back-dated spend must not become
+// unreachable).
+function pfMonths(byYm, thisYm, mod) {
+  const out = [...new Set(mod.monthRangeYm(PF_START_YM, thisYm).concat([...byYm.keys()], [thisYm]))]
+    .filter((k) => k <= thisYm).sort();
+  return out.length ? out : [thisYm];
+}
+
+// Card and UPI, each against its own allowance. Returned together because
+// every tab here reads both: two limits that are only ever half-checked is how
+// a month comes in "under" while the card is 3,000 over.
+function pfTotals(ym, byYm, allocs, upiLimit) {
+  const rows = byYm.get(ym) || [];
+  const sum = (f) => round2(rows.filter(f).reduce((a, r) => a + (Number(r.amount) || 0), 0));
+  const cardSpent = sum((r) => r.method === 'Card');
+  const upiSpent = sum((r) => r.method === 'UPI');
+  const cardLimit = _pfCardLimit(ym, allocs);
+  const upi = round2(upiLimit || 0);
+  return {
+    rows, cardSpent, upiSpent, spent: round2(cardSpent + upiSpent),
+    cardLimit, upiLimit: upi, limit: round2(cardLimit + upi),
+    cardLeft: round2(cardLimit - cardSpent), upiLeft: round2(upi - upiSpent),
+    left: round2(cardLimit + upi - cardSpent - upiSpent),
+    cardPct: cardLimit > 0 ? Math.min(100, (cardSpent / cardLimit) * 100) : 0,
+    upiPct: upi > 0 ? Math.min(100, (upiSpent / upi) * 100) : 0,
+  };
+}
+
+// One limit strip: what it is, what has gone, and how much of it is left. Over
+// the line it turns red and says by how much rather than clamping to zero,
+// because "0 left" and "1,400 over" are different problems.
+function pfLimitCard(label, icon, spent, limit, pct) {
+  const over = round2(spent - limit);
+  const left = round2(limit - spent);
+  return el('div', { class: 'pf-lim' + (over > 0 ? ' is-over' : '') }, [
+    el('div', { class: 'pf-lim-top' }, [
+      el('span', { class: 'pf-lim-ico', text: icon }),
+      el('span', { class: 'pf-lim-name', text: label }),
+      el('span', { class: 'pf-lim-fig', text: fmtSheetCur(spent) + (limit > 0 ? ' / ' + fmtSheetCur(limit) : '') }),
+    ]),
+    el('div', { class: 'pf-lim-track' }, [
+      el('span', { class: 'pf-lim-fill', style: 'width:' + Math.max(2, Math.min(100, pct)).toFixed(1) + '%' }),
+    ]),
+    el('div', { class: 'pf-lim-foot', text: limit <= 0
+      ? 'No limit set'
+      : (over > 0 ? fmtSheetCur(over) + ' over' : fmtSheetCur(left) + ' left') }),
+  ]);
+}
+
+// ---------- Spends tab ----------
+async function renderPfSpends(host, token) {
+  const mod = await import('./credit.js');
+  const now = new Date();
+  const thisYm = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  const { byYm, allocs, cards, upiLimit } = await pfLoad();
+  if (pfRenderStale(token)) return;
+
+  const months = pfMonths(byYm, thisYm, mod);
+  if (!_pfYm || !months.includes(_pfYm)) _pfYm = months[months.length - 1];
+  const ym = _pfYm;
+  const t = pfTotals(ym, byYm, allocs, upiLimit);
+  const totalOf = (k) => round2((byYm.get(k) || []).reduce((a, r) => a + (Number(r.amount) || 0), 0));
+
+  // ---- Month timeline, same strip as the household Tracker ----
+  const appHeader = document.querySelector('.app-header');
+  const timelineWrap = el('div', {
+    class: 'cc-timeline-scroll cc-timeline-sticky trk-timeline',
+    style: 'top:' + (appHeader ? appHeader.offsetHeight : 0) + 'px',
+  });
+  timelineWrap.appendChild(el('div', { class: 'cc-timeline' }, months.slice().reverse().map((k) => el('button', {
+    type: 'button',
+    class: 'cc-timeline-chip' + (k === ym ? ' active' : '') + (k === thisYm ? ' is-current' : '')
+      + (totalOf(k) > 0 ? ' has-data' : ''),
+    text: mod.monthLabel(k),
+    onclick: () => { if (k === ym) return; _pfYm = k; _pfTimelineClicked = true; renderPersonal(); },
+  }))));
+  host.appendChild(timelineWrap);
+  _mountMonthStrip('pf', timelineWrap, _pfTimelineClicked);
+  _pfTimelineClicked = false;
+  _attachMonthSwipe(host, months, ym, (k) => { _pfYm = k; _pfTimelineClicked = true; renderPersonal(); });
+
+  // ---- The two allowances ----
+  host.appendChild(el('div', { class: 'pf-lims' }, [
+    pfLimitCard('Card', '\ud83d\udcb3', t.cardSpent, t.cardLimit, t.cardPct),
+    pfLimitCard('UPI', '\ud83d\udcf1', t.upiSpent, t.upiLimit, t.upiPct),
+  ]));
+
+  // Both together, plus what a day can still take. The per-day figure is the
+  // one that changes behaviour on the day, and it is only meaningful while the
+  // month is still running.
+  const dim = _daysInYm(ym);
+  const daysLeft = ym === thisYm ? Math.max(1, dim - now.getDate() + 1) : 0;
+  const bits = [fmtSheetCur(t.spent) + ' of ' + fmtSheetCur(t.limit) + ' together'];
+  if (t.left < 0) bits.push(fmtSheetCur(-t.left) + ' over');
+  else if (daysLeft > 0) bits.push(fmtIntCur(round2(t.left / daysLeft)) + ' a day for ' + daysLeft + (daysLeft === 1 ? ' day' : ' days'));
+  host.appendChild(el('div', { class: 'pf-both' + (t.left < 0 ? ' is-over' : ''), text: bits.join('  ·  ') }));
+
+  if (!t.rows.length) {
+    host.appendChild(el('div', { class: 'empty' }, [
+      el('div', { class: 'e-icon', text: '\ud83d\uded2' }),
+      el('p', { text: 'Nothing logged for ' + mod.monthLabel(ym) + ' yet.' }),
+      el('p', { class: 'hint', text: t.limit > 0
+        ? 'Tap the + to log a personal spend. Card and UPI are tracked against separate limits.'
+        : 'Set the Card figure on the Expense Allocation tab and the UPI limit on the Limits tab, then tap + to log a spend.' }),
+    ]));
+    return;
+  }
+
+  // ---- By category / Entries ----
+  const seg = el('div', { class: 'seg trk-seg' }, [['category', '\ud83d\udcca By category'], ['entries', '\ud83e\uddfe Entries (' + t.rows.length + ')']]
+    .map(([v, label]) => el('button', {
+      type: 'button', class: _pfView === v ? 'active' : '', text: label,
+      onclick: () => { if (_pfView === v) return; _pfView = v; renderPersonal(); },
+    })));
+  host.appendChild(seg);
+
+  if (_pfView === 'entries') {
+    const list = t.rows.slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || (b.id - a.id));
+    const wrap = el('div', { class: 'msheet' });
+    list.forEach((r) => {
+      const card = cards.find((c) => c.id === r.cardId);
+      const meta = [_spendDayLabel(r.date), r.method === 'Card' ? (card ? card.name : 'Card') : r.method];
+      if (r.note) meta.push(r.note);
+      wrap.appendChild(el('div', { class: 'msheet-row trk-entry is-tappable', onclick: () => openPfSpendForm(r) }, [
+        el('div', { class: 'msheet-label' }, [
+          el('span', { text: r.category || 'Misc' }),
+          el('span', { class: 'msheet-note', text: meta.join(' · ') }),
+        ]),
+        el('div', { class: 'trk-entry-right' }, [
+          el('span', { class: 'msheet-val', text: fmtSheetCur(r.amount) }),
+          el('button', {
+            class: 'icon-btn trk-del', type: 'button', text: '×', 'aria-label': 'Delete this spend',
+            onclick: async (e) => {
+              e.stopPropagation();   // the row opens the editor; the delete must not
+              if (!window.confirm('Delete ' + fmtSheetCur(r.amount) + ' on ' + (r.category || 'Misc') + '?')) return;
+              await DB.del('personalSpends', r.id);
+              toast('Deleted');
+              renderPersonal();
+            },
+          }),
+        ]),
+      ]));
+    });
+    host.appendChild(wrap);
+    return;
+  }
+
+  // ---- Grouped roll-up, in the order the picker shows them ----
+  const byCat = new Map();
+  t.rows.forEach((r) => {
+    const n = r.category || 'Misc';
+    const e = byCat.get(n) || { total: 0, count: 0, card: 0, upi: 0 };
+    e.total = round2(e.total + (Number(r.amount) || 0));
+    e.count++;
+    if (r.method === 'Card') e.card = round2(e.card + (Number(r.amount) || 0));
+    else e.upi = round2(e.upi + (Number(r.amount) || 0));
+    byCat.set(n, e);
+  });
+  const catWrap = el('div', { class: 'trk-groups' });
+  PERSONAL_CATEGORIES.forEach((g) => {
+    const rows = g.items.filter((n) => byCat.has(n)).map((n) => Object.assign({ name: n }, byCat.get(n)));
+    // A category retired from the list but still sitting in an old month lands
+    // in Other rather than disappearing along with its money.
+    if (g.group === 'Other') {
+      [...byCat.keys()].filter((n) => !_PF_GROUP_OF.has(n))
+        .forEach((n) => rows.push(Object.assign({ name: n }, byCat.get(n))));
+    }
+    if (!rows.length) return;
+    const gTotal = round2(rows.reduce((a, r) => a + r.total, 0));
+    const catRows = el('div', { class: 'trk-cats' });
+    rows.sort((a, b) => b.total - a.total).forEach((r) => {
+      // Share of the WHOLE month, not of its group - a bar filling up inside
+      // its own group would make a small group's top row look like the
+      // month's biggest spend.
+      const pct = t.spent > 0 ? (r.total / t.spent) * 100 : 0;
+      const meta = [r.count + '×'];
+      // How it was paid only earns a mention where a category is split across
+      // both, which is the case worth seeing.
+      if (r.card > 0 && r.upi > 0) meta.push('card ' + fmtIntCur(r.card));
+      else meta.push(pct.toFixed(0) + '%');
+      catRows.appendChild(el('div', { class: 'trk-cat' }, [
+        el('div', { class: 'trk-cat-top' }, [
+          el('span', { class: 'trk-cat-name' }, [el('span', { class: 'trk-cat-dot' }), el('span', { text: r.name })]),
+          el('span', { class: 'trk-cat-amt', text: fmtSheetCur(r.total) }),
+        ]),
+        el('div', { class: 'trk-cat-bottom' }, [
+          el('span', { class: 'trk-cat-track' }, [
+            el('span', { class: 'trk-cat-fill', style: 'width:' + Math.max(2, pct).toFixed(1) + '%' }),
+          ]),
+          el('span', { class: 'trk-cat-meta', text: meta.join(' · ') }),
+        ]),
+      ]));
+    });
+    catWrap.appendChild(el('section', { class: 'trk-group ' + _pfGroupClass(g.group) }, [
+      el('div', { class: 'trk-group-head' }, [
+        el('span', { class: 'trk-group-name', text: g.group }),
+        el('span', { class: 'trk-group-total', text: fmtSheetCur(gTotal) }),
+        el('span', { class: 'trk-group-pct', text: (t.spent > 0 ? (gTotal / t.spent) * 100 : 0).toFixed(0) + '%' }),
+      ]),
+      catRows,
+    ]));
+  });
+  host.appendChild(catWrap);
+}
+
+// ---------- Limits tab ----------
+async function renderPfLimits(host, token) {
+  const mod = await import('./credit.js');
+  const now = new Date();
+  const thisYm = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  const { byYm, allocs, upiLimit } = await pfLoad();
+  if (pfRenderStale(token)) return;
+  const year = Number(thisYm.slice(0, 4));
+  const alloc = (allocs || []).find((x) => Number(x.year) === year) || null;
+  const cardLimit = _pfCardLimit(thisYm, allocs);
+
+  host.appendChild(el('h3', { class: 'div-group-head', text: '\ud83c\udfaf Monthly allowance' }));
+
+  // Both limits editable here. The card figure IS the Allocation tab's Card
+  // line, written back to that same record - one number in one place, editable
+  // from either, rather than a copy that drifts.
+  const cardInp = el('input', { type: 'number', inputmode: 'decimal', step: 'any', class: 'pf-lim-input', value: cardLimit || '' });
+  const upiInp = el('input', { type: 'number', inputmode: 'decimal', step: 'any', class: 'pf-lim-input', value: upiLimit || '' });
+  const saveBtn = el('button', { class: 'btn primary pf-lim-save hidden', type: 'button', text: 'Save limits' });
+  const sync = () => {
+    const changed = round2(num(cardInp.value) || 0) !== cardLimit || round2(num(upiInp.value) || 0) !== round2(upiLimit);
+    saveBtn.classList.toggle('hidden', !changed);
+  };
+  [cardInp, upiInp].forEach((i) => i.addEventListener('input', sync));
+  saveBtn.addEventListener('click', async () => {
+    const c = round2(num(cardInp.value) || 0);
+    const u = round2(num(upiInp.value) || 0);
+    if (c !== cardLimit) {
+      if (!alloc) {
+        // Without a row for the year there is nowhere in the household budget
+        // to put it, and inventing one here would create a half-filled
+        // allocation the Expense tab would then show as real.
+        toast('Add ' + year + ' on the Expense Allocation tab first');
+        return;
+      }
+      await DB.put('allocations', Object.assign({}, alloc, { card: c, updatedAt: new Date().toISOString() }));
+    }
+    if (u !== round2(upiLimit)) {
+      await DB.put('meta', { key: 'pfUpiLimit', value: u, updatedAt: new Date().toISOString() });
+    }
+    toast('Limits updated');
+    renderPersonal();
+  });
+
+  host.appendChild(el('div', { class: 'pf-lim-form' }, [
+    el('div', { class: 'pf-lim-edit' }, [
+      el('div', { class: 'pf-lim-edit-cell' }, [
+        el('div', { class: 'pf-lim-edit-lbl', text: '\ud83d\udcb3 Card a month' }),
+        cardInp,
+        el('div', { class: 'pf-lim-edit-sub', text: 'This is the Allocation tab\u2019s Card figure' }),
+      ]),
+      el('div', { class: 'pf-lim-edit-cell' }, [
+        el('div', { class: 'pf-lim-edit-lbl', text: '\ud83d\udcf1 UPI a month' }),
+        upiInp,
+        el('div', { class: 'pf-lim-edit-sub', text: 'Kept here, not in the household budget' }),
+      ]),
+    ]),
+    el('div', { class: 'pf-lim-form-foot' }, [saveBtn]),
+  ]));
+
+  // ---- How the months have actually gone ----
+  const months = pfMonths(byYm, thisYm, mod).filter((k) => (byYm.get(k) || []).length).slice(-12).reverse();
+  if (!months.length) {
+    host.appendChild(el('p', { class: 'hint mf-foot', text: 'Log a few spends and this will show how each month came in against these limits.' }));
+    return;
+  }
+  host.appendChild(el('h3', { class: 'div-group-head', text: '\ud83d\udcc6 Month by month' }));
+  const rows = months.map((k) => pfTotals(k, byYm, allocs, upiLimit));
+  const overCard = rows.filter((r) => r.cardLimit > 0 && r.cardSpent > r.cardLimit).length;
+  const overUpi = rows.filter((r) => r.upiLimit > 0 && r.upiSpent > r.upiLimit).length;
+  const table = el('div', { class: 'pf-hist' });
+  table.appendChild(el('div', { class: 'pf-hist-row is-head' }, [
+    el('span', { text: 'Month' }), el('span', { text: 'Card' }), el('span', { text: 'UPI' }), el('span', { text: 'Over by' }),
+  ]));
+  months.forEach((k, i) => {
+    const r = rows[i];
+    const over = round2(Math.max(0, r.cardSpent - r.cardLimit) + Math.max(0, r.upiSpent - r.upiLimit));
+    table.appendChild(el('div', { class: 'pf-hist-row' + (over > 0 ? ' is-over' : '') }, [
+      el('span', { text: _spendMonthLabel(k) }),
+      el('span', { class: r.cardLimit > 0 && r.cardSpent > r.cardLimit ? 'is-bad' : '', text: fmtIntCur(r.cardSpent) }),
+      el('span', { class: r.upiLimit > 0 && r.upiSpent > r.upiLimit ? 'is-bad' : '', text: fmtIntCur(r.upiSpent) }),
+      el('span', { class: over > 0 ? 'is-bad' : 'is-good', text: over > 0 ? fmtIntCur(over) : '✓' }),
+    ]));
+  });
+  host.appendChild(table);
+  host.appendChild(el('p', { class: 'hint mf-foot', text: 'Card went over in ' + overCard + ' of these ' + rows.length
+    + ' months, UPI in ' + overUpi + '. The card limit is read from the year\u2019s Allocation, so a month before that year was set shows no limit rather than a false pass.' }));
+}
+
+// ---------- Review tab ----------
+// Reuses the household Review's engine - the forecast, the shape of a month,
+// the median comparison - because none of it knows or cares whose money it is.
+// The only thing passed differently is the group resolver, so a personal
+// category is coloured and grouped by the personal list.
+async function renderPfReview(host, token) {
+  const mod = await import('./credit.js');
+  const now = new Date();
+  const thisYm = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  const { byYm, allocs, upiLimit } = await pfLoad();
+  if (pfRenderStale(token)) return;
+
+  const months = pfMonths(byYm, thisYm, mod);
+  if (!_pfYm || !months.includes(_pfYm)) _pfYm = months[months.length - 1];
+  const ym = _pfYm;
+  const t = pfTotals(ym, byYm, allocs, upiLimit);
+
+  const appHeader = document.querySelector('.app-header');
+  const timelineWrap = el('div', {
+    class: 'cc-timeline-scroll cc-timeline-sticky trk-timeline',
+    style: 'top:' + (appHeader ? appHeader.offsetHeight : 0) + 'px',
+  });
+  const totalOf = (k) => round2((byYm.get(k) || []).reduce((a, r) => a + (Number(r.amount) || 0), 0));
+  timelineWrap.appendChild(el('div', { class: 'cc-timeline' }, months.slice().reverse().map((k) => el('button', {
+    type: 'button',
+    class: 'cc-timeline-chip' + (k === ym ? ' active' : '') + (k === thisYm ? ' is-current' : '')
+      + (totalOf(k) > 0 ? ' has-data' : ''),
+    text: mod.monthLabel(k),
+    onclick: () => { if (k === ym) return; _pfYm = k; _pfTimelineClicked = true; renderPersonal(); },
+  }))));
+  host.appendChild(timelineWrap);
+  _mountMonthStrip('pfreview', timelineWrap, _pfTimelineClicked);
+  _pfTimelineClicked = false;
+  _attachMonthSwipe(host, months, ym, (k) => { _pfYm = k; _pfTimelineClicked = true; renderPersonal(); });
+
+  const a = _reviewAnalysis(ym, byYm, thisYm, t.limit, now, _pfGroupOf);
+  if (!a.spent) {
+    host.appendChild(el('div', { class: 'empty' }, [
+      el('div', { class: 'e-icon', text: '\ud83d\udd0d' }),
+      el('p', { text: 'Nothing logged for ' + mod.monthLabel(ym) + '.' }),
+      el('p', { class: 'hint', text: 'This tab reads the Spends tab \u2014 log some and it will tell you which of them are unusual for you.' }),
+    ]));
+    return;
+  }
+
+  host.appendChild(el('div', { class: 'rvw-head' }, [
+    el('div', { class: 'rvw-head-fig' + (a.overKitty > 0 ? ' is-over' : '') },
+      [fmtSheetCur(a.spent) + (t.limit > 0 ? ' of ' + fmtSheetCur(t.limit) : '')]),
+    el('div', { class: 'rvw-head-note', text: [
+      t.limit > 0 ? (a.overKitty > 0 ? 'Over the allowance by ' + fmtSheetCur(a.overKitty) : fmtSheetCur(-a.overKitty) + ' still allowed') : null,
+      a.isCurrent ? a.daysLeft + (a.daysLeft === 1 ? ' day left' : ' days left') : null,
+    ].filter(Boolean).join(' · ') }),
+  ]));
+
+  if (a.historyMonths < REVIEW_MIN_HISTORY) {
+    host.appendChild(el('div', { class: 'rvw-thin' }, [
+      el('div', { class: 'rvw-thin-head', text: 'Not enough history yet' }),
+      el('div', { class: 'rvw-thin-sub', text: 'There ' + (a.historyMonths === 1 ? 'is 1 earlier month' : 'are ' + a.historyMonths + ' earlier months')
+        + ' on record. Comparing a category against its own normal needs at least ' + REVIEW_MIN_HISTORY
+        + ', so this holds off rather than calling something unusual on one data point.' }),
+    ]));
+    return;
+  }
+
+  const cycle = _reviewCycle(ym, byYm, now, a.isCurrent);
+  const forecast = a.isCurrent ? _reviewForecast(ym, byYm, now, 0, t.limit) : null;
+  const savings = _reviewSavings(a, cycle, _reviewSmallTickets(ym, byYm), _smallTicketUsual(ym, byYm));
+
+  if (forecast) {
+    const f = forecast;
+    const grade = el('span', { class: 'rvw-grade is-' + f.grade,
+      text: f.errPct != null ? f.grade + ' · \u00b1' + f.errPct + '%' : f.grade });
+    rvwSection(host, 'pf-forecast', '\ud83d\udd2e', 'Where this month lands', grade, (body) => {
+      const curve = _reviewCurve(ym, byYm, f.day);
+      body.appendChild(el('div', { class: 'rvw-fc' }, [
+        el('div', { class: 'rvw-fc-top' }, [
+          el('div', {}, [
+            el('div', { class: 'rvw-fc-big' + (f.overKitty > 0 ? ' is-over' : ''), text: fmtSheetCur(f.forecast) }),
+            el('div', { class: 'rvw-fc-lbl', text: 'forecast for ' + mod.monthLabel(ym) }),
+          ]),
+          el('div', { class: 'rvw-fc-range' }, [
+            el('div', { class: 'rvw-fc-range-lbl', text: 'likely between' }),
+            el('div', { class: 'rvw-fc-range-val', text: fmtSheetCur(f.lo) + ' – ' + fmtSheetCur(f.hi) }),
+          ]),
+        ]),
+        curve ? el('div', { class: 'rvw-chart' }, [_rvwCurveChart(curve, { kitty: t.limit, forecast: f.forecast, limitLabel: 'allowance' })]) : document.createTextNode(''),
+        el('div', { class: 'rvw-fc-split' }, [
+          el('span', {}, [el('i', { class: 'rvw-dot is-spent' }), fmtSheetCur(f.spent) + ' spent']),
+          el('span', {}, [el('i', { class: 'rvw-dot is-proj' }), fmtSheetCur(f.rest) + ' to come']),
+          el('span', {}, [el('i', { class: 'rvw-dot is-usual' }), 'a usual month']),
+        ]),
+      ]));
+      const lines = [];
+      if (f.restPerDay != null) lines.push(['-', 'The rest of your month usually costs ' + fmtIntCur(f.restPerDay) + ' a day · ' + f.daysLeft + (f.daysLeft === 1 ? ' day' : ' days') + ' left']);
+      if (f.fitPerDay != null) {
+        lines.push(f.fitPerDay > 0
+          ? ['OK', fmtIntCur(f.fitPerDay) + ' a day from here keeps you inside the ' + fmtSheetCur(t.limit) + ' allowance']
+          : ['NO', 'The allowance is already spent · anything from here is over it']);
+      }
+      if (f.overKitty != null && f.overKitty > 0) lines.push(['NO', 'On this estimate the month ends ' + fmtSheetCur(f.overKitty) + ' over']);
+      else if (f.overKitty != null) lines.push(['OK', 'On this estimate the month ends ' + fmtSheetCur(-f.overKitty) + ' inside the allowance']);
+      if (f.usualByNow > 0) {
+        lines.push([f.vsUsualByNow > 0 ? 'UP' : 'DOWN', 'By the ' + f.day + _ordinalSuffix(f.day)
+          + ' a usual month is at ' + fmtIntCur(f.usualByNow) + ' · you are ' + fmtIntCur(Math.abs(f.vsUsualByNow))
+          + (f.vsUsualByNow > 0 ? ' above that' : ' below that')]);
+      }
+      body.appendChild(el('div', { class: 'rvw-lines' }, lines.map(([kind, text]) => el('div', { class: 'rvw-line is-' + kind.toLowerCase() }, [
+        el('span', { class: 'rvw-line-mark', text: kind === 'OK' ? '✓' : kind === 'NO' ? '!' : kind === 'UP' ? '\u2191' : kind === 'DOWN' ? '\u2193' : '\u2022' }),
+        el('span', { text }),
+      ]))));
+      body.appendChild(el('p', { class: 'hint rvw-note', text: f.errPct != null
+        ? 'Only the remainder is estimated, priced from what the same days cost in your last ' + f.months
+          + ' months. Tested against those months at the same point, it came out a median ' + f.errPct + '% out.'
+        : 'Only the remainder is estimated, priced from what the same days cost in your last ' + f.months
+          + ' months. Too few months to have tested it yet.' }));
+    });
+  }
+
+  if (savings.rows.length) {
+    rvwSection(host, 'pf-savings', '\ud83d\udca1', 'Where you could keep money',
+      savings.rows.length + (savings.rows.length === 1 ? ' place' : ' places'), (body) => {
+        body.appendChild(el('div', { class: 'rvw-save-list' }, savings.rows.map((r) => el('div', { class: 'rvw-save-row ' + _pfGroupClass(r.group) }, [
+          el('div', { class: 'rvw-save-body' }, [
+            el('div', { class: 'rvw-save-name', text: r.name }),
+            el('div', { class: 'rvw-save-how', text: r.how }),
+          ]),
+          el('div', { class: 'rvw-save-fig' }, [
+            el('div', { class: 'rvw-save-val', text: r.kind === 'weekend' ? fmtIntCur(r.save) : fmtSheetCur(r.save) }),
+            el('div', { class: 'rvw-save-unit', text: r.kind === 'weekend' ? 'a day' : 'this month' }),
+          ]),
+        ]))));
+      });
+  }
+
+  rvwSection(host, 'pf-look', '\u26a0\ufe0f', 'Worth a look',
+    a.actionable.length ? fmtSheetCur(a.recoverable) : 'nothing unusual', (body) => {
+      if (!a.actionable.length) {
+        body.appendChild(el('div', { class: 'rvw-clear' }, [
+          el('span', { text: '\u2705' }),
+          el('div', {}, [
+            el('div', { class: 'rvw-clear-head', text: 'Nothing unusual this month' }),
+            el('div', { class: 'rvw-clear-sub', text: 'Every category is at or below its own normal.' }),
+          ]),
+        ]));
+        return;
+      }
+      const wrap = el('div', { class: 'rvw-list' });
+      a.actionable.forEach((r) => {
+        const detail = el('div', { class: 'rvw-item-detail hidden' });
+        let built = false;
+        const bits = [r.count + '× this month'];
+        if (r.usualCount) bits.push('usually ' + r.usualCount + '×');
+        if (r.driver) bits.push(r.driver);
+        const item = el('div', { class: 'rvw-item is-tappable ' + _pfGroupClass(r.group) }, [
+          el('div', { class: 'rvw-item-top' }, [
+            el('span', { class: 'rvw-item-name' }, [el('span', { class: 'rvw-item-dot' }), el('span', { text: r.name })]),
+            el('span', { class: 'rvw-item-amt', text: fmtSheetCur(r.now) }),
+          ]),
+          el('div', { class: 'rvw-item-mid', text: 'Usually ' + fmtSheetCur(r.usual) + ' a month · ' + bits.join(' · ') }),
+          el('div', { class: 'rvw-item-save' }, [
+            el('span', { class: 'rvw-save-amt', text: fmtSheetCur(r.over) }),
+            el('span', { class: 'rvw-save-txt', text: 'above a normal month' }),
+          ]),
+          detail,
+        ]);
+        item.addEventListener('click', () => {
+          if (!built) { detail.appendChild(_rvwMonthBars(_catMonthHistory(r.name, ym, byYm, 6), r.usual)); built = true; }
+          const closed = detail.classList.toggle('hidden');
+          item.classList.toggle('is-open', !closed);
+        });
+        wrap.appendChild(item);
+      });
+      body.appendChild(wrap);
+      body.appendChild(el('div', { class: 'rvw-total' }, [
+        el('span', { class: 'rvw-total-label', text: 'Recoverable this month' }),
+        el('span', { class: 'rvw-total-val', text: fmtSheetCur(a.recoverable) }),
+      ]));
+    });
+
+  if (cycle) {
+    rvwSection(host, 'pf-cycle', '\ud83d\udd01', 'Your spending cycle',
+      cycle.halfBy ? 'half gone by the ' + cycle.halfBy + _ordinalSuffix(cycle.halfBy) : null, (body) => {
+        if (cycle.perDow && cycle.perDow.some((d) => d.perDay > 0)) {
+          const peak = cycle.perDow.reduce((m, d) => Math.max(m, d.perDay), 1);
+          body.appendChild(el('div', { class: 'rvw-dow' }, cycle.perDow.map((d) => el('div', {
+            class: 'rvw-dow-cell' + (d.i === 0 || d.i === 6 ? ' is-weekend' : ''),
+          }, [
+            el('span', { class: 'rvw-dow-amt', text: d.perDay > 0 ? fmtIntCur(d.perDay) : '\u2014' }),
+            el('span', { class: 'rvw-dow-track' }, [
+              el('span', { class: 'rvw-dow-fill', style: 'height:' + Math.max(2, (d.perDay / peak) * 100).toFixed(1) + '%' }),
+            ]),
+            el('span', { class: 'rvw-dow-lbl', text: d.name.slice(0, 3) }),
+          ]))));
+        }
+        const rows = [];
+        if (cycle.halfBy) rows.push(['Half a month is gone by', 'the ' + cycle.halfBy + _ordinalSuffix(cycle.halfBy)]);
+        if (cycle.weekendPerDay > 0) rows.push(['Weekend vs weekday, per day', fmtIntCur(cycle.weekendPerDay) + ' vs ' + fmtIntCur(cycle.weekdayPerDay)]);
+        if (cycle.weekendShare != null) rows.push(['Lands on a Saturday or Sunday', cycle.weekendShare + '% of a month']);
+        rows.push(['Days with nothing spent', a.isCurrent
+          ? cycle.noSpendSoFar + ' of the first ' + cycle.daysSoFar + ' · usually ' + cycle.noSpendTypical + ' in a month'
+          : 'usually ' + cycle.noSpendTypical + ' in a month']);
+        body.appendChild(el('div', { class: 'rvw-flat' }, rows.map(([k, v]) =>
+          el('div', { class: 'rvw-flat-row' }, [el('span', { text: k }), el('span', { class: 'rvw-flat-meta', text: v })]))));
+      });
+  }
+
+  host.appendChild(el('p', { class: 'hint mf-foot', text: 'Each category is compared with its own median month from your own entries — not a target, and not an average, which one unusual month would skew.' }));
+}
+
+// ---------- Card check tab ----------
+// The reason this section exists: a card statement contains household spending
+// AND personal spending, so neither tracker on its own can say whether the bill
+// adds up. This puts both against the statement and names the gap.
+//
+// Nothing here writes to a card. The billed figure IS the statement, and a
+// logged spend is already inside it by the time the statement arrives - adding
+// it again would charge the same swipe twice. So the two are compared, not
+// summed into each other.
+async function renderPfCardCheck(host, token) {
+  const mod = await import('./credit.js');
+  const now = new Date();
+  const thisYm = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  const [{ byYm, cards }, houseRows] = await Promise.all([pfLoad(), DB.all('spends').catch(() => [])]);
+  if (pfRenderStale(token)) return;
+
+  const months = pfMonths(byYm, thisYm, mod);
+  if (!_pfYm || !months.includes(_pfYm)) _pfYm = months[months.length - 1];
+  const ym = _pfYm;
+
+  host.appendChild(el('h3', { class: 'div-group-head', text: '\ud83e\uddfe ' + mod.monthLabel(ym) + ' against your statements' }));
+
+  if (!cards.length) {
+    host.appendChild(el('div', { class: 'empty' }, [
+      el('div', { class: 'e-icon', text: '\ud83d\udcb3' }),
+      el('p', { text: 'No credit cards yet.' }),
+      el('p', { class: 'hint', text: 'Add one on the Expense \u2192 Credit Card tab and its statement can be checked against what you have logged.' }),
+    ]));
+    return;
+  }
+
+  const personalFor = (id) => round2((byYm.get(ym) || [])
+    .filter((r) => r.method === 'Card' && r.cardId === id)
+    .reduce((a, r) => a + (Number(r.amount) || 0), 0));
+  const houseFor = (id) => round2((houseRows || [])
+    .filter((r) => String(r.ym || '').slice(0, 7) === ym && r.method === 'Card' && r.cardId === id)
+    .reduce((a, r) => a + (Number(r.amount) || 0), 0));
+
+  let anyBilled = false;
+  cards.forEach((c) => {
+    const m = (c.months || []).find((x) => String(x.ym) === ym) || null;
+    const billed = m ? round2(Number(m.billed) || 0) : 0;
+    if (billed > 0) anyBilled = true;
+    const house = houseFor(c.id), personal = personalFor(c.id);
+    const logged = round2(house + personal);
+    const gap = round2(billed - logged);
+    const pct = billed > 0 ? Math.min(100, (logged / billed) * 100) : 0;
+    host.appendChild(el('div', { class: 'pf-card-check' }, [
+      el('div', { class: 'pf-cc-top' }, [
+        el('span', { class: 'pf-cc-name', text: c.name || 'Card' }),
+        el('span', { class: 'pf-cc-billed', text: billed > 0 ? fmtSheetCur(billed) + ' billed' : 'no statement yet' }),
+      ]),
+      el('div', { class: 'pf-cc-track' }, [
+        el('span', { class: 'pf-cc-fill is-house', style: 'width:' + (billed > 0 ? Math.min(100, (house / billed) * 100) : 0).toFixed(1) + '%' }),
+        el('span', { class: 'pf-cc-fill is-personal', style: 'width:' + (billed > 0 ? Math.min(100, (personal / billed) * 100) : 0).toFixed(1) + '%' }),
+      ]),
+      el('div', { class: 'pf-cc-legend' }, [
+        el('span', {}, [el('i', { class: 'rvw-dot is-house' }), 'house ' + fmtSheetCur(house)]),
+        el('span', {}, [el('i', { class: 'rvw-dot is-personal' }), 'personal ' + fmtSheetCur(personal)]),
+      ]),
+      billed > 0
+        ? el('div', { class: 'pf-cc-gap' + (gap > 0.5 ? ' is-gap' : gap < -0.5 ? ' is-overlogged' : ' is-ok') },
+            [gap > 0.5
+              ? fmtSheetCur(gap) + ' of this bill is not logged anywhere · ' + Math.round(pct) + '% accounted for'
+              : gap < -0.5
+                ? fmtSheetCur(-gap) + ' more logged than billed · check for a duplicate, or a spend dated into the wrong month'
+                : 'Every rupee of this bill is accounted for'])
+        : el('div', { class: 'pf-cc-gap' }, [fmtSheetCur(logged) + ' logged so far this month']),
+    ]));
+  });
+
+  host.appendChild(el('p', { class: 'hint mf-foot', text: anyBilled
+    ? 'Billed is the statement figure you entered on the Credit Card tab. Logged is what these two trackers hold for that card in this month — household spends from the Tracker, personal ones from here. Nothing is written back to the card: the statement already contains every swipe, so adding a logged spend to it would count the same one twice. The gap is what has been swiped and never written down.'
+    : 'Enter the month\u2019s billed figure on a card (Expense \u2192 Credit Card \u2192 tap a card \u2192 Months) and this will tell you how much of that bill your two trackers actually explain.' }));
+}
+
+// Bottom nav for Personal Finance. Spends is where the entries go in; the
+// other three read them back - against the limits, as insight, and against the
+// card statements the spends turn up on.
+function buildPfBottomNav() {
+  const nav = $('#pfBottomNav');
+  if (nav.childElementCount) { updatePfNavActive(); return; }
+  nav.innerHTML = '';
+  [['spends', '\ud83d\uded2', 'Spends'], ['limits', '\ud83c\udfaf', 'Limits'],
+   ['review', '\ud83d\udd0d', 'Review'], ['cards', '\ud83e\uddfe', 'Card check']].forEach(([v, ico, label]) => {
+    nav.appendChild(el('button', { 'data-view': v, onclick: () => { if (_pfTab === v) return; _pfTab = v; renderPersonal(); } },
+      [el('span', { class: 'bn-ico', text: ico }), label]));
+  });
+  updatePfNavActive();
+}
+function updatePfNavActive() {
+  $('#pfBottomNav').querySelectorAll('button').forEach((x) => x.classList.toggle('active', x.getAttribute('data-view') === _pfTab));
 }
 
 // Bottom nav for the Expense section (Credit Card | Allocation | Expense).
@@ -2510,7 +3274,8 @@ async function renderHome() {
   const investmentCard = _homeCard('💼', 'Investment', 'Stocks · MF · FD · Metals · Bonds · Dividends', () => setAppMode('investment'));
   const savingsCard = _homeCard('🏦', 'Savings', 'Emergency Fund · Goals', () => setAppMode('savings'));
   const expenseCard = _homeCard('💳', 'Expense', 'Credit Card · Allocation · Monthly sheet', () => setAppMode('expense'));
-  host.appendChild(el('div', { class: 'home-cards' }, [investmentCard, savingsCard, expenseCard]));
+  const personalCard = _homeCard('👤', 'Personal Finance', 'Own spends · card & UPI limits', () => setAppMode('personal'));
+  host.appendChild(el('div', { class: 'home-cards' }, [investmentCard, savingsCard, expenseCard, personalCard]));
   host.appendChild(el('p', { class: 'hint home-foot', text: 'Backup covers everything - open the ⋮ menu → Backup & Restore.' }));
 }
 // Horizontally-scrolling strip of money ARRIVING within the next week, shown on
@@ -3277,6 +4042,62 @@ async function renderExpenseSheet(host, token) {
 // grocery run lands in the same bucket every time, which typing can't promise.
 // Grouped only for the picker's sake; the group isn't stored, so regrouping
 // later can't strand existing rows.
+// ---------- Personal Finance ----------
+//
+// The Tracker in Expense is HOUSEHOLD spending, measured against a kitty of
+// House Exp doubled. This is the other half of the card bill: what gets spent
+// on the person rather than the house, against its own allowance.
+//
+// Kept apart from household spending everywhere - own store, own categories,
+// own limits - because the two answer different questions and only the
+// household half is credited back on a card. Mixing them is how a month's
+// household total quietly starts including a haircut.
+const PERSONAL_CATEGORIES = [
+  { group: 'Food', items: ['Eat Out', 'Order In', 'Tea & Snacks', 'Coffee'] },
+  { group: 'Shopping', items: ['Clothes', 'Footwear', 'Gadgets', 'Accessories'] },
+  { group: 'Travel', items: ['Fuel', 'Cab & Auto', 'Train & Bus', 'Trip'] },
+  { group: 'Health', items: ['Gym', 'Grooming', 'Medicine', 'Supplements'] },
+  { group: 'Fun', items: ['Movies', 'Subscriptions', 'Games', 'Books', 'Outing'] },
+  { group: 'Other', items: ['Gift', 'Recharge', 'Fees & Charges', 'Misc'] },
+];
+// Card and UPI only. There is no cash line because a personal allowance is
+// held on a card and a UPI handle, and a method nobody uses is one more tap
+// on every entry.
+const PF_METHODS = ['Card', 'UPI'];
+const PF_START_YM = '2026-09';        // the month this started being tracked
+const PF_UPI_LIMIT_DEFAULT = 2000;    // until it is set on the Limits tab
+
+const _PF_GROUP_OF = (() => {
+  const m = new Map();
+  PERSONAL_CATEGORIES.forEach((g) => g.items.forEach((n) => m.set(n, g.group)));
+  return m;
+})();
+const _pfGroupOf = (name) => _PF_GROUP_OF.get(name) || 'Other';
+const _pfGroupClass = (group) => 'pf-g-' + String(group).toLowerCase().replace(/[^a-z]/g, '');
+
+let _pfTab = 'spends';        // 'spends' | 'limits' | 'review' | 'cards'
+let _pfYm = null;
+let _pfTimelineClicked = false;
+let _pfView = 'category';     // 'category' | 'entries'
+// Same render-race guard the Expense section uses: every tab here awaits a
+// read, and a fast tab switch must not let a stale one paint over the new one.
+let _pfRenderToken = 0;
+const pfRenderStale = (token) => token !== _pfRenderToken;
+
+// The month's two allowances. The card figure is the Allocation tab's own
+// "Card" line - the one place the household budget is already written down -
+// so it is read live rather than copied. The UPI one has no home in that
+// budget, so it is a setting of its own.
+function _pfCardLimit(ym, allocs) {
+  const al = (allocs || []).find((x) => Number(x.year) === Number(String(ym).slice(0, 4)));
+  return al ? round2(Number(al.card) || 0) : 0;
+}
+async function _pfUpiLimit() {
+  const row = await DB.get('meta', 'pfUpiLimit').catch(() => null);
+  const v = row ? Number(row.value) : NaN;
+  return v > 0 ? round2(v) : PF_UPI_LIMIT_DEFAULT;
+}
+
 const SPEND_CATEGORIES = [
   { group: 'Fixed', items: ['Rent', 'Electricity', 'Internet', 'Water', 'GAS'] },
   { group: 'Home', items: ['Bruno Food', 'Plants / Aquarium', 'Urban/House', 'Medicine'] },
@@ -4177,7 +4998,10 @@ function _kittyFor(ym, allocs, loans) {
 // Categories where being "over" isn't a decision anyone can act on this month.
 // The Fixed group is contractual; Medicine is not a lifestyle choice, and
 // listing it under "spend less" would be both useless and crass.
-const _reviewIgnores = (name) => _spendGroupOf(name) === 'Fixed' || name === 'Medicine';
+// Rent and bills are contractual and Medicine is not a lifestyle choice, so
+// neither is something "spend less" can address. A personal list has no Fixed
+// group, so there only Medicine is held back.
+const _reviewIgnores = (name, groupOf) => (groupOf || _spendGroupOf)(name) === 'Fixed' || name === 'Medicine';
 
 // At least this many earlier months with entries before a category's median is
 // worth quoting. Two is the floor at which a median means anything at all;
@@ -4530,7 +5354,10 @@ function _reviewSavings(a, cycle, small, smallUsual) {
 }
 
 // Pure: (selected month, all months by ym, this month, kitty, clock) → findings.
-function _reviewAnalysis(ym, byYm, thisYm, kitty, nowDate) {
+function _reviewAnalysis(ym, byYm, thisYm, kitty, nowDate, groupOf) {
+  // Defaults to the household category list. Personal Finance passes its own,
+  // which is the only part of this that differs between the two.
+  const gOf = groupOf || _spendGroupOf;
   const year = Number(ym.slice(0, 4)), mon = Number(ym.slice(5, 7));
   const daysInMonth = new Date(year, mon, 0).getDate();
   const isCurrent = ym === thisYm;
@@ -4577,7 +5404,7 @@ function _reviewAnalysis(ym, byYm, thisYm, kitty, nowDate) {
 
   const actionable = [], fixedRows = [], unjudged = [];
   nowCat.forEach((cur, name) => {
-    if (_reviewIgnores(name)) { fixedRows.push({ name, now: cur.total }); return; }
+    if (_reviewIgnores(name, gOf)) { fixedRows.push({ name, now: cur.total }); return; }
     const h = histCat.get(name);
     if (!h || h.totals.length < REVIEW_MIN_HISTORY) {
       unjudged.push({ name, now: cur.total, months: h ? h.totals.length : 0 });
@@ -4600,7 +5427,7 @@ function _reviewAnalysis(ym, byYm, thisYm, kitty, nowDate) {
       driver = cRatio > aRatio ? 'more often' : 'dearer each time';
     }
     actionable.push({
-      name, group: _spendGroupOf(name), now: cur.total, usual, over,
+      name, group: gOf(name), now: cur.total, usual, over,
       count: cur.count, usualCount, nowAvg, usualAvg, driver,
       months: h.totals.length,
     });
@@ -4690,7 +5517,7 @@ function _rvwCurveChart(curve, o) {
   if (o.kitty > 0 && o.kitty <= maxY) {
     svg.appendChild(mk('line', { x1: padL, y1: Y(o.kitty), x2: w - padR, y2: Y(o.kitty), stroke: '#34d399', 'stroke-width': '1.2', 'stroke-dasharray': '5 4', opacity: '0.85' }));
     const t = mk('text', { x: w - padR, y: Y(o.kitty) - 4, fill: '#34d399', 'font-size': '9', 'text-anchor': 'end' });
-    t.textContent = 'kitty';
+    t.textContent = o.limitLabel || 'kitty';
     svg.appendChild(t);
   }
 
@@ -11761,6 +12588,7 @@ function bind() {
   $('#bankSavAddBtn').addEventListener('click', () => openBankSavForm(null));
   $('#ccAddBtn').addEventListener('click', () => openCreditCardForm(null));
   $('#spendAddBtn').addEventListener('click', openSpendQuick);
+  $('#pfAddBtn').addEventListener('click', () => openPfSpendForm(null));
   $('#backBtn').addEventListener('click', goHome);
   $('#menuBtn').addEventListener('click', openMenu);
   const onSearch = debounce(renderList, 120);
