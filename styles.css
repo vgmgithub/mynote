@@ -2330,3 +2330,16 @@ input.pf-lim-input { width: 100%; padding: 9px 11px; border: 1px solid var(--lin
   .fab.fab-personal.is-second { right: calc(14px + 50px + 8px); width: 50px; height: 50px; }
   .fab.fab-personal.is-second svg { width: 23px; height: 23px; }
 }
+/* The statement window under a card's name: the whole reason these figures
+   differ from the Spends tab's, so it is stated rather than implied. */
+.pf-cc-win { font-size: 0.6rem; font-weight: 700; color: var(--accent); margin-top: 3px; letter-spacing: 0.2px; }
+.pf-cc-win.is-nocycle { color: var(--muted); }
+/* What is logged against a card this cycle: household plus personal, beside
+   the statement figure rather than added into it. Derived on every render, so
+   it is always the sum of the entries and never a second copy of them. */
+.cc-logged { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); font-size: 0.66rem; }
+.cc-logged-label { font-size: 0.58rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); }
+.cc-logged-split { flex: 1; min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 2px 3px; color: var(--muted); font-weight: 600; }
+.cc-logged-split .rvw-dot { margin: 0 2px 0 6px; }
+.cc-logged-split .rvw-dot:first-child { margin-left: 0; }
+.cc-logged-total { font-weight: 800; }

@@ -2453,12 +2453,33 @@ async function renderPfCardCheck(host, token) {
   const mod = await import('./credit.js');
   const now = new Date();
   const thisYm = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
-  const [{ byYm, cards }, houseRows] = await Promise.all([pfLoad(), DB.all('spends').catch(() => [])]);
+  const [{ rows: pRows, byYm, cards }, houseRows] = await Promise.all([pfLoad(), DB.all('spends').catch(() => [])]);
   if (pfRenderStale(token)) return;
 
   const months = pfMonths(byYm, thisYm, mod);
   if (!_pfYm || !months.includes(_pfYm)) _pfYm = months[months.length - 1];
   const ym = _pfYm;
+
+  // Same month strip as the other tabs. It matters more here than anywhere:
+  // each card's statement window is derived from the month picked, so without
+  // it there is no way to look at anything but the latest bill.
+  const appHeader = document.querySelector('.app-header');
+  const timelineWrap = el('div', {
+    class: 'cc-timeline-scroll cc-timeline-sticky trk-timeline',
+    style: 'top:' + (appHeader ? appHeader.offsetHeight : 0) + 'px',
+  });
+  const totalOf = (k) => round2((byYm.get(k) || []).reduce((a, r) => a + (Number(r.amount) || 0), 0));
+  timelineWrap.appendChild(el('div', { class: 'cc-timeline' }, months.slice().reverse().map((k) => el('button', {
+    type: 'button',
+    class: 'cc-timeline-chip' + (k === ym ? ' active' : '') + (k === thisYm ? ' is-current' : '')
+      + (totalOf(k) > 0 ? ' has-data' : ''),
+    text: mod.monthLabel(k),
+    onclick: () => { if (k === ym) return; _pfYm = k; _pfTimelineClicked = true; renderPersonal(); },
+  }))));
+  host.appendChild(timelineWrap);
+  _mountMonthStrip('pfcards', timelineWrap, _pfTimelineClicked);
+  _pfTimelineClicked = false;
+  _attachMonthSwipe(host, months, ym, (k) => { _pfYm = k; _pfTimelineClicked = true; renderPersonal(); });
 
   host.appendChild(el('h3', { class: 'div-group-head', text: '\ud83e\uddfe ' + mod.monthLabel(ym) + ' against your statements' }));
 
@@ -2471,19 +2492,22 @@ async function renderPfCardCheck(host, token) {
     return;
   }
 
-  const personalFor = (id) => round2((byYm.get(ym) || [])
-    .filter((r) => r.method === 'Card' && r.cardId === id)
-    .reduce((a, r) => a + (Number(r.amount) || 0), 0));
-  const houseFor = (id) => round2((houseRows || [])
-    .filter((r) => String(r.ym || '').slice(0, 7) === ym && r.method === 'Card' && r.cardId === id)
+  // Attributed by each card's OWN billing cycle, not by calendar month. A card
+  // on 5 – 4 puts a swipe on the 2nd onto last month's bill, so matching
+  // logged spends to a statement by calendar month compares two different sets
+  // of days and can never agree however carefully the spends were entered.
+  const sumIn = (rows, id, win) => round2((rows || [])
+    .filter((r) => r.method === 'Card' && r.cardId === id && mod.inCycleWindow(r.date, win))
     .reduce((a, r) => a + (Number(r.amount) || 0), 0));
 
-  let anyBilled = false;
+  let anyBilled = false, anyCycle = false;
   cards.forEach((c) => {
     const m = (c.months || []).find((x) => String(x.ym) === ym) || null;
     const billed = m ? round2(Number(m.billed) || 0) : 0;
     if (billed > 0) anyBilled = true;
-    const house = houseFor(c.id), personal = personalFor(c.id);
+    const win = mod.cycleWindow(ym, c);
+    if (win && win.isCycle) anyCycle = true;
+    const house = sumIn(houseRows, c.id, win), personal = sumIn(pRows, c.id, win);
     const logged = round2(house + personal);
     const gap = round2(billed - logged);
     const pct = billed > 0 ? Math.min(100, (logged / billed) * 100) : 0;
@@ -2492,6 +2516,13 @@ async function renderPfCardCheck(host, token) {
         el('span', { class: 'pf-cc-name', text: c.name || 'Card' }),
         el('span', { class: 'pf-cc-billed', text: billed > 0 ? fmtSheetCur(billed) + ' billed' : 'no statement yet' }),
       ]),
+      // The window is stated, not implied: it is the whole reason these
+      // figures differ from the ones on the Spends tab.
+      el('div', { class: 'pf-cc-win' + (win && win.isCycle ? '' : ' is-nocycle'), text: win
+        ? (win.isCycle
+          ? _spendDayLabel(win.from) + ' – ' + _spendDayLabel(win.to) + ' · cycle ' + win.startDay + '–' + win.endDay
+          : _spendDayLabel(win.from) + ' – ' + _spendDayLabel(win.to) + ' · no cycle set on this card')
+        : '' }),
       el('div', { class: 'pf-cc-track' }, [
         el('span', { class: 'pf-cc-fill is-house', style: 'width:' + (billed > 0 ? Math.min(100, (house / billed) * 100) : 0).toFixed(1) + '%' }),
         el('span', { class: 'pf-cc-fill is-personal', style: 'width:' + (billed > 0 ? Math.min(100, (personal / billed) * 100) : 0).toFixed(1) + '%' }),
@@ -2512,8 +2543,11 @@ async function renderPfCardCheck(host, token) {
   });
 
   host.appendChild(el('p', { class: 'hint mf-foot', text: anyBilled
-    ? 'Billed is the statement figure you entered on the Credit Card tab. Logged is what these two trackers hold for that card in this month — household spends from the Tracker, personal ones from here. Nothing is written back to the card: the statement already contains every swipe, so adding a logged spend to it would count the same one twice. The gap is what has been swiped and never written down.'
-    : 'Enter the month\u2019s billed figure on a card (Expense \u2192 Credit Card \u2192 tap a card \u2192 Months) and this will tell you how much of that bill your two trackers actually explain.' }));
+    ? 'Each card is read over its OWN billing cycle, shown under its name — so a swipe early in the month can belong to last month\u2019s bill, and one just after the month turns can still be on this one. That is also why these card figures differ from the Spends tab, which measures a calendar month because the allowance is monthly. Logged is what the two trackers hold for that card in the window: household spends from the Tracker, personal ones from here. Nothing is written back to the card — the statement already contains every swipe, so adding a logged spend to it would count the same one twice. The gap is what was swiped and never written down.'
+    : 'Enter the month\u2019s billed figure on a card (Expense \u2192 Credit Card \u2192 tap a card \u2192 Months) and this will tell you how much of that bill your two trackers actually explain, read over the card\u2019s own billing cycle.' }));
+  if (!anyCycle) {
+    host.appendChild(el('p', { class: 'hint warn rvw-note', text: 'None of these cards has a billing cycle set, so each is being read as a calendar month. Add the cycle days on the card (Expense \u2192 Credit Card \u2192 tap a card) and the comparison lines up with what the bank actually bills.' }));
+  }
 }
 
 // Bottom nav for Personal Finance. Spends is where the entries go in; the
@@ -4061,7 +4095,7 @@ async function renderExpenseSheet(host, token) {
 const PERSONAL_CATEGORIES = [
   { group: 'Food', items: ['Eat Out', 'Order In', 'Tea & Snacks', 'Coffee'] },
   { group: 'Shopping', items: ['Clothes', 'Footwear', 'Gadgets', 'Accessories'] },
-  { group: 'Travel', items: ['Fuel', 'Cab & Auto', 'Train & Bus', 'Trip'] },
+  { group: 'Travel', items: ['Fuel', 'Cab & Auto', 'Train & Bus', 'Stay', 'Trip'] },
   { group: 'Health', items: ['Gym', 'Grooming', 'Medicine', 'Supplements'] },
   { group: 'Fun', items: ['Movies', 'Subscriptions', 'Games', 'Books', 'Outing'] },
   { group: 'Other', items: ['Gift', 'Recharge', 'Fees & Charges', 'Misc'] },
@@ -9585,11 +9619,27 @@ async function renderCreditCards(host, token) {
   // Allocation tab's duplication bug taught: never trust the caller alone.
   host.innerHTML = '';
   const mod = await import('./credit.js');
-  const [cards, reimbRows] = await Promise.all([
+  const [cards, reimbRows, houseSpends, personalSpends] = await Promise.all([
     DB.all('creditCards').then((r) => r || []),
     DB.all('ccReimbursements').then((r) => r || []).catch(() => []),
+    DB.all('spends').catch(() => []),
+    DB.all('personalSpends').catch(() => []),
   ]);
   if (expRenderStale(token)) return;
+
+  // What each card actually has against it: household spends from the Tracker
+  // plus personal ones from Personal Finance, over THAT CARD'S billing cycle
+  // for the selected month. Derived on every render rather than written onto
+  // the card, so it cannot drift from the entries it is a sum of, and cannot
+  // double up with the statement figure typed in beside it.
+  const loggedOn = (cardRec, ym) => {
+    const win = mod.cycleWindow(ym, cardRec);
+    const sum = (rows) => round2((rows || [])
+      .filter((r) => r.method === 'Card' && r.cardId === cardRec.id && mod.inCycleWindow(r.date, win))
+      .reduce((a, r) => a + (Number(r.amount) || 0), 0));
+    const house = sum(houseSpends), personal = sum(personalSpends);
+    return { win, house, personal, total: round2(house + personal) };
+  };
 
   if (!cards.length) {
     host.appendChild(el('div', { class: 'empty' }, [
@@ -9705,6 +9755,22 @@ async function renderCreditCards(host, token) {
       statusEl = el('span', { class: 'value-emphasis cc-status-unpaid', text: '⏳ Unpaid' });
     }
 
+    // What is logged against this card in the selected month's cycle. Shown
+    // whenever there is anything, since the useful reading is house + personal
+    // against the statement rather than either half alone.
+    const lg = loggedOn(card, selYm);
+    const loggedRow = lg.total > 0
+      ? el('div', { class: 'cc-logged' }, [
+          el('span', { class: 'cc-logged-label', text: 'Logged' }),
+          el('span', { class: 'cc-logged-split' }, [
+            el('i', { class: 'rvw-dot is-house' }),
+            el('span', { text: 'house ' + fmtIntCur(lg.house) }),
+            el('i', { class: 'rvw-dot is-personal' }),
+            el('span', { text: 'own ' + fmtIntCur(lg.personal) }),
+          ]),
+          el('span', { class: 'cc-logged-total', text: fmtIntCur(lg.total) }),
+        ])
+      : document.createTextNode('');
     list.appendChild(el('div', { class: 'card', onclick: () => openCreditCardForm(card) }, [
       el('div', { class: 'top' }, [
         el('div', { class: 'card-left' }, [
@@ -9726,6 +9792,7 @@ async function renderCreditCards(host, token) {
         ])]),
         statusEl,
       ]),
+      loggedRow,
     ]));
   });
   host.appendChild(list);
@@ -9976,7 +10043,7 @@ async function openCreditCardForm(existing) {
     field('Card name', name),
     el('div', { class: 'field-row' }, [field('Bank', bank), field('Credit limit (₹)', creditLimit)]),
     el('div', { class: 'field-row' }, [field('Cycle start day', cycleStartDay), field('Cycle end day', cycleEndDay)]),
-    el('p', { class: 'hint', style: 'margin:-6px 0 0', text: 'Day of month the billing cycle runs, e.g. 5 to 4 — shown on the card list, doesn\'t affect any totals.' }),
+    el('p', { class: 'hint', style: 'margin:-6px 0 0', text: 'Day of month the billing cycle runs, e.g. 5 to 4. Personal Finance → Card check reads this to work out which bill a spend lands on, so a swipe on the 2nd goes to last month’s statement rather than this one.' }),
     readout,
   ]);
   const monthsContent = el('div', { class: 'hidden' }, [

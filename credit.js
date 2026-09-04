@@ -6,7 +6,7 @@
 //   { id, name,                                  // 'Swiggy HDFC CC'
 //     bank,                                      // 'HDFC' — the issuer, several cards can share one
 //     creditLimit,                               // ₹ sanctioned limit (optional — blank means "not tracked")
-//     cycleStartDay, cycleEndDay,                 // billing cycle, e.g. 5 -> 4 (day-of-month, 1-31)
+//     cycleStartDay, cycleEndDay,                 // billing cycle, e.g. 5 -> 4 (day-of-month, 1-31). Drives cycleWindow(), which is what decides whether a spend is on this month's bill or last month's
 //     months: [{ ym:'YYYY-MM', billed, status, paidOn }],  // one row per statement month
 //     createdAt, updatedAt }
 //
@@ -56,6 +56,49 @@ export function monthRangeYm(fromYm, toYm) {
     m++; if (m > 12) { m = 1; y++; }
   }
   return out;
+}
+
+// The dates a statement labelled `ym` actually covers on THIS card.
+//
+// A bill does not run 1st to 31st. A cycle of 5 → 4 means the August
+// statement covers 5 Aug to 4 Sep, so a swipe on the 2nd of August is on
+// JULY's bill and one on the 2nd of September is still on August's. Checking
+// logged spends against a statement by calendar month therefore compares two
+// different sets of days and always disagrees, however carefully the spends
+// were entered.
+//
+// The statement is labelled by the month its cycle OPENS in, which is how the
+// day pair on the card reads: "5 – 4" starting in August is August's bill.
+// A cycle whose end day is not before its start (1 – 31, or 1 – 30)
+// closes inside its own month.
+//
+// With no cycle recorded the calendar month is used and `isCycle` says so:
+// nothing is known about when this card closes, and inventing a window would
+// be worse than admitting it.
+export function cycleWindow(ym, card) {
+  const m = /^(\d{4})-(\d{2})/.exec(ym || '');
+  if (!m) return null;
+  const y = +m[1], mo = +m[2];
+  const lastDay = (yy, mm) => new Date(yy, mm, 0).getDate();
+  // Clamped to the month's own length, so an end day of 31 lands on the 28th
+  // in February rather than spilling into March.
+  const iso = (yy, mm, dd) => yy + '-' + String(mm).padStart(2, '0') + '-'
+    + String(Math.max(1, Math.min(dd, lastDay(yy, mm)))).padStart(2, '0');
+  const sd = Number(card && card.cycleStartDay) || 0;
+  const ed = Number(card && card.cycleEndDay) || 0;
+  if (!(sd >= 1 && sd <= 31) || !(ed >= 1 && ed <= 31)) {
+    return { from: iso(y, mo, 1), to: iso(y, mo, lastDay(y, mo)), isCycle: false, startDay: null, endDay: null };
+  }
+  if (ed >= sd) return { from: iso(y, mo, sd), to: iso(y, mo, ed), isCycle: true, startDay: sd, endDay: ed };
+  const ny = mo === 12 ? y + 1 : y, nm = mo === 12 ? 1 : mo + 1;
+  return { from: iso(y, mo, sd), to: iso(ny, nm, ed), isCycle: true, startDay: sd, endDay: ed };
+}
+
+// Is this date inside that window? Kept beside it so callers cannot invent a
+// subtly different comparison (inclusive at one end, exclusive at the other).
+export function inCycleWindow(dateISO, win) {
+  const d = String(dateISO || '').slice(0, 10);
+  return !!win && /^\d{4}-\d{2}-\d{2}$/.test(d) && d >= win.from && d <= win.to;
 }
 
 // Normalise whatever the form produced into sorted, deduped month rows. Last
