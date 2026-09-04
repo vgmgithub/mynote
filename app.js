@@ -1644,8 +1644,9 @@ function applyAppMode(mode) {
   // The other three Personal tabs are settings and reports, where a + would
   // add nothing.
   $('#pfAddBtn').classList.toggle('hidden', !(isHome || (isPersonal && _pfTab === 'spends')));
-  // On Home the corner slot is the household spend button's, so this one takes
-  // the seat beside it. In its own section it is alone and sits in the corner.
+  // On Home both buttons live in the bottom-right corner, stacked: the
+  // household one keeps the lower slot and this sits above it. In its own
+  // section it is alone and takes the corner itself.
   $('#pfAddBtn').classList.toggle('is-second', isHome);
   // Reachable from Home as well as the Tracker tab: logging a spend is the
   // most frequent thing done in the app, and burying it three taps deep is how

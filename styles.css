@@ -2308,28 +2308,25 @@ input.pf-lim-input { width: 100%; padding: 9px 11px; border: 1px solid var(--lin
 }
 
 /* ---- Personal spend FAB ---- */
-/* Violet, where the household spend button is a white circle with an orange
-   money bag: two buttons sit side by side on Home and which money they log has
-   to be obvious before the icon is read. Same 56px as its neighbour rather
-   than the smaller secondary size — these are two peer actions, not a primary
-   and its helper. */
+/* Black, where the household spend button is a white circle with an orange
+   money bag — two buttons share the corner on Home and which money they log
+   has to be obvious before the icon is read. A faint light ring keeps the
+   circle visible against a dark background, where a black fill would
+   otherwise disappear into it. Same 56px as its neighbour rather than the
+   smaller secondary size: these are two peer actions, not a primary and its
+   helper. */
 .fab.fab-personal {
-  background: linear-gradient(140deg, #a855f7 0%, #7c3aed 100%);
+  background: #111318;
   color: #fff;
   display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 6px 14px rgba(124,58,237,0.38), 0 12px 28px rgba(0,0,0,0.22);
+  box-shadow: 0 6px 14px rgba(0,0,0,0.32), 0 12px 28px rgba(0,0,0,0.28), 0 0 0 1px rgba(255,255,255,0.14);
 }
-.fab.fab-personal:active { transform: translateY(1px); box-shadow: 0 4px 10px rgba(124,58,237,0.3); }
+.fab.fab-personal:active { transform: translateY(1px); box-shadow: 0 4px 10px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.14); }
 .fab.fab-personal svg { width: 26px; height: 26px; display: block; }
-/* Home: the corner belongs to the household button, so this takes the seat
-   beside it. Both 56px, so they align. */
-.fab.fab-personal.is-second { right: calc(18px + 56px + 12px); }
-/* Under ~330px two 56px buttons plus their gaps crowd the edge, so the pair
-   tightens rather than one sliding off. */
-@media (max-width: 330px) {
-  .fab.fab-personal.is-second { right: calc(14px + 50px + 8px); width: 50px; height: 50px; }
-  .fab.fab-personal.is-second svg { width: 23px; height: 23px; }
-}
+/* On Home both live in the bottom-right corner, STACKED rather than spread
+   along the bottom edge. The household one keeps the lower slot, being the
+   one logged more often and so the one the thumb should find first. */
+.fab.fab-personal.is-second { bottom: calc(78px + 56px + 12px + var(--safe-bottom)); }
 /* The statement window under a card's name: the whole reason these figures
    differ from the Spends tab's, so it is stated rather than implied. */
 .pf-cc-win { font-size: 0.6rem; font-weight: 700; color: var(--accent); margin-top: 3px; letter-spacing: 0.2px; }
