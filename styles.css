@@ -2367,3 +2367,14 @@ button.msheet-follow { font-family: inherit; cursor: pointer; }
 /* Which window each half of the allowance is counted over. Stated, because a
    September list can legitimately hold a spend dated 25 August. */
 .pf-window-note { margin: -4px 0 10px; font-size: 0.6rem; line-height: 1.45; }
+
+/* ---- Entries filter (Personal Finance -> Spends -> Entries) ---- */
+/* Scrolls sideways rather than wrapping: the number of chips is the number of
+   cards, and a wrapping row would change the page height every time a card is
+   added. */
+.pf-filter { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 2px 0 4px; margin: 6px 0 2px; }
+.pf-filter::-webkit-scrollbar { display: none; }
+.pf-filter-chip { flex: 0 0 auto; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--muted); font: inherit; font-size: 0.72rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.pf-filter-chip.active { background: var(--card-2); border-color: var(--accent); color: var(--text); box-shadow: inset 0 0 0 1px var(--accent); }
+/* What the filter is showing, since the allowance strips above stay whole. */
+.pf-filter-note { margin: 2px 0 8px; font-size: 0.62rem; font-weight: 600; }

@@ -2114,7 +2114,49 @@ async function renderPfSpends(host, token) {
   host.appendChild(seg);
 
   if (_pfView === 'entries') {
-    const list = t.rows.slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || (b.id - a.id));
+    // Cards that could hold an entry, plus the two method-wide choices. A card
+    // deleted since the filter was set falls back to All rather than showing an
+    // empty list with no way to tell why.
+    const opts = [['all', 'All'], ['upi', 'UPI']]
+      .concat((cards || []).map((c) => ['card:' + c.id, c.name || 'Card']));
+    if (!opts.some(([v]) => v === _pfFilter)) _pfFilter = 'all';
+    const matches = (r) => {
+      if (_pfFilter === 'all') return true;
+      if (_pfFilter === 'upi') return r.method === 'UPI';
+      return r.method === 'Card' && String(r.cardId) === _pfFilter.slice(5);
+    };
+    // Only worth a filter row when there is something to filter BY: with no
+    // cards on record the only split is UPI against nothing.
+    if (cards && cards.length) {
+      host.appendChild(el('div', { class: 'pf-filter' }, opts.map(([v, label]) => el('button', {
+        type: 'button', class: 'pf-filter-chip' + (_pfFilter === v ? ' active' : ''), text: label,
+        onclick: () => { if (_pfFilter === v) return; _pfFilter = v; renderPersonal(); },
+      }))));
+    }
+
+    const shown = t.rows.filter(matches);
+    // What the filter is actually showing, since the figures above it are the
+    // whole month's and would otherwise look like they disagree.
+    if (_pfFilter !== 'all') {
+      const sum = round2(shown.reduce((a, r) => a + (Number(r.amount) || 0), 0));
+      const label = (opts.find(([v]) => v === _pfFilter) || [null, ''])[1];
+      const bits = [label + ' · ' + fmtSheetCur(sum) + ' · '
+        + shown.length + (shown.length === 1 ? ' entry' : ' entries')];
+      // A card's own window for this month, which is what decides the rows.
+      if (_pfFilter.startsWith('card:')) {
+        const c = (cards || []).find((x) => String(x.id) === _pfFilter.slice(5));
+        const w = c ? mod.cycleWindow(ym, c) : null;
+        if (w) bits.push(_spendDayLabel(w.from) + ' – ' + _spendDayLabel(w.to));
+      }
+      host.appendChild(el('p', { class: 'hint pf-filter-note', text: bits.join('  ·  ') }));
+    }
+    if (!shown.length) {
+      host.appendChild(el('p', { class: 'hint', style: 'text-align:center;padding:14px 0',
+        text: 'Nothing on this filter for ' + mod.monthLabel(ym) + '.' }));
+      return;
+    }
+
+    const list = shown.slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || (b.id - a.id));
     const wrap = el('div', { class: 'msheet' });
     list.forEach((r) => {
       const card = cards.find((c) => c.id === r.cardId);
@@ -4257,6 +4299,11 @@ let _pfTab = 'spends';        // 'spends' | 'limits' | 'review' | 'cards'
 let _pfYm = null;
 let _pfTimelineClicked = false;
 let _pfView = 'category';     // 'category' | 'entries'
+// Entries filter: 'all', 'upi', or 'card:<id>' for one card. Only the entry
+// LIST is narrowed - the allowance strips above stay whole, because the card
+// limit is one figure across every card and showing a single card against it
+// would read as a per-card limit.
+let _pfFilter = 'all';
 // Same render-race guard the Expense section uses: every tab here awaits a
 // read, and a fast tab switch must not let a stale one paint over the new one.
 let _pfRenderToken = 0;
