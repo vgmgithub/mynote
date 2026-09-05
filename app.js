@@ -11619,7 +11619,7 @@ const HM_STAR_SVG = '<svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="r
 // whole point of the tab, so this is where "flag this one for investing"
 // naturally happens. Persists on the stock record itself (`bookmarked`),
 // writes immediately on tap - no Save step, same as starring an email.
-function _heatmapBookmarkBtn(s) {
+function _heatmapBookmarkBtn(s, onChange) {
   const setState = (btn) => {
     btn.classList.toggle('active', !!s.bookmarked);
     const label = s.bookmarked ? 'Bookmarked for investing - tap to remove' : 'Bookmark for investing';
@@ -11632,6 +11632,10 @@ function _heatmapBookmarkBtn(s) {
   btn.addEventListener('click', async () => {
     s.bookmarked = !s.bookmarked;
     setState(btn);
+    // The basket below reads these, so it is redrawn rather than left stale -
+    // just that panel, not the whole grid, which would throw away the
+    // horizontal scroll position the user is in the middle of using.
+    if (onChange) onChange();
     try { await DB.put('stocks', s); } catch (_) {}
   });
   return btn;
@@ -11664,7 +11668,7 @@ function renderHeatmap() {
     Object.keys(byYm).forEach((ym) => { const v = byYm[ym]; if (typeof v === 'number') { if (v > maxV) { maxV = v; maxYm = ym; } if (v < minV) { minV = v; minYm = ym; } } });
     const tr = el('tr', {}, [el('th', { class: 'rowhead' }, [
       el('div', { class: 'hm-name-row' }, [
-        _heatmapBookmarkBtn(s),
+        _heatmapBookmarkBtn(s, () => drawBasket()),
         el('div', { class: 'hm-name', text: s.name || '(unnamed)' }),
       ]),
       s.category ? el('div', { class: 'hm-cat', text: s.category }) : document.createTextNode(''),
@@ -11685,6 +11689,57 @@ function renderHeatmap() {
   });
   table.appendChild(tbody);
   host.appendChild(el('div', { class: 'heatmap-scroll' }, [table]));
+
+  // ---- What the bookmarks would cost ----
+  //
+  // The heatmap is where a stock gets flagged for buying, so the question that
+  // flag raises belongs here too: if I act on all of them, what does the
+  // smallest real version of that cost? One share of each, at today's price.
+  //
+  // A bookmarked stock with no current price is COUNTED but not priced, and
+  // said so out loud. Treating a missing price as zero would quietly understate
+  // the basket, which is the one thing this figure exists to get right.
+  const cur = curOf(state.portfolio);
+  const bmPanel = el('div', { class: 'hm-basket' });
+  function drawBasket() {
+    const marked = stocks.filter((x) => x.bookmarked);
+    const priced = marked.filter((x) => Number(x.currentPrice) > 0);
+    const basket = round2(priced.reduce((a, x) => a + Number(x.currentPrice), 0));
+    const unpriced = marked.length - priced.length;
+    bmPanel.innerHTML = '';
+    bmPanel.classList.toggle('is-empty', !marked.length);
+    if (!marked.length) {
+      bmPanel.appendChild(el('div', { class: 'hm-basket-empty',
+        text: 'Nothing bookmarked. Tap the star beside a name and the cost of one share of each lands here.' }));
+      return;
+    }
+    const list = el('div', { class: 'hm-basket-list hidden' }, marked
+      .slice().sort((a, b) => (Number(b.currentPrice) || 0) - (Number(a.currentPrice) || 0))
+      .map((x) => el('div', { class: 'hm-basket-row' }, [
+        el('span', { class: 'hm-basket-name', text: x.name || '(unnamed)' }),
+        el('span', { class: 'hm-basket-price' + (Number(x.currentPrice) > 0 ? '' : ' is-none'),
+          text: Number(x.currentPrice) > 0 ? fmtCur(Number(x.currentPrice), cur) : 'no price' }),
+      ])));
+    const head = el('button', { type: 'button', class: 'hm-basket-head' }, [
+      el('span', { class: 'hm-basket-star', text: '★' }),
+      el('span', { class: 'hm-basket-body' }, [
+        el('span', { class: 'hm-basket-count',
+          text: marked.length + (marked.length === 1 ? ' stock bookmarked' : ' stocks bookmarked') }),
+        el('span', { class: 'hm-basket-sub', text: 'one share of each'
+          + (unpriced ? ' · ' + unpriced + ' without a price' : '') }),
+      ]),
+      el('span', { class: 'hm-basket-total', text: fmtCur(basket, cur) }),
+      el('span', { class: 'hm-basket-chev' }),
+    ]);
+    head.addEventListener('click', () => {
+      const closed = list.classList.toggle('hidden');
+      head.classList.toggle('is-open', !closed);
+    });
+    bmPanel.appendChild(head);
+    bmPanel.appendChild(list);
+  }
+  drawBasket();
+  host.appendChild(bmPanel);
 
   const legend = el('div', { class: 'heat-legend' });
   HEAT_LEGEND.forEach(([t, bg, fg]) => { const c = el('span', { class: 'hl', text: t }); c.style.background = bg; c.style.color = fg; legend.appendChild(c); });
