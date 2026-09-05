@@ -4461,6 +4461,132 @@ const exprTerm = (n) => String(round2(n));
 // up the next time the month is touched, with no migration.
 const normaliseExpr = (s) => String(s == null ? '' : s).replace(/-?\d+(?:\.\d+)?/g, (m) => String(round2(m)));
 
+// ---------- Virtual balance: money owed to you ----------
+//
+// Not a figure but a LIST. Virtual balance is what somebody else is holding -
+// lent, fronted, owed - and it stops being virtual the moment they hand it
+// over, when it moves into In Hand. A single number cannot be settled a piece
+// at a time, and cannot say who is holding what; a list can, and the headline
+// figure is simply the sum of it.
+//
+// Kept on the month's own sheet row like every other figure there, so a past
+// month keeps the picture as it stood.
+function virtualItemsOf(sheet) {
+  const raw = sheet && sheet.virtualItems;
+  if (Array.isArray(raw)) {
+    return raw
+      .map((it) => ({ label: String((it && it.label) || '').trim(), amount: round2(Number(it && it.amount) || 0) }))
+      .filter((it) => it.label || it.amount);
+  }
+  // A month written while this was a single typed number keeps that number, as
+  // one unnamed entry. Dropping it would quietly change that month's balance.
+  const legacy = sumExpr(sheet && sheet.virtualBalance);
+  return legacy ? [{ label: 'Carried over', amount: legacy }] : [];
+}
+const virtualTotal = (items) => round2((items || []).reduce((a, it) => a + (Number(it.amount) || 0), 0));
+
+// One row per person or reason: who is holding it, and how much. Rows are added
+// as money goes out and removed as it comes back.
+function openVirtualBalForm(ym, sheet, monthLabel, onSaved) {
+  const rows = virtualItemsOf(sheet).map((it) => ({ label: it.label, amount: it.amount }));
+  const wrap = el('div', { class: 'vb-rows' });
+  const totalEl = el('span', { class: 'vb-total-val' });
+  const inputs = [];
+
+  const syncTotal = () => {
+    let sum = 0;
+    inputs.forEach(({ amt }) => { sum = round2(sum + (num(amt.value) || 0)); });
+    totalEl.textContent = fmtSheetCur(sum);
+  };
+  // Values are read back out of the boxes before any redraw, so a half-typed
+  // row is not thrown away by adding or removing another one.
+  const syncRows = () => {
+    inputs.forEach(({ ix, lbl, amt }) => {
+      rows[ix] = { label: lbl.value, amount: round2(num(amt.value) || 0) };
+    });
+  };
+
+  const draw = () => {
+    wrap.innerHTML = '';
+    inputs.length = 0;
+    rows.forEach((r, ix) => {
+      if (r == null) return;
+      const lbl = el('input', { type: 'text', class: 'vb-label', value: r.label || '',
+        placeholder: 'Who has it', 'aria-label': 'Who has it' });
+      const amt = el('input', { type: 'number', inputmode: 'decimal', step: 'any', class: 'vb-amt',
+        value: r.amount ? r.amount : '', placeholder: '0', 'aria-label': 'Amount' });
+      amt.addEventListener('input', syncTotal);
+      inputs.push({ ix, lbl, amt });
+      wrap.appendChild(el('div', { class: 'vb-row' }, [
+        lbl, amt,
+        el('button', {
+          class: 'icon-btn vb-del', type: 'button', text: '×',
+          title: 'Remove this entry', 'aria-label': 'Remove this entry',
+          // Removing the row IS how a debt is settled: the money has arrived,
+          // so it belongs in In Hand from here on, not in this list.
+          onclick: () => { syncRows(); rows[ix] = null; draw(); },
+        }),
+      ]));
+    });
+    if (!inputs.length) {
+      wrap.appendChild(el('p', { class: 'hint', style: 'margin:0', text: 'Nobody owes you anything this month.' }));
+    }
+    syncTotal();
+  };
+
+  const addRow = () => {
+    syncRows();
+    rows.push({ label: '', amount: 0 });
+    draw();
+    const last = inputs[inputs.length - 1];
+    if (last) last.lbl.focus();
+  };
+  draw();
+
+  const save = async () => {
+    syncRows();
+    // A row with neither a name nor an amount is a blank line, not an entry.
+    const items = rows.filter(Boolean)
+      .map((r) => ({ label: String(r.label || '').trim(), amount: round2(Number(r.amount) || 0) }))
+      .filter((r) => r.label || r.amount > 0);
+    if (items.some((r) => !r.label)) { toast('Every entry needs a name'); return; }
+    if (items.some((r) => r.amount <= 0)) { toast('Every entry needs an amount'); return; }
+    await DB.put('monthlySheet', Object.assign({}, sheet, {
+      ym, virtualItems: items,
+      // The old single figure is cleared once the list owns the number, so the
+      // two can never both be read and disagree.
+      virtualBalance: null, virtualBalanceSrc: null,
+      updatedAt: new Date().toISOString(),
+    }));
+    closeModal();
+    toast(items.length
+      ? fmtSheetCur(virtualTotal(items)) + ' across ' + items.length + (items.length === 1 ? ' entry' : ' entries')
+      : 'Virtual balance cleared');
+    if (onSaved) onSaved();
+  };
+
+  openModal(el('div', { class: 'sheet has-fixed-footer' }, [
+    el('div', { class: 'sheet-scroll' }, [
+      el('h2', { text: 'Virtual balance · ' + monthLabel }),
+      el('p', { class: 'hint', text: 'Money somebody else is holding — lent out, fronted, or owed to you. '
+        + 'It counts towards this month like cash does. When it is actually paid back, remove the row: '
+        + 'the amount is in your hand from then on, so it belongs in In Hand instead.' }),
+      wrap,
+      el('div', { class: 'vb-add' }, [
+        el('button', { class: 'btn small primary', type: 'button', text: '+ Add entry', onclick: addRow }),
+      ]),
+      el('div', { class: 'vb-total' }, [
+        el('span', { class: 'vb-total-label', text: 'Virtual balance' }),
+        totalEl,
+      ]),
+    ]),
+    el('div', { class: 'sheet-footer' }, [el('div', { class: 'btn-row' }, [
+      el('button', { class: 'btn primary', text: 'Save', onclick: save }),
+      el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }),
+    ])]),
+  ]));
+}
+
 // ---------- Monthly cash-flow sheet (Expense → Expense tab) ----------
 // One month at a time: what came in, what's committed out, what's left.
 //
@@ -4608,12 +4734,25 @@ async function renderExpenseSheet(host, token) {
   // double, and it can't fire twice because writing the row settles the
   // condition. Past months are left alone — auto-filling one the user
   // deliberately skipped would invent history.
-  if (!sheetRow && ym === thisYm && fetchable.length) {
+  // Virtual entries carry into a new month for the same reason they exist: a
+  // debt is not settled by a calendar turning over. They ride the same one-shot
+  // seed as the fetched figures, and are removed by hand from the form once the
+  // money actually arrives.
+  const prevD = new Date(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)) - 2, 1);
+  const prevYmSheet = prevD.getFullYear() + '-' + String(prevD.getMonth() + 1).padStart(2, '0');
+  const prevSheet = (!sheetRow && ym === thisYm)
+    ? await DB.get('monthlySheet', prevYmSheet).catch(() => null) : null;
+  if (expRenderStale(token)) return;
+  const carried = prevSheet ? virtualItemsOf(prevSheet) : [];
+  if (!sheetRow && ym === thisYm && (fetchable.length || carried.length)) {
     const seed = { ym, updatedAt: new Date().toISOString() };
     fetchable.forEach((r) => { seed[r.key] = exprTerm(r.source); });
+    if (carried.length) seed.virtualItems = carried;
     await DB.put('monthlySheet', seed);
     if (expRenderStale(token)) return;
-    toast(mod.monthLabel(ym) + ' started — figures fetched');
+    toast(mod.monthLabel(ym) + ' started — '
+      + (fetchable.length ? 'figures fetched' : 'sheet opened')
+      + (carried.length ? ', ' + carried.length + ' virtual carried over' : ''));
     renderHomeExpense();
     return;
   }
@@ -4706,10 +4845,35 @@ async function renderExpenseSheet(host, token) {
     ]));
   };
 
-  // In Hand follows the Allocation salary; Virtual Bal has no source at all,
-  // so it is a plain typed figure with no "auto" to claim.
+  // In Hand follows the Allocation salary.
   creditInputRow('In Hand', 'inHand', planNote + ' · ' + fmtSheetCur(perMonth('salary')), perMonth('salary'), true);
-  creditInputRow('Virtual Bal', 'virtualBalance', 'you enter', 0, false);
+  // Virtual Bal is the total of its entries, so the headline is read-only and
+  // the editing happens in the list behind the + . A figure that is the sum of
+  // a list cannot also be typed over without one of the two becoming a lie.
+  const vItems = virtualItemsOf(sheet);
+  const vTotal = virtualTotal(vItems);
+  credits += vTotal;
+  const vNames = vItems.map((i) => i.label).filter(Boolean);
+  table.appendChild(el('div', { class: 'msheet-row msheet-credit' }, [
+    el('div', { class: 'msheet-label' }, [
+      el('span', {}, ['Virtual Bal', el('span', { class: 'msheet-follow', text: 'list' })]),
+      el('span', { class: 'msheet-note', text: vItems.length
+        ? vItems.length + (vItems.length === 1 ? ' entry · ' : ' entries · ')
+          + vNames.slice(0, 2).join(', ') + (vNames.length > 2 ? ' +' + (vNames.length - 2) + ' more' : '')
+        : 'tap + to add who owes you' }),
+    ]),
+    el('div', { class: 'msheet-vb' }, [
+      el('span', { class: 'msheet-val', text: fmtSheetCur(vTotal) }),
+      el('button', {
+        class: 'cat-add-btn msheet-vb-btn', type: 'button', text: '+',
+        title: 'Who owes you this month', 'aria-label': 'Edit virtual balance entries',
+        onclick: (e) => {
+          e.stopPropagation();
+          openVirtualBalForm(ym, sheet, mod.monthLabel(ym), () => renderHomeExpense());
+        },
+      }),
+    ]),
+  ]));
 
   debitRows.forEach((r) => {
     const expr = exprOf(r);
