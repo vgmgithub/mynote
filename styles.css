@@ -2430,3 +2430,28 @@ input.tag-input::placeholder { color: var(--muted); opacity: 0.7; }
 /* A bookmark with no price is counted but not priced, and looks it. */
 .hm-basket-price.is-none { color: var(--warn); font-weight: 600; font-size: 0.66rem; }
 .hm-basket.is-empty .hm-basket-empty { padding: 11px 13px; background: var(--card); border: 1px dashed var(--line); border-radius: 12px; font-size: 0.68rem; color: var(--muted); line-height: 1.45; }
+
+/* ---- Editing the category lists ---- */
+/* The + beside a label. Small and quiet: it is an occasional action sitting
+   next to the thing it adds to, not a call to action. */
+.cat-add-btn { flex: 0 0 auto; width: 20px; height: 20px; margin-left: 6px; padding: 0; border-radius: 50%; border: 1px solid var(--line); background: var(--card-2); color: var(--muted); font: inherit; font-size: 0.85rem; line-height: 1; cursor: pointer; vertical-align: middle; }
+.cat-add-btn:active { border-color: var(--accent); color: var(--accent); }
+/* The "Category" title row in the personal form, which has no field label of
+   its own to hang the + from. */
+.cat-head-row { display: flex; align-items: center; margin-bottom: 8px; }
+.cat-head-label { font-size: 0.78rem; color: var(--muted); }
+/* A group label is a flex row now, so its + sits on the same line. */
+.spend-cat-group-label { display: flex; align-items: center; }
+.field > label { display: flex; align-items: center; }
+
+/* The editor itself: one row per name, with what it is carrying. */
+.cat-rows { display: flex; flex-direction: column; gap: 6px; }
+.cat-row { display: flex; align-items: center; gap: 8px; }
+input.cat-name { flex: 1; min-width: 0; padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; background: var(--card); color: var(--text); font-family: inherit; font-size: 0.9rem; }
+/* How many entries a name carries, which is what decides whether it can go. */
+.cat-used { flex: 0 0 auto; font-size: 0.58rem; font-weight: 700; color: var(--muted); text-align: right; min-width: 46px; }
+.cat-row.is-used .cat-used { color: var(--warn); }
+.cat-del { flex: 0 0 auto; }
+.cat-row.is-used .cat-del { opacity: 0.45; }
+.cat-add { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line); }
+.btn.small { padding: 8px 12px; font-size: 0.76rem; white-space: nowrap; }

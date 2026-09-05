@@ -1808,8 +1808,15 @@ async function openPfSpendForm(existing, defaultDate) {
   const tagBox = tagField(editing ? existing.tags : [], knownTags(allPfRows), null);
 
   const catBtns = [];
-  const catGrid = el('div', {}, PERSONAL_CATEGORIES.map((g) => el('div', { class: 'spend-cat-group' }, [
-    el('div', { class: 'spend-cat-group-label', text: g.group }),
+  // Reopening the form is how an edit lands: the picker is built from the list
+  // as it stands, so it has to be rebuilt, and rebuilding just this grid would
+  // leave the rest of the sheet holding stale state anyway.
+  const reopen = () => openPfSpendForm(existing, defaultDate);
+  const catGrid = el('div', {}, catList('pf').map((g) => el('div', { class: 'spend-cat-group' }, [
+    el('div', { class: 'spend-cat-group-label' }, [
+      el('span', { text: g.group }),
+      catAddBtn('Add a sub-category under ' + g.group, () => openCatManager('pf', g.group, reopen)),
+    ]),
     el('div', { class: 'spend-cat-grid' }, g.items.map((name) => {
       const btn = el('button', { class: 'spend-cat-btn' + (name === chosenCat ? ' active' : ''), type: 'button', text: name });
       btn.addEventListener('click', () => {
@@ -1898,7 +1905,13 @@ async function openPfSpendForm(existing, defaultDate) {
     el('div', { class: 'sheet-scroll' }, [
       el('h2', { text: editing ? 'Edit personal spend' : 'Personal spend' }),
       el('div', { class: 'form-secs' }, [
-        formSection('\ud83c\udff7\ufe0f', 'What for', [catGrid]),
+        formSection('\ud83c\udff7\ufe0f', 'What for', [
+          el('div', { class: 'cat-head-row' }, [
+            el('span', { class: 'cat-head-label', text: 'Category' }),
+            catAddBtn('Add a category', () => openCatManager('pf', null, reopen)),
+          ]),
+          catGrid,
+        ]),
         formSection('\ud83d\udcb0', 'How much', [
           el('div', { class: 'field-row' }, [field('Amount (₹)', amount), field('Date', dateInp)]),
           field('Paid by', methodRow),
@@ -1910,6 +1923,192 @@ async function openPfSpendForm(existing, defaultDate) {
     el('div', { class: 'sheet-footer' }, [el('div', { class: 'btn-row', style: 'flex-wrap:wrap' }, btns)]),
   ]));
   if (!editing) amount.focus();
+}
+
+// ---------- Editing the category lists ----------
+//
+// One editor, two jobs. With no `group` it manages the CATEGORIES themselves
+// (Food, Shopping); with one it manages that category's SUB-CATEGORIES (Eat
+// Out, Clothes). Both look the same because they are the same problem: a list
+// of names to rename, remove or add to.
+//
+// What happens to spends already filed under a name is the part that matters:
+//
+//   RENAME  - every entry using the old name is updated with it. Anything else
+//             silently breaks month-on-month comparison at the rename, which is
+//             the one thing these lists exist to make possible.
+//   DELETE  - refused while entries still use the name, and it says how many.
+//             Rename it, or move those spends, first. Nothing is orphaned
+//             behind the user's back.
+//
+// A category is not deletable while it still holds sub-categories either, for
+// the same reason: its items would have nowhere to live.
+async function openCatManager(kind, group, onDone) {
+  const cfg = CAT_KINDS[kind];
+  const list = catList(kind).map((g) => ({ group: g.group, items: (g.items || []).slice() }));
+  const inGroup = group != null;
+  const src = inGroup ? (list.find((g) => g.group === group) || { group, items: [] }) : null;
+  // Original names, to work out afterwards what was renamed into what.
+  const original = inGroup ? src.items.slice() : list.map((g) => g.group);
+  const rows = original.slice();
+
+  const spends = (await DB.all(cfg.store).catch(() => [])) || [];
+  // How many entries a name is carrying. A category counts every spend in any
+  // of its sub-categories.
+  const usedBy = (name) => {
+    if (inGroup) return spends.filter((r) => (r.category || '') === name).length;
+    const g = list.find((x) => x.group === name);
+    const items = g ? g.items : [];
+    return spends.filter((r) => items.indexOf(r.category || '') >= 0).length;
+  };
+
+  const rowsWrap = el('div', { class: 'cat-rows' });
+  const inputs = [];
+  const removed = new Set();
+
+  // Typed-but-unsaved names live in `rows`; `original` never moves, so a
+  // rename stays distinguishable from a name that was always there.
+  const syncFromInputs = () => { inputs.forEach(({ ix, inp }) => { rows[ix] = inp.value; }); };
+
+  const draw = () => {
+    rowsWrap.innerHTML = '';
+    inputs.length = 0;
+    rows.forEach((name, ix) => {
+      if (removed.has(ix)) return;
+      const used = usedBy(name);
+      const held = !inGroup ? ((list.find((x) => x.group === name) || { items: [] }).items.length) : 0;
+      const inp = el('input', { type: 'text', class: 'cat-name', value: name, 'aria-label': 'Name' });
+      inputs.push({ ix, inp });
+      const del = el('button', {
+        class: 'icon-btn cat-del', type: 'button', text: '×',
+        title: 'Remove ' + name, 'aria-label': 'Remove ' + name,
+        onclick: () => {
+          if (used > 0) {
+            toast(name + ' is on ' + used + ' ' + (used === 1 ? 'entry' : 'entries') + ' · rename it instead');
+            return;
+          }
+          if (held > 0) {
+            toast(name + ' still holds ' + held + ' sub-' + (held === 1 ? 'category' : 'categories'));
+            return;
+          }
+          syncFromInputs();
+          removed.add(ix);
+          draw();
+        },
+      });
+      rowsWrap.appendChild(el('div', { class: 'cat-row' + (used > 0 ? ' is-used' : '') }, [
+        inp,
+        el('span', { class: 'cat-used', text: used > 0 ? used + (used === 1 ? ' entry' : ' entries') : (held > 0 ? held + ' sub' : '') }),
+        del,
+      ]));
+    });
+    if (!rowsWrap.childElementCount) {
+      rowsWrap.appendChild(el('p', { class: 'hint', style: 'margin:0', text: 'Nothing here yet.' }));
+    }
+  };
+  draw();
+
+  // The new-entry box. Enter adds without reaching for the button.
+  const fresh = el('input', { type: 'text', class: 'cat-name',
+    placeholder: inGroup ? 'New sub-category' : 'New category' });
+  const addOne = () => {
+    const v = fresh.value.trim();
+    if (!v) return;
+    const exists = rows.some((n, i) => !removed.has(i) && n.toLowerCase() === v.toLowerCase())
+      || inputs.some((r) => r.inp.value.trim().toLowerCase() === v.toLowerCase());
+    if (exists) { toast(v + ' is already on the list'); return; }
+    syncFromInputs();
+    rows.push(v);
+    fresh.value = '';
+    draw();
+    fresh.focus();
+  };
+  fresh.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addOne(); } });
+
+  const save = async () => {
+    // Collect the surviving names in order, with whatever they were renamed to.
+    syncFromInputs();
+    const renames = [];      // [oldName, newName]
+    const kept = [];
+    inputs.forEach(({ ix }) => {
+      const v = String(rows[ix] || '').trim();
+      if (!v) return;                       // blanked out reads as removed
+      // Compared against the name as LOADED, not against the working value,
+      // which is the same string by now.
+      const was = ix < original.length ? original[ix] : null;
+      if (was != null && was !== v) renames.push([was, v]);
+      kept.push(v);
+    });
+    if (!kept.length) { toast('Keep at least one'); return; }
+    const dupe = kept.find((n, i) => kept.findIndex((m) => m.toLowerCase() === n.toLowerCase()) !== i);
+    if (dupe) { toast('Two entries named ' + dupe); return; }
+
+    let next;
+    if (inGroup) {
+      next = list.map((g) => (g.group === group ? { group: g.group, items: kept } : g));
+      if (!next.some((g) => g.group === group)) next = next.concat([{ group, items: kept }]);
+    } else {
+      // Group order is the order on screen, and the tracker's roll-up reads it,
+      // so re-ordering here re-orders the month view too.
+      const byOld = new Map(list.map((g) => [g.group, g.items]));
+      const renameOf = new Map(renames);
+      next = kept.map((name) => {
+        const was = [...renameOf.entries()].find(([, to]) => to === name);
+        const items = byOld.get(was ? was[0] : name) || [];
+        return { group: name, items };
+      });
+    }
+    await saveCategoryList(kind, next);
+
+    // Carry the renames through the entries themselves. Only sub-category
+    // renames touch a spend: a spend records its sub-category, and which
+    // category that belongs to is looked up, never stored.
+    if (inGroup && renames.length) {
+      const map = new Map(renames);
+      let moved = 0;
+      for (const r of spends) {
+        const to = map.get(r.category || '');
+        if (!to) continue;
+        await DB.put(cfg.store, Object.assign({}, r, { category: to, updatedAt: new Date().toISOString() }))
+          .then(() => { moved++; }).catch(() => {});
+      }
+      if (moved) toast(moved + ' ' + (moved === 1 ? 'entry' : 'entries') + ' moved with the rename');
+      else toast('Saved');
+    } else {
+      toast('Saved');
+    }
+    closeModal();
+    if (onDone) onDone();
+  };
+
+  openModal(el('div', { class: 'sheet has-fixed-footer' }, [
+    el('div', { class: 'sheet-scroll' }, [
+      el('h2', { text: inGroup ? group : 'Categories' }),
+      el('p', { class: 'hint', text: inGroup
+        ? 'Sub-categories under ' + group + '. Renaming one moves every ' + cfg.label
+          + ' entry already filed under it, so your month-on-month figures stay whole.'
+        : 'Used by ' + cfg.label + '. The order here is the order the Tracker groups a month in.' }),
+      rowsWrap,
+      el('div', { class: 'cat-add' }, [
+        fresh,
+        el('button', { class: 'btn small primary', type: 'button', text: '+ Add', onclick: addOne }),
+      ]),
+      el('p', { class: 'hint', style: 'margin:10px 0 0', text: 'A name still in use cannot be removed \u2014 rename it instead, and its entries come with it.' }),
+    ]),
+    el('div', { class: 'sheet-footer' }, [el('div', { class: 'btn-row' }, [
+      el('button', { class: 'btn primary', text: 'Save', onclick: save }),
+      el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }),
+    ])]),
+  ]));
+}
+
+// The little + beside a label. Same button in both forms, both levels.
+function catAddBtn(title, onclick) {
+  return el('button', {
+    class: 'cat-add-btn', type: 'button', text: '+',
+    title: title, 'aria-label': title,
+    onclick: (e) => { e.preventDefault(); e.stopPropagation(); onclick(); },
+  });
 }
 
 // ---------- Tags on a spend ----------
@@ -2374,12 +2573,12 @@ async function renderPfSpends(host, token) {
     byCat.set(n, e);
   });
   const catWrap = el('div', { class: 'trk-groups' });
-  PERSONAL_CATEGORIES.forEach((g) => {
+  catList('pf').forEach((g) => {
     const rows = g.items.filter((n) => byCat.has(n)).map((n) => Object.assign({ name: n }, byCat.get(n)));
     // A category retired from the list but still sitting in an old month lands
     // in Other rather than disappearing along with its money.
     if (g.group === 'Other') {
-      [...byCat.keys()].filter((n) => !_PF_GROUP_OF.has(n))
+      [...byCat.keys()].filter((n) => !_catMaps.pf.has(n))
         .forEach((n) => rows.push(Object.assign({ name: n }, byCat.get(n))));
     }
     if (!rows.length) return;
@@ -4463,12 +4662,63 @@ const PF_METHODS = ['Card', 'UPI'];
 const PF_START_YM = '2026-09';        // the month this started being tracked
 const PF_UPI_LIMIT_DEFAULT = 2000;    // until it is set on the Limits tab
 
-const _PF_GROUP_OF = (() => {
+// ---------- The two category lists, editable ----------
+//
+// The constants above are DEFAULTS - what a fresh install starts from - not the
+// live lists. Both are editable and stored in `meta`, which keeps them inside
+// backup and restore without a schema change.
+//
+// Household and personal stay SEPARATE. They are genuinely different
+// vocabularies: one has Rent and Milk in it, the other Gym and Movies, and
+// merging them would make every picker twice as long and half as useful.
+const CAT_KINDS = {
+  spend: { metaKey: 'spendCategories', store: 'spends', fallback: () => SPEND_CATEGORIES, label: 'household spends' },
+  pf: { metaKey: 'pfCategories', store: 'personalSpends', fallback: () => PERSONAL_CATEGORIES, label: 'personal spends' },
+};
+let _catLists = { spend: null, pf: null };
+let _catMaps = { spend: new Map(), pf: new Map() };
+
+// Whatever is on record for a kind, or the built-in list until one is saved.
+const catList = (kind) => _catLists[kind] || CAT_KINDS[kind].fallback();
+const _buildCatMap = (list) => {
   const m = new Map();
-  PERSONAL_CATEGORIES.forEach((g) => g.items.forEach((n) => m.set(n, g.group)));
+  (list || []).forEach((g) => (g.items || []).forEach((n) => m.set(n, g.group)));
   return m;
-})();
-const _pfGroupOf = (name) => _PF_GROUP_OF.get(name) || 'Other';
+};
+// Anything unrecognised - a category retired from the list but still sitting in
+// old months - lands in Other rather than disappearing along with its money.
+const _pfGroupOf = (name) => _catMaps.pf.get(name) || 'Other';
+const _spendGroupOf = (name) => _catMaps.spend.get(name) || 'Other';
+
+// Read both lists once at boot, and again after any edit. Shape is validated on
+// the way in: a hand-edited backup should not be able to put a picker into a
+// state the form cannot render.
+async function loadCategoryLists() {
+  for (const kind of Object.keys(CAT_KINDS)) {
+    let list = null;
+    try {
+      const row = await DB.get('meta', CAT_KINDS[kind].metaKey);
+      const raw = row && row.value;
+      if (Array.isArray(raw)) {
+        list = raw
+          .map((g) => ({
+            group: String((g && g.group) || '').trim(),
+            items: Array.isArray(g && g.items)
+              ? g.items.map((x) => String(x || '').trim()).filter(Boolean)
+              : [],
+          }))
+          .filter((g) => g.group);
+        if (!list.length) list = null;
+      }
+    } catch (_) { list = null; }
+    _catLists[kind] = list;
+    _catMaps[kind] = _buildCatMap(catList(kind));
+  }
+}
+async function saveCategoryList(kind, list) {
+  await DB.put('meta', { key: CAT_KINDS[kind].metaKey, value: list, updatedAt: new Date().toISOString() });
+  await loadCategoryLists();
+}
 const _pfGroupClass = (group) => 'pf-g-' + String(group).toLowerCase().replace(/[^a-z]/g, '');
 
 let _pfTab = 'spends';        // 'spends' | 'limits' | 'review' | 'cards'
@@ -4511,12 +4761,6 @@ const SPEND_METHODS = ['UPI', 'Card', 'Cash'];
 // same list the form uses, so a category can never drift into a group the
 // picker doesn't show. Anything unrecognised (a category retired from the list
 // but still sitting in old months) lands in Other rather than disappearing.
-const _SPEND_GROUP_OF = (() => {
-  const m = new Map();
-  SPEND_CATEGORIES.forEach((g) => g.items.forEach((n) => m.set(n, g.group)));
-  return m;
-})();
-const _spendGroupOf = (name) => _SPEND_GROUP_OF.get(name) || 'Other';
 const _spendGroupClass = (group) => 'trk-g-' + String(group).toLowerCase().replace(/[^a-z]/g, '');
 
 
@@ -4706,7 +4950,7 @@ async function renderSpendTracker(host, token) {
   // Only groups that actually have entries this month. Ordered by their
   // position in SPEND_CATEGORIES, so the order can never drift from the
   // picker's; anything unrecognised sorts last.
-  const groupOrder = SPEND_CATEGORIES.map((g) => g.group);
+  const groupOrder = catList('spend').map((g) => g.group);
   const rank = (name) => { const i = groupOrder.indexOf(name); return i === -1 ? groupOrder.length : i; };
   const groupList = [...grouped.entries()].sort((a, b2) => rank(a[0]) - rank(b2[0]));
 
@@ -5002,8 +5246,12 @@ async function openSpendForm(budget, existing, defaultDate) {
   const tagBox = tagField(editing ? existing.tags : [], knownTags(allSpendRows), 'Tags');
 
   const catBtns = [];
-  const catGrid = el('div', {}, SPEND_CATEGORIES.map((g) => el('div', { class: 'spend-cat-group' }, [
-    el('div', { class: 'spend-cat-group-label', text: g.group }),
+  const reopen = () => openSpendForm(budget, existing, defaultDate);
+  const catGrid = el('div', {}, catList('spend').map((g) => el('div', { class: 'spend-cat-group' }, [
+    el('div', { class: 'spend-cat-group-label' }, [
+      el('span', { text: g.group }),
+      catAddBtn('Add a sub-category under ' + g.group, () => openCatManager('spend', g.group, reopen)),
+    ]),
     el('div', { class: 'spend-cat-grid' }, g.items.map((name) => {
       const btn = el('button', { class: 'spend-cat-btn' + (name === chosenCat ? ' active' : ''), type: 'button', text: name });
       btn.addEventListener('click', () => {
@@ -5112,7 +5360,13 @@ async function openSpendForm(budget, existing, defaultDate) {
     el('div', { class: 'sheet-scroll' }, [
       el('h2', { text: editing ? 'Edit spend' : 'Add spend' }),
       el('p', { class: 'hint', text: budget > 0 ? 'Comes off the ' + fmtSheetCur(budget) + ' household kitty.' : 'No House Exp allocation set yet — this is still logged.' }),
-      field('Category', catGrid),
+      el('div', { class: 'field' }, [
+        el('label', {}, [
+          el('span', { text: 'Category' }),
+          catAddBtn('Add a category', () => openCatManager('spend', null, reopen)),
+        ]),
+        catGrid,
+      ]),
       el('div', { class: 'field-row' }, [field('Amount', amount), field('Date', dateInp)]),
       field('Paid by', methodRow),
       cardField,
@@ -9482,7 +9736,7 @@ async function openEfLoanForm(existing) {
   // because it is only there that it matters: the category is what the
   // repayment entries get filed under in the Tracker later.
   const categorySel = el('select', {}, [el('option', { value: '', text: 'Choose a category' })].concat(
-    SPEND_CATEGORIES.reduce((acc, g) => acc.concat(g.items.map((name) => {
+    catList('spend').reduce((acc, g) => acc.concat(g.items.map((name) => {
       const o = el('option', { value: name, text: g.group + ' \u2014 ' + name });
       if (name === r.category) o.selected = true;
       return o;
@@ -13172,6 +13426,8 @@ function checkMonthEndSnapshotReminder() {
 async function init() {
   applyTheme();
   buildChrome();
+  // Before anything renders a picker or groups a month by category.
+  await loadCategoryLists().catch(() => {});
   // Seed the root history entry as depth 0 - every setAppMode() push builds on
   // top of this, so unwinding all the way back here (goHome, or one back-step
   // per level) leaves nothing of ours left to pop, and the next back gesture
