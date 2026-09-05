@@ -112,6 +112,16 @@ function el(tag, props, children) {
   return n;
 }
 const b = (s) => el('b', { text: s });
+// A sovereign gold bond lives in the `stocks` store but is not a stock: it is
+// gold, and the Metals surface owns it. Every surface that reports on STOCKS
+// leaves it out, so it is not counted twice and does not distort a picture of
+// equity - a single SGB can otherwise dominate an allocation chart it has no
+// business being in.
+//
+// Identified by name because that is how these rows are entered; the check was
+// written out as the same regex in five places, which is how two of them come
+// to disagree.
+const isSgb = (s) => /sgb/i.test((s && s.name) || '');
 // Label + value chip used on stock cards' right column (e.g. "Overall return" /
 // "Booked" / "If held"). Hoisted here since both the holding and sold branches
 // of stockCard() need it.
@@ -362,7 +372,9 @@ function renderPriceStatus() {
 // (optionally) cached feed sentiment. Long-term, structural view only: weights,
 // diversification, sector exposure, news mood. No timing/intraday signals.
 async function renderPortfolioAnalyzer(host, portfolio) {
-  const holdings = state.stocks.filter((s) => s.status !== 'sold');
+  // Same exclusion as the Overview sections above it: this analyses equity, and
+  // a gold bond is not equity.
+  const holdings = state.stocks.filter((s) => s.status !== 'sold' && !isSgb(s));
   if (!holdings.length) return;
 
   // Cached feed sentiment is optional - analyzer still works without it.
@@ -852,7 +864,11 @@ async function renderTrends() {
   }
   host.appendChild(pcard);
 
-  const holdings = allStocks.filter((s) => s.status !== 'sold');
+  // SGBs are excluded here: they sit in this store but they are gold, counted
+  // under Metals, and one of them in an equity allocation chart makes that
+  // chart wrong about the thing it is drawing.
+  const sgbCount = allStocks.filter((s) => s.status !== 'sold' && isSgb(s)).length;
+  const holdings = allStocks.filter((s) => s.status !== 'sold' && !isSgb(s));
   if (!holdings.length) {
     host.appendChild(el('div', { class: 'empty' }, [el('p', { text: 'Add holdings to see allocation.' })]));
     return;
@@ -862,6 +878,12 @@ async function renderTrends() {
   const cats = Object.keys(byCat).sort((a, b) => byCat[b] - byCat[a]);
   const maxC = byCat[cats[0]] || 1;
   const acard = el('div', { class: 'chart-card' }, [el('h3', { text: 'Allocation by category · ' + holdings.length + ' holdings' })]);
+  // Said out loud rather than left as a silent difference between this count
+  // and the one on the Holdings tab.
+  if (sgbCount) {
+    acard.appendChild(el('p', { class: 'hint', style: 'margin:-4px 0 8px',
+      text: sgbCount + ' SGB' + (sgbCount === 1 ? '' : 's') + ' left out — counted under Metals, as gold.' }));
+  }
   cats.forEach((cat) => {
     const cnt = byCat[cat];
     acard.appendChild(el('div', { class: 'bar-row' }, [
@@ -3618,7 +3640,7 @@ async function homeInvestedBreakdown() {
     let sInv = 0, sVal = 0, sN = 0;
     for (const s of meInStocks) {
       if (s.status !== 'holding') continue;
-      if (/sgb/i.test(s.name || '')) { skipped.sgb++; continue; }
+      if (isSgb(s)) { skipped.sgb++; continue; }
       sInv += Number(s.units || 0) * Number(s.buyPrice || 0);
       sVal += Number(s.units || 0) * Number(s.currentPrice || 0);
       sN++;
@@ -4153,7 +4175,7 @@ async function renderHomeInvestment() {
   // Live stats
   try {
     const meInStocks = (await DB.byPortfolio('stocks', 'me-in')) || [];
-    const holdings = meInStocks.filter(s => s.status === 'holding' && !/sgb/i.test(s.name || ''));
+    const holdings = meInStocks.filter(s => s.status === 'holding' && !isSgb(s));
     const stockSub = stockCard.querySelector('.home-card-sub');
     if (holdings.length && stockSub) {
       const invested = holdings.reduce((s, stock) => s + (Number(stock.units || 0) * Number(stock.buyPrice || 0)), 0);
@@ -7076,7 +7098,7 @@ async function metalPortfolio() {
   const goldPrice = Number(prices.gold) || 0, silverPrice = Number(prices.silver) || 0;
   const gd = mod.summary(txns, 'gold', goldPrice);      // digital gold only
   const silver = mod.summary(txns, 'silver', silverPrice);
-  const sgbs = stocks.filter((x) => /sgb/i.test(x.name || ''));
+  const sgbs = stocks.filter(isSgb);
   let sgbGrams = 0, sgbInv = 0;
   sgbs.forEach((x) => { const u = Number(x.units) || 0; sgbGrams += u; sgbInv += u * (Number(x.buyPrice) || 0); });
   const grams = gd.grams + sgbGrams;
@@ -8007,7 +8029,7 @@ async function renderMetalOverview(host) {
 // ---- SGB tab: read-only list pulled from the Stocks store (name matches /sgb/i) ----
 async function renderMetalSgb(host) {
   const all = (await DB.all('stocks')) || [];
-  const sgbs = all.filter((s) => /sgb/i.test(s.name || ''));
+  const sgbs = all.filter(isSgb);
   host.appendChild(el('p', { class: 'hint', style: 'margin:2px 0 10px', text: 'Sovereign Gold Bonds from your Stocks list — add or edit them under Stocks; they appear here for reference.' }));
   if (!sgbs.length) {
     host.appendChild(el('div', { class: 'empty' }, [
