@@ -5036,6 +5036,29 @@ function _mountMonthStrip(key, wrap, animate) {
   });
 }
 
+// A drag that starts inside something that scrolls SIDEWAYS belongs to that
+// strip, not to the month. The month timeline was the first of these; the
+// entries filter is the second, and scrolling its chips was moving the month
+// instead of the chips.
+//
+// Two tests rather than a list of class names. The computed one covers any
+// strip added later without having to remember this function exists; the named
+// one covers a strip that happens not to overflow right now - a timeline of
+// three chips still owns its own gestures, because whether it scrolls today
+// depends on how many months are on record.
+const SWIPE_OWN_STRIPS = '.cc-timeline-scroll, .pf-filter';
+function _ownsHorizontalDrag(target, stopAt) {
+  if (target && target.closest && target.closest(SWIPE_OWN_STRIPS)) return true;
+  for (let n = target; n && n !== stopAt; n = n.parentElement) {
+    if (n.nodeType !== 1) continue;
+    if (n.scrollWidth - n.clientWidth > 4) {
+      const ox = getComputedStyle(n).overflowX;
+      if (ox === 'auto' || ox === 'scroll') return true;
+    }
+  }
+  return false;
+}
+
 function _attachMonthSwipe(node, months, curYm, pick) {
   let x0 = 0, y0 = 0, startedIn = null;
   const THRESHOLD = 50;
@@ -5045,7 +5068,7 @@ function _attachMonthSwipe(node, months, curYm, pick) {
     y0 = e.touches[0].clientY;
   }, { passive: true });
   node.addEventListener('touchend', (e) => {
-    if (startedIn && startedIn.closest && startedIn.closest('.cc-timeline-scroll')) return;
+    if (_ownsHorizontalDrag(startedIn, node)) return;
     const dx = x0 - e.changedTouches[0].clientX;
     const dy = y0 - e.changedTouches[0].clientY;
     if (Math.abs(dx) < THRESHOLD) return;
