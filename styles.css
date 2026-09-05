@@ -2378,3 +2378,33 @@ button.msheet-follow { font-family: inherit; cursor: pointer; }
 .pf-filter-chip.active { background: var(--card-2); border-color: var(--accent); color: var(--text); box-shadow: inset 0 0 0 1px var(--accent); }
 /* What the filter is showing, since the allowance strips above stay whole. */
 .pf-filter-note { margin: 2px 0 8px; font-size: 0.62rem; font-weight: 600; }
+
+/* ---- Tags on a spend ---- */
+/* Chosen tags, a box to type a new one, and the tags already in use to tap.
+   The panel is the field, same shape as the note field it replaces. */
+.tag-field { background: var(--card-2); border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px 10px; transition: border-color 0.15s ease; }
+.tag-field:focus-within { border-color: var(--accent); }
+.tag-field-head { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; }
+.tag-field-label { flex: 1; font-size: 0.68rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
+.tag-count { font-size: 0.58rem; font-weight: 700; color: var(--muted); }
+/* A chosen tag is a button: the whole chip removes it, so there is no 8px
+   target to hit on a phone. */
+.tag-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 7px; }
+.tag-chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; border-radius: 999px; border: 1px solid var(--accent); background: rgba(56,189,248,0.14); color: var(--text); font: inherit; font-size: 0.72rem; font-weight: 700; cursor: pointer; }
+.tag-chip-x { font-style: normal; font-size: 0.8rem; line-height: 1; color: var(--muted); }
+.tag-chip:active { background: rgba(56,189,248,0.26); }
+input.tag-input { display: block; width: 100%; background: transparent; border: none; padding: 0; color: var(--text); font-family: inherit; font-size: 0.9rem; outline: none; }
+input.tag-input::placeholder { color: var(--muted); opacity: 0.7; }
+/* Already-used tags, most-used first. Scrolls sideways rather than growing the
+   sheet as the vocabulary does. */
+.tag-suggest { display: flex; gap: 5px; overflow-x: auto; scrollbar-width: none; margin-top: 9px; padding-bottom: 2px; }
+.tag-suggest::-webkit-scrollbar { display: none; }
+.tag-sugg { flex: 0 0 auto; padding: 4px 9px; border-radius: 999px; border: 1px dashed var(--line); background: transparent; color: var(--muted); font: inherit; font-size: 0.68rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.tag-sugg:active { border-style: solid; color: var(--text); }
+
+/* Tags on an entry row, read-only. */
+.tag-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.tag-pill { padding: 2px 7px; border-radius: 999px; background: var(--card-2); border: 1px solid var(--line); font-size: 0.58rem; font-weight: 700; color: var(--muted); letter-spacing: 0.2px; }
+/* Inside a section that already says "Tags", the panel drops its own label and
+   keeps only the counter. */
+.tag-field-head.is-bare { justify-content: flex-end; margin-bottom: 4px; min-height: 12px; }

@@ -1803,7 +1803,9 @@ async function openPfSpendForm(existing, defaultDate) {
   const cards = (await DB.all('creditCards').catch(() => [])) || [];
   const amount = el('input', { type: 'number', inputmode: 'decimal', step: 'any', placeholder: '0', value: editing ? existing.amount : '' });
   const dateInp = el('input', { type: 'date', value: editing ? (existing.date || todayISO()) : (defaultDate || todayISO()) });
-  const noteBox = noteField(editing && existing.note ? existing.note : '', 'What it was for (optional)', null, 'Note');
+  // Tags rather than a note, suggested from every personal spend on record.
+  const allPfRows = (await DB.all('personalSpends').catch(() => [])) || [];
+  const tagBox = tagField(editing ? existing.tags : [], knownTags(allPfRows), null);
 
   const catBtns = [];
   const catGrid = el('div', {}, PERSONAL_CATEGORIES.map((g) => el('div', { class: 'spend-cat-group' }, [
@@ -1865,7 +1867,9 @@ async function openPfSpendForm(existing, defaultDate) {
     const rec = {
       ym: d.slice(0, 7), date: d, category: chosenCat, amount: amt,
       method: chosenMethod, cardId: chosenMethod === 'Card' ? chosenCardId : null,
-      note: noteBox.input.value.trim() || null,
+      tags: tagBox.get(),
+      // Kept rather than dropped, same as the household form.
+      note: editing && existing.note ? existing.note : null,
       createdAt: editing ? (existing.createdAt || nowIso) : nowIso, updatedAt: nowIso,
     };
     if (editing) rec.id = existing.id;
@@ -1900,12 +1904,145 @@ async function openPfSpendForm(existing, defaultDate) {
           field('Paid by', methodRow),
           cardField,
         ]),
-        formSection('\ud83d\udcdd', 'Note', [noteBox.node]),
+        formSection('🏷️', 'Tags', [tagBox.node]),
       ]),
     ]),
     el('div', { class: 'sheet-footer' }, [el('div', { class: 'btn-row', style: 'flex-wrap:wrap' }, btns)]),
   ]));
   if (!editing) amount.focus();
+}
+
+// ---------- Tags on a spend ----------
+//
+// A note is written once and read never. A tag is a HANDLE: the same word on
+// twenty entries is something that can be counted, filtered and compared later,
+// which a sentence never can. So spends carry `tags` - a small array of short,
+// normalised words - in place of free text.
+//
+// Normalising on the way in is the whole point. "Weekly ", "weekly" and
+// "#Weekly" have to become one tag or the system is just free text with chips
+// drawn round it, and the counting it exists for never works.
+const TAG_MAX = 6;        // per entry - beyond this they stop being handles
+const TAG_MAXLEN = 24;
+function normaliseTag(raw) {
+  return String(raw == null ? '' : raw)
+    .trim().toLowerCase()
+    .replace(/^#+/, '')
+    // Spaces and a few joiners survive; everything else would only ever create
+    // near-duplicates of a tag that already exists.
+    .replace(/[^a-z0-9 &/+-]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, TAG_MAXLEN)
+    .trim();
+}
+// Reading a record's tags, tolerant of what is actually on it: rows written
+// before tags existed have none, and a legacy note is left alone rather than
+// being chopped into words that were never meant as tags.
+function tagsOf(rec) {
+  const t = rec && rec.tags;
+  if (!Array.isArray(t)) return [];
+  const out = [];
+  t.forEach((x) => {
+    const n = normaliseTag(x);
+    if (n && out.indexOf(n) < 0) out.push(n);
+  });
+  return out.slice(0, TAG_MAX);
+}
+// Every tag already in use, most-used first. This is what turns a text box into
+// a tag system: the suggestions are the reason the same word gets reused rather
+// than retyped four different ways.
+function knownTags(rows) {
+  const count = new Map();
+  (rows || []).forEach((r) => tagsOf(r).forEach((t) => count.set(t, (count.get(t) || 0) + 1)));
+  return [...count.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([t]) => t);
+}
+
+// The field: chips for what is chosen, a box to type a new one, and the tags
+// already in use underneath to tap. Commits on Enter, comma or Tab - not on
+// space, since a tag like "eat out" is two words and one handle.
+function tagField(current, suggestions, label) {
+  let tags = tagsOf({ tags: current });
+  const chips = el('div', { class: 'tag-chips' });
+  const suggWrap = el('div', { class: 'tag-suggest' });
+  const input = el('input', {
+    type: 'text', class: 'tag-input', placeholder: 'Add a tag, then Enter',
+    autocomplete: 'off', autocapitalize: 'none', spellcheck: 'false',
+  });
+  const count = el('span', { class: 'tag-count' });
+
+  const add = (raw) => {
+    const t = normaliseTag(raw);
+    if (!t) return false;
+    if (tags.indexOf(t) >= 0) return true;      // already on, and that is fine
+    if (tags.length >= TAG_MAX) { toast('Up to ' + TAG_MAX + ' tags'); return false; }
+    tags.push(t);
+    draw();
+    return true;
+  };
+  const remove = (t) => { tags = tags.filter((x) => x !== t); draw(); };
+
+  function draw() {
+    chips.innerHTML = '';
+    tags.forEach((t) => {
+      chips.appendChild(el('button', {
+        type: 'button', class: 'tag-chip', title: 'Remove ' + t,
+        onclick: () => remove(t),
+      }, [el('span', { text: t }), el('i', { class: 'tag-chip-x', text: '×' })]));
+    });
+    chips.classList.toggle('hidden', !tags.length);
+    count.textContent = tags.length ? tags.length + '/' + TAG_MAX : '';
+    // Suggestions already chosen are dropped rather than shown inert - a chip
+    // that does nothing when tapped is worse than no chip.
+    const left = (suggestions || []).filter((t) => tags.indexOf(t) < 0).slice(0, 12);
+    suggWrap.innerHTML = '';
+    left.forEach((t) => suggWrap.appendChild(el('button', {
+      type: 'button', class: 'tag-sugg', text: t,
+      onclick: () => { add(t); input.focus(); },
+    })));
+    suggWrap.classList.toggle('hidden', !left.length || tags.length >= TAG_MAX);
+  }
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ',' || e.key === 'Tab') {
+      if (!input.value.trim()) return;          // Tab still moves on when empty
+      e.preventDefault();
+      if (add(input.value)) input.value = '';
+      return;
+    }
+    // Backspace on an empty box takes the last chip off, which is what every
+    // tag field does and what the fingers expect.
+    if (e.key === 'Backspace' && !input.value && tags.length) remove(tags[tags.length - 1]);
+  });
+  // Pasting "one, two" should not become a single tag with a comma in it.
+  input.addEventListener('input', () => {
+    if (input.value.indexOf(',') < 0) return;
+    const parts = input.value.split(',');
+    input.value = parts.pop();
+    parts.forEach(add);
+  });
+  // Whatever is half-typed when the sheet is saved counts - losing it because
+  // Enter was not pressed is the classic way a tag field annoys people.
+  const commitPending = () => { if (input.value.trim()) { add(input.value); input.value = ''; } };
+
+  draw();
+  const node = el('div', { class: 'tag-field' }, [
+    el('div', { class: 'tag-field-head' + (label === null ? ' is-bare' : '') },
+      (label === null ? [] : [el('span', { class: 'tag-field-label', text: label || 'Tags' })]).concat([count])),
+    chips,
+    input,
+    suggWrap,
+  ]);
+  return { node, get: () => { commitPending(); return tags.slice(); } };
+}
+
+// Tags on an entry row, read-only. A legacy note rides alongside rather than
+// being converted: a sentence is not a tag, and guessing which words in it were
+// meant as one would put words in the user's mouth.
+function tagRow(rec) {
+  const tags = tagsOf(rec);
+  if (!tags.length) return null;
+  return el('div', { class: 'tag-row' }, tags.map((t) => el('span', { class: 'tag-pill', text: t })));
 }
 
 // ---------- Entries filter, shared by both trackers ----------
@@ -2204,6 +2341,7 @@ async function renderPfSpends(host, token) {
         el('div', { class: 'msheet-label' }, [
           el('span', { text: r.category || 'Misc' }),
           el('span', { class: 'msheet-note', text: meta.join(' · ') }),
+          tagRow(r) || document.createTextNode(''),
         ]),
         el('div', { class: 'trk-entry-right' }, [
           el('span', { class: 'msheet-val', text: fmtSheetCur(r.amount) }),
@@ -4625,6 +4763,7 @@ async function renderSpendTracker(host, token) {
         el('span', { class: 'msheet-note', text: _spendDayLabel(r.date) + ' · '
           + (r.method || 'UPI') + (r.cardId != null && cardName.has(r.cardId) ? ' (' + cardName.get(r.cardId) + ')' : '')
           + (r.note ? ' · ' + r.note : '') }),
+        tagRow(r) || document.createTextNode(''),
       ]),
       el('div', { class: 'trk-entry-right' }, [
         el('span', { class: 'msheet-val', text: fmtSheetCur(r.amount) }),
@@ -4856,7 +4995,11 @@ async function openSpendForm(budget, existing, defaultDate) {
   const cards = (await DB.all('creditCards').catch(() => [])) || [];
   const amount = el('input', { type: 'number', inputmode: 'decimal', step: 'any', placeholder: '0', value: editing ? existing.amount : '' });
   const dateInp = el('input', { type: 'date', value: editing ? (existing.date || todayISO()) : (defaultDate || todayISO()) });
-  const note = el('input', { type: 'text', placeholder: 'Optional note', value: editing && existing.note ? existing.note : '' });
+  // Tags in place of a note. The suggestions come from every household spend
+  // already logged, which is what makes the same word get reused instead of
+  // retyped four ways.
+  const allSpendRows = (await DB.all('spends').catch(() => [])) || [];
+  const tagBox = tagField(editing ? existing.tags : [], knownTags(allSpendRows), 'Tags');
 
   const catBtns = [];
   const catGrid = el('div', {}, SPEND_CATEGORIES.map((g) => el('div', { class: 'spend-cat-group' }, [
@@ -4951,7 +5094,11 @@ async function openSpendForm(budget, existing, defaultDate) {
     if (cardId != null && ym === curYm) await _reimburseSpend(ym, amt);
     const rec = {
       ym, date: d, category: chosenCat, amount: amt,
-      method: chosenMethod, cardId, note: note.value.trim() || null,
+      method: chosenMethod, cardId, tags: tagBox.get(),
+      // A note written before tags existed is kept, not quietly dropped. It
+      // still shows on the row; there is just no longer a box to write a new
+      // one in.
+      note: editing && existing.note ? existing.note : null,
       createdAt: editing ? (existing.createdAt || nowIso) : nowIso, updatedAt: nowIso,
     };
     if (editing) rec.id = existing.id;
@@ -4969,7 +5116,7 @@ async function openSpendForm(budget, existing, defaultDate) {
       el('div', { class: 'field-row' }, [field('Amount', amount), field('Date', dateInp)]),
       field('Paid by', methodRow),
       cardField,
-      field('Note', note),
+      tagBox.node,
     ]),
     el('div', { class: 'sheet-footer' }, [el('div', { class: 'btn-row' }, [
       el('button', { class: 'btn primary', text: 'Save', onclick: save }),
