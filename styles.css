@@ -2455,3 +2455,7 @@ input.cat-name { flex: 1; min-width: 0; padding: 9px 11px; border: 1px solid var
 .cat-row.is-used .cat-del { opacity: 0.45; }
 .cat-add { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line); }
 .btn.small { padding: 8px 12px; font-size: 0.76rem; white-space: nowrap; }
+
+/* The Overall chip sits with the portfolios but is not one of them, so it reads
+   slightly apart - a divider before it and a quieter idle state. */
+.ptab.is-overall { margin-left: 10px; }

@@ -122,6 +122,13 @@ const b = (s) => el('b', { text: s });
 // written out as the same regex in five places, which is how two of them come
 // to disagree.
 const isSgb = (s) => /sgb/i.test((s && s.name) || '');
+
+// The Overview tab's cross-portfolio view. Deliberately NOT a value of
+// state.portfolio: that drives which stocks are loaded, which currency is
+// formatted, whether the OCR button shows and what the swipe steps through, and
+// none of those has a sensible answer for "all three at once". A flag beside it
+// leaves every one of them alone.
+let _overallView = true;
 // Label + value chip used on stock cards' right column (e.g. "Overall return" /
 // "Booked" / "If held"). Hoisted here since both the holding and sold branches
 // of stockCard() need it.
@@ -209,6 +216,9 @@ async function refresh() { await load(); render(); }
 // gesture's direction is confirmed visually. A tap has no direction the user
 // physically expressed, so it stays instant.
 async function selectPortfolio(id, dir) {
+  // Swiping the strip on Overview is the same statement as tapping a chip
+  // there: show me this one, not all of them.
+  if (state.view === 'trends') _overallView = false;
   if (state.portfolio === id) return;
   state.portfolio = id;
   state.search = '';
@@ -285,8 +295,24 @@ function buildChrome() {
   tabs.innerHTML = '';
   PORTFOLIOS.forEach((p) => tabs.appendChild(el('button', {
     class: 'ptab', 'data-id': p.id, text: p.label,
-    onclick: () => selectPortfolio(p.id),
+    onclick: () => {
+      // On Overview, picking a portfolio also means "leave Overall" - including
+      // picking the one already underneath it, which selectPortfolio would
+      // otherwise treat as a no-op and leave the tap doing nothing visible.
+      if (state.view === 'trends' && _overallView) {
+        _overallView = false;
+        if (state.portfolio === p.id) { updateChromeActive(); renderTrends(); return; }
+      }
+      selectPortfolio(p.id);
+    },
   })));
+  // Only ever shown on the Overview tab. On Holdings or the Heatmap there is no
+  // such thing as "all three portfolios at once" - the list, the prices and the
+  // currency all belong to one of them.
+  tabs.appendChild(el('button', {
+    class: 'ptab is-overall hidden', 'data-id': 'overall', text: 'Overall',
+    onclick: () => { if (_overallView) return; _overallView = true; updateChromeActive(); renderTrends(); },
+  }));
   installPortfolioSwipe();
 
   const nav = $('#bottomNav');
@@ -321,7 +347,31 @@ function updateFiltersActive() {
   $('#filterSeg').querySelectorAll('button').forEach((x) => x.classList.toggle('active', x.getAttribute('data-filter') === state.filter));
 }
 function updateChromeActive() {
-  $('#portfolioTabs').querySelectorAll('.ptab').forEach((x) => x.classList.toggle('active', x.getAttribute('data-id') === state.portfolio));
+  const onOverview = state.view === 'trends';
+  const overall = onOverview && _overallView;
+  $('#portfolioTabs').querySelectorAll('.ptab').forEach((x) => {
+    const id = x.getAttribute('data-id');
+    if (id === 'overall') {
+      x.classList.toggle('hidden', !onOverview);
+      x.classList.toggle('active', overall);
+      return;
+    }
+    // While Overall is up none of the three is the active one, and saying so is
+    // the point: the figures below are not about any single portfolio.
+    x.classList.toggle('active', !overall && id === state.portfolio);
+  });
+  // Overall sits at the far end of a strip that scrolls, so on a narrow screen
+  // the active chip can be the one past the edge. Pulled into view rather than
+  // left half-cut - the same fix the month strips needed.
+  const activeTab = $('#portfolioTabs').querySelector('.ptab.active');
+  if (activeTab && !activeTab.classList.contains('hidden')) {
+    requestAnimationFrame(() => {
+      const strip = $('#portfolioTabs');
+      if (!strip.isConnected || strip.scrollWidth <= strip.clientWidth) return;
+      const left = activeTab.offsetLeft - (strip.clientWidth - activeTab.offsetWidth) / 2;
+      strip.scrollTo({ left: Math.max(0, left), behavior: 'smooth' });
+    });
+  }
   $('#bottomNav').querySelectorAll('button').forEach((x) => x.classList.toggle('active', x.getAttribute('data-view') === state.view));
   updateFiltersActive();
 }
@@ -834,6 +884,24 @@ function monthlyValueChart(months, cur, bname) {
 async function renderTrends() {
   const host = $('#trendView');
   host.innerHTML = '';
+  updateChromeActive();
+
+  // Overall answers "how do all three look together"; a portfolio chip answers
+  // "how does this one look". The three cards below were always computed across
+  // every portfolio, so sitting under a chip row that named ONE of them made
+  // them read as that portfolio's figures. They belong under Overall, and the
+  // per-portfolio analysis belongs under its own chip.
+  if (!_overallView) {
+    await renderPortfolioAnalyzer(host, state.portfolio);
+    if (!host.childElementCount) {
+      host.appendChild(el('div', { class: 'empty' }, [
+        el('p', { text: 'Nothing to analyse in this portfolio yet.' }),
+        el('p', { class: 'hint', text: 'Add holdings, or tap Overall for the picture across all three.' }),
+      ]));
+    }
+    return;
+  }
+
   let allStocks = [], allMonthly = [];
   try { [allStocks, allMonthly] = await Promise.all([DB.all('stocks'), DB.all('monthly')]); } catch (e) { return; }
 
@@ -905,8 +973,10 @@ async function renderTrends() {
     ]),
   ]));
 
-  // Portfolio Analyzer - only show for current portfolio
-  await renderPortfolioAnalyzer(host, state.portfolio);
+  // No analyzer here: it reads one portfolio's holdings, and this branch is
+  // explicitly the view that is not about one. It sits under its own chip.
+  host.appendChild(el('p', { class: 'hint mf-foot', text: 'Across every portfolio. '
+    + 'Tap a portfolio above for its own risk analysis.' }));
 }
 
 // ---------- Feed & Recommendations tab ----------
