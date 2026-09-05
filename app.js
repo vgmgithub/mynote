@@ -1940,6 +1940,18 @@ async function openPfSpendForm(existing, defaultDate) {
     : el('p', { class: 'hint', style: 'margin:0', text: 'No credit cards yet — add one on the Expense \u2192 Credit Card tab.' }));
   cardField.classList.toggle('hidden', chosenMethod !== 'Card');
 
+  // Same flag the entries list toggles, settable while logging rather than
+  // only afterwards.
+  let chosenForOthers = editing ? isForOthers(existing) : false;
+  const othersChk = el('input', { type: 'checkbox' });
+  othersChk.checked = chosenForOthers;
+  othersChk.addEventListener('change', () => { chosenForOthers = othersChk.checked; });
+  const othersField = field('For others', el('div', {}, [
+    el('label', { class: 'switch' }, [othersChk, el('span', { class: 'switch-track' }, [el('span', { class: 'switch-thumb' })])]),
+    el('p', { class: 'hint', style: 'margin:6px 0 0',
+      text: 'Money spent for somebody who will pay it back. Still listed and still on the card\u2019s bill, but kept out of the two limits and out of Review.' }),
+  ]));
+
   const methodBtns = [];
   const methodRow = el('div', { class: 'seg spend-method' }, PF_METHODS.map((m) => {
     const btn = el('button', { type: 'button', class: m === chosenMethod ? 'active' : '', text: m });
@@ -1966,6 +1978,7 @@ async function openPfSpendForm(existing, defaultDate) {
     const rec = {
       ym: d.slice(0, 7), date: d, category: chosenCat, amount: amt,
       method: chosenMethod, cardId: chosenMethod === 'Card' ? chosenCardId : null,
+      forOthers: chosenForOthers,
       tags: tagBox.get(),
       // Kept rather than dropped, same as the household form.
       note: editing && existing.note ? existing.note : null,
@@ -2008,6 +2021,7 @@ async function openPfSpendForm(existing, defaultDate) {
           el('div', { class: 'field-row' }, [field('Amount (₹)', amount), field('Date', dateInp)]),
           field('Paid by', methodRow),
           cardField,
+          othersField,
         ]),
         formSection('🏷️', 'Tags', [tagBox.node]),
       ]),
@@ -2411,6 +2425,26 @@ async function renderPersonal() {
 // Everything the section needs, read once. Personal spend rows are a few
 // hundred a year, so loading every month costs less than a read per month and
 // the month-on-month comparisons need the history anyway.
+// A spend made FOR SOMEBODY ELSE, who will pay it back. It is still money that
+// left the account, so it stays in the list, in the category roll-up and on the
+// card's bill - the bank billed it either way.
+//
+// What it is not is a call on the personal ALLOWANCE. The limits exist to
+// answer "how much of my own spending is left this month", and money that comes
+// back is not own spending. So the two limit strips, the Limits table and the
+// whole Review tab read the list with these taken out.
+const isForOthers = (r) => !!(r && r.forOthers);
+// A byYm-shaped map with them removed, for the surfaces that measure against a
+// limit. Months with nothing left are dropped rather than left as empty arrays.
+function pfOwnMap(byYm) {
+  const out = new Map();
+  byYm.forEach((rows, k) => {
+    const own = rows.filter((r) => !isForOthers(r));
+    if (own.length) out.set(k, own);
+  });
+  return out;
+}
+
 async function pfLoad() {
   const mod = await import('./credit.js');
   const [rows, allocs, cards, upiLimit] = await Promise.all([
@@ -2480,13 +2514,19 @@ function pfMonths(byYm, thisYm, mod) {
 // a month comes in "under" while the card is 3,000 over.
 function pfTotals(ym, byYm, allocs, upiLimit) {
   const rows = byYm.get(ym) || [];
-  const sum = (f) => round2(rows.filter(f).reduce((a, r) => a + (Number(r.amount) || 0), 0));
+  // `rows` is everything, for the list and the roll-up. The limit figures are
+  // measured on own spending only.
+  const own = rows.filter((r) => !isForOthers(r));
+  const sum = (f) => round2(own.filter(f).reduce((a, r) => a + (Number(r.amount) || 0), 0));
+  const othersTotal = round2(rows.filter(isForOthers).reduce((a, r) => a + (Number(r.amount) || 0), 0));
+  const othersCount = rows.filter(isForOthers).length;
   const cardSpent = sum((r) => r.method === 'Card');
   const upiSpent = sum((r) => r.method === 'UPI');
   const cardLimit = _pfCardLimit(ym, allocs);
   const upi = round2(upiLimit || 0);
   return {
-    rows, cardSpent, upiSpent, spent: round2(cardSpent + upiSpent),
+    rows, own, othersTotal, othersCount,
+    cardSpent, upiSpent, spent: round2(cardSpent + upiSpent),
     cardLimit, upiLimit: upi, limit: round2(cardLimit + upi),
     cardLeft: round2(cardLimit - cardSpent), upiLeft: round2(upi - upiSpent),
     left: round2(cardLimit + upi - cardSpent - upiSpent),
@@ -2581,6 +2621,13 @@ async function renderPfSpends(host, token) {
   if (t.left < 0) bits.push(fmtSheetCur(-t.left) + ' over');
   else if (daysLeft > 0) bits.push(fmtIntCur(round2(t.left / daysLeft)) + ' a day for ' + daysLeft + (daysLeft === 1 ? ' day' : ' days'));
   host.appendChild(el('div', { class: 'pf-both' + (t.left < 0 ? ' is-over' : ''), text: bits.join('  ·  ') }));
+  // The roll-up below counts these and the strips above do not, so the gap is
+  // named rather than left for the user to find by subtracting.
+  if (t.othersCount) {
+    host.appendChild(el('p', { class: 'hint pf-others-note', text: fmtSheetCur(t.othersTotal) + ' across '
+      + t.othersCount + (t.othersCount === 1 ? ' entry' : ' entries') + ' marked for others — listed below, '
+      + 'but not counted against either limit.' }));
+  }
 
   if (!t.rows.length) {
     host.appendChild(el('div', { class: 'empty' }, [
@@ -2628,11 +2675,33 @@ async function renderPfSpends(host, token) {
       const card = cards.find((c) => c.id === r.cardId);
       const meta = [_spendDayLabel(r.date), r.method === 'Card' ? (card ? card.name : 'Card') : r.method];
       if (r.note) meta.push(r.note);
-      wrap.appendChild(el('div', { class: 'msheet-row trk-entry is-tappable', onclick: () => openPfSpendForm(r) }, [
+      // Flipped straight from the row, no form to open: this is a fact about
+      // the spend the user knows at a glance down the list, and making them
+      // open each one to set it is how a list stops being marked up at all.
+      const othersChk = el('input', { type: 'checkbox' });
+      othersChk.checked = isForOthers(r);
+      const othersSwitch = el('label', { class: 'switch switch-sm pf-others-switch' }, [
+        othersChk, el('span', { class: 'switch-track' }, [el('span', { class: 'switch-thumb' })]),
+      ]);
+      const flip = async (e) => {
+        e.stopPropagation();     // the row opens the editor; this must not
+        const on = othersChk.checked;
+        await DB.put('personalSpends', Object.assign({}, r, {
+          forOthers: on, updatedAt: new Date().toISOString(),
+        })).catch(() => {});
+        renderPersonal();
+      };
+      othersChk.addEventListener('change', flip);
+      othersSwitch.addEventListener('click', (e) => e.stopPropagation());
+      wrap.appendChild(el('div', { class: 'msheet-row trk-entry is-tappable' + (isForOthers(r) ? ' is-others' : ''), onclick: () => openPfSpendForm(r) }, [
         el('div', { class: 'msheet-label' }, [
           el('span', { text: r.category || 'Misc' }),
           el('span', { class: 'msheet-note', text: meta.join(' · ') }),
           tagRow(r) || document.createTextNode(''),
+          el('div', { class: 'pf-others-row' }, [
+            othersSwitch,
+            el('span', { class: 'pf-others-label', text: isForOthers(r) ? 'For others — off the limits' : 'For others' }),
+          ]),
         ]),
         el('div', { class: 'trk-entry-right' }, [
           el('span', { class: 'msheet-val', text: fmtSheetCur(r.amount) }),
@@ -2664,6 +2733,10 @@ async function renderPfSpends(host, token) {
     else e.upi = round2(e.upi + (Number(r.amount) || 0));
     byCat.set(n, e);
   });
+  // Percentages here are a share of what this list SHOWS - every row in the
+  // month, for-others included. Dividing by the limit total instead put a
+  // for-others category at 264% of a figure it is deliberately not part of.
+  const rollupTotal = round2(t.rows.reduce((a, r) => a + (Number(r.amount) || 0), 0));
   const catWrap = el('div', { class: 'trk-groups' });
   catList('pf').forEach((g) => {
     const rows = g.items.filter((n) => byCat.has(n)).map((n) => Object.assign({ name: n }, byCat.get(n)));
@@ -2680,7 +2753,7 @@ async function renderPfSpends(host, token) {
       // Share of the WHOLE month, not of its group - a bar filling up inside
       // its own group would make a small group's top row look like the
       // month's biggest spend.
-      const pct = t.spent > 0 ? (r.total / t.spent) * 100 : 0;
+      const pct = rollupTotal > 0 ? (r.total / rollupTotal) * 100 : 0;
       const meta = [r.count + '×'];
       // How it was paid only earns a mention where a category is split across
       // both, which is the case worth seeing.
@@ -2703,7 +2776,7 @@ async function renderPfSpends(host, token) {
       el('div', { class: 'trk-group-head' }, [
         el('span', { class: 'trk-group-name', text: g.group }),
         el('span', { class: 'trk-group-total', text: fmtSheetCur(gTotal) }),
-        el('span', { class: 'trk-group-pct', text: (t.spent > 0 ? (gTotal / t.spent) * 100 : 0).toFixed(0) + '%' }),
+        el('span', { class: 'trk-group-pct', text: (rollupTotal > 0 ? (gTotal / rollupTotal) * 100 : 0).toFixed(0) + '%' }),
       ]),
       catRows,
     ]));
@@ -2815,6 +2888,14 @@ async function renderPfReview(host, token) {
   const { byYm, byYmCal, allocs, upiLimit } = await pfLoad();
   if (pfRenderStale(token)) return;
 
+  // The whole tab is about own spending: what is unusual for you, where your
+  // month lands, where you could keep money. A spend that is coming back is
+  // none of those, so it is out of every figure here.
+  const ownByYm = pfOwnMap(byYm);
+  const ownByYmCal = pfOwnMap(byYmCal);
+
+  // The month strip still offers every month that holds entries, including one
+  // whose only entries were for others - there is a list to look at there.
   const months = pfMonths(byYm, thisYm, mod);
   if (!_pfYm || !months.includes(_pfYm)) _pfYm = months[months.length - 1];
   const ym = _pfYm;
@@ -2838,7 +2919,7 @@ async function renderPfReview(host, token) {
   _pfTimelineClicked = false;
   _attachMonthSwipe(host, months, ym, (k) => { _pfYm = k; _pfTimelineClicked = true; renderPersonal(); });
 
-  const a = _reviewAnalysis(ym, byYm, thisYm, t.limit, now, _pfGroupOf);
+  const a = _reviewAnalysis(ym, ownByYm, thisYm, t.limit, now, _pfGroupOf);
   if (!a.spent) {
     host.appendChild(el('div', { class: 'empty' }, [
       el('div', { class: 'e-icon', text: '\ud83d\udd0d' }),
@@ -2854,6 +2935,7 @@ async function renderPfReview(host, token) {
     el('div', { class: 'rvw-head-note', text: [
       t.limit > 0 ? (a.overKitty > 0 ? 'Over the allowance by ' + fmtSheetCur(a.overKitty) : fmtSheetCur(-a.overKitty) + ' still allowed') : null,
       a.isCurrent ? a.daysLeft + (a.daysLeft === 1 ? ' day left' : ' days left') : null,
+      t.othersCount ? fmtSheetCur(t.othersTotal) + ' for others, not counted' : null,
     ].filter(Boolean).join(' · ') }),
   ]));
 
@@ -2876,16 +2958,16 @@ async function renderPfReview(host, token) {
   // the calendar is on the 4th, and there is no single "today" across two
   // cards on different cycles. Reading those two sections on calendar days
   // keeps every figure in them computable and honest.
-  const cycle = _reviewCycle(ym, byYmCal, now, a.isCurrent);
-  const forecast = a.isCurrent ? _reviewForecast(ym, byYmCal, now, 0, t.limit) : null;
-  const savings = _reviewSavings(a, cycle, _reviewSmallTickets(ym, byYm), _smallTicketUsual(ym, byYm));
+  const cycle = _reviewCycle(ym, ownByYmCal, now, a.isCurrent);
+  const forecast = a.isCurrent ? _reviewForecast(ym, ownByYmCal, now, 0, t.limit) : null;
+  const savings = _reviewSavings(a, cycle, _reviewSmallTickets(ym, ownByYm), _smallTicketUsual(ym, ownByYm));
 
   if (forecast) {
     const f = forecast;
     const grade = el('span', { class: 'rvw-grade is-' + f.grade,
       text: f.errPct != null ? f.grade + ' · \u00b1' + f.errPct + '%' : f.grade });
     rvwSection(host, 'pf-forecast', '\ud83d\udd2e', 'Where this month lands', grade, (body) => {
-      const curve = _reviewCurve(ym, byYmCal, f.day);
+      const curve = _reviewCurve(ym, ownByYmCal, f.day);
       body.appendChild(el('div', { class: 'rvw-fc' }, [
         el('div', { class: 'rvw-fc-top' }, [
           el('div', {}, [
@@ -2980,7 +3062,7 @@ async function renderPfReview(host, token) {
           detail,
         ]);
         item.addEventListener('click', () => {
-          if (!built) { detail.appendChild(_rvwMonthBars(_catMonthHistory(r.name, ym, byYm, 6), r.usual)); built = true; }
+          if (!built) { detail.appendChild(_rvwMonthBars(_catMonthHistory(r.name, ym, ownByYm, 6), r.usual)); built = true; }
           const closed = detail.classList.toggle('hidden');
           item.classList.toggle('is-open', !closed);
         });
@@ -6995,7 +7077,38 @@ async function renderAllocation(host, token) {
     ]);
     allocWrap.appendChild(card);
   });
+
+  // ---- Balance: what the salary has left after everything else ----
+  //
+  // Derived, never stored and never editable: it is the salary minus every
+  // other line, so a stored copy could only ever disagree with the figures
+  // above it. Shown even at zero, unlike the other cards, because "nothing
+  // left" is the answer the card exists to give.
+  //
+  // Negative means the plan spends more than it earns, which is worth seeing
+  // in red rather than hidden behind a clamp at zero.
+  const balanceOf = (a) => {
+    if (!a) return 0;
+    const salary = Number(a.salary) || 0;
+    const spent = allocCategories.reduce((sum, cat) =>
+      (cat.key === 'salary' ? sum : sum + (Number(a[cat.key]) || 0)), 0);
+    return round2(salary - spent);
+  };
+  const bal = balanceOf(curAlloc), prevBal = balanceOf(prevAlloc);
+  const balStep = prevBal !== 0 ? ((bal - prevBal) / Math.abs(prevBal)) * 100 : (bal !== 0 ? 100 : 0);
+  allocWrap.appendChild(el('div', { class: 'alloc-card alloc-card-balance' + (bal < 0 ? ' is-neg' : '') }, [
+    el('div', { class: 'alloc-cat-header' }, [
+      el('span', { class: 'alloc-icon', text: '⚖️' }),
+      el('span', { class: 'alloc-label', text: 'Balance' }),
+    ]),
+    el('div', { class: 'alloc-value', text: '₹ ' + Number(bal).toLocaleString('en-IN') }),
+    el('div', { class: 'alloc-stepup ' + (balStep > 5 ? 'step-up-pos' : balStep < -5 ? 'step-up-neg' : 'step-up-flat'),
+      text: (balStep > 0 ? '▲' : balStep < 0 ? '▼' : '—') + ' ' + Math.abs(Math.round(balStep)) + '%' }),
+  ]));
   host.appendChild(allocWrap);
+  host.appendChild(el('p', { class: 'hint alloc-balance-note', text: bal < 0
+    ? 'Balance is salary less every other line — negative here, so the plan allocates more than it earns.'
+    : 'Balance is salary less every other line: what is left unallocated.' }));
 
   // Total row
   const totalVal = curAlloc ? allocCategories.reduce((sum, cat) => sum + (Number(curAlloc[cat.key]) || 0), 0) : 0;

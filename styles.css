@@ -2459,3 +2459,29 @@ input.cat-name { flex: 1; min-width: 0; padding: 9px 11px; border: 1px solid var
 /* The Overall chip sits with the portfolios but is not one of them, so it reads
    slightly apart - a divider before it and a quieter idle state. */
 .ptab.is-overall { margin-left: 10px; }
+
+/* ---- "For others" on a personal spend ---- */
+/* A smaller switch, because it sits inside a list row rather than a form. */
+.switch.switch-sm { width: 34px; height: 19px; }
+.switch.switch-sm .switch-thumb { top: 2px; left: 2px; width: 15px; height: 15px; }
+.switch.switch-sm input:checked + .switch-track .switch-thumb { transform: translateX(15px); }
+.pf-others-row { display: flex; align-items: center; gap: 7px; margin-top: 6px; }
+.pf-others-label { font-size: 0.58rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
+/* A row that is off the limits looks it, so a list can be read without
+   checking every switch. */
+.trk-entry.is-others { background: var(--card-2); }
+.trk-entry.is-others .msheet-val { color: var(--muted); }
+.trk-entry.is-others .pf-others-label { color: var(--accent); }
+.trk-entry.is-others .switch-track { background: var(--accent); }
+/* What the roll-up counts and the strips do not. */
+.pf-others-note { margin: -4px 0 10px; font-size: 0.6rem; line-height: 1.45; color: var(--accent); }
+
+/* ---- Allocation: the derived Balance card ---- */
+/* Marked apart from the entered categories: it is the only one nobody types,
+   and reading it as another allocation would be wrong. */
+.alloc-card.alloc-card-balance { border-style: dashed; border-color: var(--accent); }
+.alloc-card.alloc-card-balance .alloc-label { color: var(--accent); }
+.alloc-card.alloc-card-balance.is-neg { border-color: var(--bad); }
+.alloc-card.alloc-card-balance.is-neg .alloc-label,
+.alloc-card.alloc-card-balance.is-neg .alloc-value { color: var(--bad); }
+.alloc-balance-note { margin: 8px 0 0; font-size: 0.62rem; line-height: 1.45; }
