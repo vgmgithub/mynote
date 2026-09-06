@@ -4617,7 +4617,7 @@ async function renderExpenseSheet(host, token) {
 
   const [allocs, reimb, sheetRow, ef, spendRows, efLoans] = await Promise.all([
     DB.all('allocations').catch(() => []),
-    DB.get('ccReimbursements', ym).catch(() => null),
+    ccReimbursements().catch(() => ({ map: {}, detail: new Map() })),
     DB.get('monthlySheet', ym).catch(() => null),
     efLoad().catch(() => null),
     DB.byIndex('spends', 'ym', ym).catch(() => []),
@@ -4634,7 +4634,10 @@ async function renderExpenseSheet(host, token) {
   const kittySpent = round2((spendRows || []).reduce((s, r) => s + (Number(r.amount) || 0), 0));
   const kittyLeft = round2(kitty - kittySpent);
   const efAvail = ef ? round2(Math.max(0, ef.c.cashInHand)) : 0;
-  const reimbAmt = round2(Number(reimb && reimb.amount) || 0);
+  // The same figure the Credit Card tab shows: household card spends plus
+  // personal ones made for somebody else, over each card's own cycle.
+  const reimbAmt = round2((reimb && reimb.map && reimb.map[ym]) || 0);
+  const reimbBits = (reimb && reimb.detail && reimb.detail.get(ym)) || null;
 
   // Allocation figures are already monthly — used as entered.
   const perMonth = (key) => (alloc ? Number(alloc[key]) || 0 : 0);
@@ -4651,7 +4654,9 @@ async function renderExpenseSheet(host, token) {
     // the Tracker add to themselves — so logging one flows straight through
     // to here. Out of Fetch for the same reason EMI / EF is: already live.
     { key: 'nextMonthDue', label: 'Next Month Due', source: null, single: true, fallback: reimbAmt,
-      note: 'card reimbursement · ' + fmtSheetCur(reimbAmt) },
+      note: 'card reimbursement · ' + fmtSheetCur(reimbAmt)
+        + (reimbBits && reimbBits.auto && reimbBits.others > 0
+          ? ' (house ' + fmtSheetCur(reimbBits.house) + ' + others ' + fmtSheetCur(reimbBits.others) + ')' : '') },
     // Follows the Emergency Fund's own available cash, so the two can't
     // disagree. `source: null` keeps it out of Fetch — there is nothing to
     // pull when the figure is already live — while staying overridable for a
@@ -5353,11 +5358,11 @@ async function renderSpendTracker(host, token) {
           class: 'icon-btn trk-del', type: 'button', text: '×', 'aria-label': 'Delete this spend',
           onclick: async (e) => {
             e.stopPropagation(); // the row opens the editor; the × must not
-            // Only spends that actually reached a reimbursement come back off one.
-            const billed = r.cardId != null && r.ym === _thisSpendYm();
+            // Every card spend is part of a month's reimbursement now, not
+            // just this month's, so the warning is about the method alone.
+            const billed = r.method === 'Card';
             if (!window.confirm('Delete ' + fmtSheetCur(r.amount) + ' on ' + (r.category || '—') + '?'
-              + (billed ? '\n\nIt will also come off this month\'s card reimbursement.' : ''))) return;
-            if (billed) await _reimburseSpend(r.ym, -(Number(r.amount) || 0));
+              + (billed ? '\n\nIt will also come off that month\'s card reimbursement.' : ''))) return;
             await DB.del('spends', r.id);
             toast('Deleted');
             renderHomeExpense();
@@ -5409,25 +5414,85 @@ const _spendMonthLabel = (k) => {
 // so back-filling a spend into it would rewrite a statement that is closed.
 const _thisSpendYm = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); };
 
-// Move `delta` onto a MONTH'S combined credit-card reimbursement. Positive
-// when a card spend is logged, negative when one is deleted or edited away.
+// ---------- The month's card reimbursement ----------
 //
-// The reimbursement, not the card's billed total, is where these belong: the
-// billed figure is the statement, which already contains the spend by the time
-// it is entered, so adding it there too would count it twice. Reimbursement is
-// exactly what credit.js describes it as — home spending logged elsewhere and
-// credited back — which is what a household spend put on a card is.
+// Two kinds of spend land on a card and then come back to you:
 //
-// Stored per MONTH rather than per card (see the ccReimbursements store), so
-// the chosen card is recorded on the spend for reference but does not split the
-// figure. Clamped at zero: a reimbursement cannot be negative, and a stray
-// reversal must not push it below.
-async function _reimburseSpend(ym, delta) {
-  try {
-    const row = await DB.get('ccReimbursements', ym).catch(() => null);
-    const next = round2(Math.max(0, (Number(row && row.amount) || 0) + delta));
-    await DB.put('ccReimbursements', { ym, amount: next, updatedAt: new Date().toISOString() });
-  } catch (_) { /* a spend must still save even if this write fails */ }
+//   * a HOUSEHOLD spend put on the card - the kitty covers it;
+//   * a PERSONAL spend marked FOR OTHERS put on the card - the person covers it.
+//
+// Both are money the bank billed you that is not yours to carry, which is
+// exactly what credit.js means by reimbursement. Together they ARE the month's
+// figure, so it is summed from the entries rather than nudged by a delta as
+// each one is saved.
+//
+// Nudging drifted, and could only ever drift: it fired for the current month
+// only, only once a card had been picked, clamped at zero so a stray reversal
+// was permanent, and never saw the personal half at all. A sum cannot drift
+// from the rows it is a sum of.
+//
+// Which month a card spend belongs to is statementYmFor, as everywhere else -
+// the bill being reimbursed is the one the spend lands on, not the calendar
+// month it happened in. A card spend with no card named has no cycle to sit
+// in, so it falls back to its own month rather than disappearing.
+function _reimbParts(cards, houseSpends, personalSpends, mod) {
+  const byId = new Map((cards || []).map((c) => [c.id, c]));
+  const parts = new Map();
+  const at = (k) => {
+    let p = parts.get(k);
+    if (!p) { p = { house: 0, others: 0, derived: 0 }; parts.set(k, p); }
+    return p;
+  };
+  const add = (rows, key, keep) => (rows || []).forEach((r) => {
+    if (r.method !== 'Card' || !keep(r)) return;
+    const card = r.cardId != null ? byId.get(r.cardId) : null;
+    const ym = card ? mod.statementYmFor(r.date, card) : String(r.date || '').slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(ym)) return;
+    const p = at(ym);
+    p[key] = round2(p[key] + (Number(r.amount) || 0));
+  });
+  add(houseSpends, 'house', () => true);
+  add(personalSpends, 'others', isForOthers);
+  parts.forEach((p) => { p.derived = round2(p.house + p.others); });
+  return parts;
+}
+
+// The figure each month actually uses, and why it is that figure.
+//
+// Three rules, in order:
+//   1. a figure the user TYPED wins - it is a correction, and a correction that
+//      a recount quietly undid would be worthless;
+//   2. otherwise a month with card spends logged against it uses their sum;
+//   3. otherwise the stored figure stands. A month with nothing logged has
+//      nothing to say about itself, and months from before the Tracker existed
+//      carry hand-entered figures that are the only record there is.
+function _reimbMap(parts, reimbRows) {
+  const stored = new Map((reimbRows || []).map((r) => [r.ym, r]));
+  const map = {};
+  const detail = new Map();
+  new Set([...parts.keys(), ...stored.keys()]).forEach((ym) => {
+    const p = parts.get(ym) || { house: 0, others: 0, derived: 0 };
+    const row = stored.get(ym) || null;
+    const manual = !!(row && row.manual);
+    const auto = !manual && p.derived > 0;
+    const amount = auto ? p.derived : round2(Number(row && row.amount) || 0);
+    map[ym] = amount;
+    detail.set(ym, { house: p.house, others: p.others, derived: p.derived, amount, auto, manual });
+  });
+  return { map, detail };
+}
+
+// Both readers - the Credit Card tab and the monthly sheet's Next Month Due -
+// go through here, so the two can never disagree about the same month.
+async function ccReimbursements() {
+  const mod = await import('./credit.js');
+  const [cards, rows, house, personal] = await Promise.all([
+    DB.all('creditCards').catch(() => []),
+    DB.all('ccReimbursements').catch(() => []),
+    DB.all('spends').catch(() => []),
+    DB.all('personalSpends').catch(() => []),
+  ]);
+  return _reimbMap(_reimbParts(cards, house, personal, mod), rows);
 }
 
 // What this month's spending says when read against the months before it.
@@ -5665,19 +5730,9 @@ async function openSpendForm(budget, existing, defaultDate) {
     const d = (dateInp.value || todayISO()).slice(0, 10);
     const ym = d.slice(0, 7);
     const cardId = chosenMethod === 'Card' ? chosenCardId : null;
-    // On an edit the OLD billing is taken back off before the new one goes on.
-    // Editing can change the amount, the card, the month or drop the card
-    // entirely, and each of those leaves the wrong figure on a statement unless
-    // the previous version is unwound first. Done as reverse-then-apply rather
-    // than a computed delta so the same two lines cover every combination —
-    // including the same card and month, where the two writes simply net out.
-    // Both halves are gated on the CURRENT month, and on the same rule, so
-    // they stay in step: a month that was never billed is never unwound.
-    const curYm = _thisSpendYm();
-    if (editing && existing.cardId != null && existing.ym === curYm) {
-      await _reimburseSpend(existing.ym, -(Number(existing.amount) || 0));
-    }
-    if (cardId != null && ym === curYm) await _reimburseSpend(ym, amt);
+    // Nothing to unwind on an edit: the reimbursement is recounted from the
+    // entries every time it is read, so changing the amount, the card, the
+    // month or the method is already accounted for the moment this saves.
     const rec = {
       ym, date: d, category: chosenCat, amount: amt,
       method: chosenMethod, cardId, tags: tagBox.get(),
@@ -5690,7 +5745,8 @@ async function openSpendForm(budget, existing, defaultDate) {
     if (editing) rec.id = existing.id;
     await DB.put('spends', rec);
     closeModal();
-    toast((editing ? 'Updated ' : 'Added ') + fmtSheetCur(amt) + (cardId != null && ym === curYm ? ' · added to reimbursement' : ''));
+    toast((editing ? 'Updated ' : 'Added ') + fmtSheetCur(amt)
+      + (chosenMethod === 'Card' ? ' · on the card reimbursement' : ''));
     renderHomeExpense();
   };
 
@@ -10682,8 +10738,10 @@ async function renderCreditCards(host, token) {
     return;
   }
 
-  const reimbMap = {};
-  reimbRows.forEach((r) => { reimbMap[r.ym] = Number(r.amount) || 0; });
+  // Asked and answered in one place (see _reimbParts): the tab renders the
+  // figure, it does not decide it.
+  const { map: reimbMap, detail: reimbDetail } = _reimbMap(
+    _reimbParts(cards, houseSpends, personalSpends, mod), reimbRows);
   const g = mod.computeCredit(cards, reimbMap);
 
   const thisYm = todayISO().slice(0, 7);
@@ -10832,20 +10890,57 @@ async function renderCreditCards(host, token) {
   // ---- Common reimbursement — ONE figure for the selected month, shared
   // across every card (see credit.js header comment for why this isn't
   // per-card any more). Saved on blur so typing doesn't thrash the DB. ----
+  const rb = reimbDetail.get(selYm) || { house: 0, others: 0, derived: 0, amount: 0, auto: false, manual: false };
   const reimbInput = el('input', {
     type: 'number', inputmode: 'decimal', step: 'any',
-    value: reimbMap[selYm] != null && reimbMap[selYm] !== 0 ? reimbMap[selYm] : '',
+    value: rb.amount ? rb.amount : '',
     placeholder: '₹ reimbursed this month',
+    'aria-label': 'Reimbursed this month',
   });
-  reimbInput.addEventListener('blur', async () => {
-    const amount = num(reimbInput.value) || 0;
-    await DB.put('ccReimbursements', { ym: selYm, amount, updatedAt: new Date().toISOString() });
+  const setReimb = async (amount, manual) => {
+    await DB.put('ccReimbursements', { ym: selYm, amount: round2(amount || 0), manual: !!manual,
+      updatedAt: new Date().toISOString() });
     renderHomeExpense();
+  };
+  reimbInput.addEventListener('blur', () => {
+    const typed = round2(num(reimbInput.value) || 0);
+    if (typed === rb.amount) return;                 // nothing said, nothing written
+    // Typing the counted figure back in is not an override, it is agreement -
+    // so the month keeps following the entries instead of freezing on today's
+    // total and going stale the next time one is logged.
+    setReimb(typed, !(rb.derived > 0 && typed === rb.derived));
   });
+
+  // Where the number came from. An auto month names its two halves, so the
+  // figure is never a total the user has to take on trust.
+  const rbBadge = rb.auto
+    ? el('span', { class: 'msheet-follow', text: 'auto' })
+    : (rb.manual
+        ? el('button', {
+            class: 'msheet-follow is-override', type: 'button',
+            title: rb.derived > 0
+              ? 'Set by you \u2014 tap to follow the ' + fmtSheetCur(rb.derived) + ' logged again'
+              : 'Set by you',
+            text: 'set \u21bb',
+            onclick: () => setReimb(rb.derived, false),
+          })
+        : document.createTextNode(''));
+  const rbSplit = rb.derived > 0
+    ? el('p', { class: 'hint cc-reimb-split' }, [
+        el('i', { class: 'rvw-dot is-house' }),
+        el('span', { text: 'house ' + fmtIntCur(rb.house) }),
+        el('i', { class: 'rvw-dot is-personal' }),
+        el('span', { text: 'for others ' + fmtIntCur(rb.others) }),
+        el('b', { text: fmtIntCur(rb.derived) + ' logged' }),
+      ])
+    : document.createTextNode('');
   host.appendChild(el('div', { class: 'chart-card cc-reimb-card' }, [
-    el('h3', { text: 'Reimbursed — ' + mod.monthLabel(selYm) }),
-    el('p', { class: 'hint', style: 'margin:0 0 8px', text: 'One combined figure for this month, covering every card above — not entered per card.' }),
+    el('h3', {}, ['Reimbursed \u2014 ' + mod.monthLabel(selYm), rbBadge]),
+    el('p', { class: 'hint', style: 'margin:0 0 8px', text: 'One combined figure for this month, covering every card above. '
+      + 'Counted from what is logged: household spends put on a card, plus personal spends marked for others. '
+      + 'Type over it to set your own figure.' }),
     reimbInput,
+    rbSplit,
   ]));
 
   // ---- The wide grid (the sheet's A:AB), newest month first ----

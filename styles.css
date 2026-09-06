@@ -2503,3 +2503,9 @@ input.vb-amt { flex: 0 0 96px; width: 96px; padding: 9px 11px; border: 1px solid
 .vb-total { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 14px; padding: 11px 13px; border-radius: 11px; background: var(--card-2); border: 1px solid var(--line); }
 .vb-total-label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); }
 .vb-total-val { font-size: 1.05rem; font-weight: 800; color: var(--good); }
+
+/* ---- Where the reimbursement figure came from ---- */
+.cc-reimb-card h3 { display: flex; align-items: center; }
+/* The two halves behind the total, so it is never a number to take on trust. */
+.cc-reimb-split { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; margin: 8px 0 0; }
+.cc-reimb-split b { margin-left: auto; font-weight: 800; color: var(--text); }
