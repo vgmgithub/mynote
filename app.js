@@ -2352,38 +2352,48 @@ function tagRow(rec) {
 
 // ---------- Entries filter, shared by both trackers ----------
 //
-// All, then each way of paying that this month actually used, then one chip per
-// card that has an entry in it.
+// All, then each way of paying that this month actually used, then the cards.
+//
+// "Cards" is a way of paying, exactly like UPI: every entry that went on a
+// card, whichever card that was. The individual cards sit after it as a way of
+// narrowing further, not as the only way in - a card spend saved without a
+// card picked belongs under Cards with the rest of them, not hidden until you
+// think to press All.
 //
 // Only options with rows BEHIND them are offered. A chip that filters to
 // nothing is a dead control, and going by what the month holds also means an
 // unused - or deleted - card drops out on its own, with no separate cleanup.
-//
-// A card spend saved without a card picked would otherwise be reachable only
-// under All, so a plain "Card" chip appears whenever any of those exist rather
-// than letting entries hide.
+// By the same rule the per-card chips only appear once there is more than one
+// card bucket to tell apart: with everything on a single card, "Cards" already
+// selects exactly that, and a second chip selecting the same rows is noise.
 const SPEND_FILTER_ALL = 'all';
 function spendEntryFilter(rows, cards, current, onPick) {
   const has = (fn) => (rows || []).some(fn);
   const opts = [[SPEND_FILTER_ALL, 'All']];
   SPEND_METHODS.forEach((mth) => {
-    if (mth === 'Card') {
-      if (has((r) => r.method === 'Card' && r.cardId == null)) opts.push(['m:Card', 'Card']);
-    } else if (has((r) => r.method === mth)) {
-      opts.push(['m:' + mth, mth]);
+    if (mth !== 'Card' && has((r) => r.method === mth)) opts.push(['m:' + mth, mth]);
+  });
+  if (has((r) => r.method === 'Card')) {
+    opts.push(['m:Card', 'Cards']);
+    // Buckets, not cards: an entry with no card named is its own bucket, since
+    // telling it apart from a named card is exactly what the chips are for.
+    const buckets = new Set((rows || [])
+      .filter((r) => r.method === 'Card')
+      .map((r) => (r.cardId == null ? 'none' : String(r.cardId))));
+    if (buckets.size > 1) {
+      (cards || []).forEach((c) => {
+        if (buckets.has(String(c.id))) opts.push(['card:' + c.id, c.name || 'Card']);
+      });
+      if (buckets.has('none')) opts.push(['card:none', 'No card']);
     }
-  });
-  (cards || []).forEach((c) => {
-    if (has((r) => r.method === 'Card' && r.cardId === c.id)) opts.push(['card:' + c.id, c.name || 'Card']);
-  });
+  }
   const cur = opts.some(([v]) => v === current) ? current : SPEND_FILTER_ALL;
   const matches = (r) => {
     if (cur === SPEND_FILTER_ALL) return true;
-    if (cur.slice(0, 2) === 'm:') {
-      const mth = cur.slice(2);
-      return mth === 'Card' ? (r.method === 'Card' && r.cardId == null) : r.method === mth;
-    }
-    return r.method === 'Card' && String(r.cardId) === cur.slice(5);
+    if (cur.slice(0, 2) === 'm:') return r.method === cur.slice(2);
+    const want = cur.slice(5);
+    if (r.method !== 'Card') return false;
+    return want === 'none' ? r.cardId == null : String(r.cardId) === want;
   };
   // Nothing to filter by when every entry in the month is the same thing.
   const node = opts.length > 1
@@ -2656,7 +2666,7 @@ async function renderPfSpends(host, token) {
     // A card filter also names that card's window for the month, which is what
     // decided which rows are in it.
     let extra = null;
-    if (f.current.slice(0, 5) === 'card:') {
+    if (f.current.slice(0, 5) === 'card:' && f.current !== 'card:none') {
       const c = (cards || []).find((x) => String(x.id) === f.current.slice(5));
       const w = c ? mod.cycleWindow(ym, c) : null;
       if (w) extra = _spendDayLabel(w.from) + ' – ' + _spendDayLabel(w.to);
