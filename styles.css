@@ -2486,11 +2486,11 @@ input.cat-name { flex: 1; min-width: 0; padding: 9px 11px; border: 1px solid var
 .alloc-card.alloc-card-balance.is-neg .alloc-value { color: var(--bad); }
 .alloc-balance-note { margin: 8px 0 0; font-size: 0.62rem; line-height: 1.45; }
 
-/* ---- Virtual balance entries ---- */
+/* ---- Itemised sheet rows: Virtual Bal and Other Expense ---- */
 /* The headline is a total now, so it sits beside its + rather than being a box
    you can type into. */
-.msheet-vb { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
-.msheet-vb-btn { width: 24px; height: 24px; margin-left: 0; font-size: 1rem; color: var(--accent); border-color: rgba(59,130,246,0.45); }
+.msheet-list { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.msheet-list-btn { width: 24px; height: 24px; margin-left: 0; font-size: 1rem; color: var(--accent); border-color: rgba(59,130,246,0.45); }
 
 .vb-rows { display: flex; flex-direction: column; gap: 6px; }
 .vb-row { display: flex; align-items: center; gap: 8px; }
@@ -2502,7 +2502,9 @@ input.vb-amt { flex: 0 0 96px; width: 96px; padding: 9px 11px; border: 1px solid
    list is still being edited. */
 .vb-total { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 14px; padding: 11px 13px; border-radius: 11px; background: var(--card-2); border: 1px solid var(--line); }
 .vb-total-label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); }
-.vb-total-val { font-size: 1.05rem; font-weight: 800; color: var(--good); }
+.vb-total-val { font-size: 1.05rem; font-weight: 800; color: var(--text); }
+.vb-total-val.is-credit { color: var(--good); }
+.vb-total-val.is-debit { color: var(--bad); }
 
 /* ---- Where the reimbursement figure came from ---- */
 .cc-reimb-card h3 { display: flex; align-items: center; }
