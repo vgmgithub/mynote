@@ -3205,7 +3205,11 @@ async function renderPfCardCheck(host, token) {
   // as though they went nowhere.
   const nd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
   const nextYm = nd.getFullYear() + '-' + String(nd.getMonth() + 1).padStart(2, '0');
-  const months = pfMonths(byYm, thisYm, mod).concat([nextYm]);
+  // Deduped, because pfMonths ALREADY reaches past this month whenever a spend
+  // lands on a statement that closes next month - which is exactly the case
+  // this tab adds nextYm for. Appending it blindly then listed it twice, and a
+  // repeated month also breaks the strip's swipe, which steps by indexOf.
+  const months = [...new Set(pfMonths(byYm, thisYm, mod).concat([nextYm]))].sort();
   if (!_pfYm || !months.includes(_pfYm)) _pfYm = thisYm;
   const ym = _pfYm;
 
