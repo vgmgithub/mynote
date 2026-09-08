@@ -5389,21 +5389,27 @@ async function renderExpenseSheet(host, token) {
   // take-home over the planned one.
   const creditInputRow = (label, key, note, fallback, hasSource, deduct) => {
     const follows = followsSource(key, sheet[key]);
-    const gross = follows ? round2(fallback || 0) : sumExpr(sheet[key]);
     const off = round2(deduct || 0);
-    const amount = round2(gross - off);
+    // `base` is what came IN; `amount` is what is left of it after money that
+    // has already gone back out. One box, showing and editing the figure that
+    // matters - what is actually in hand - because a second box under a
+    // read-only total would just be the same money written twice.
+    const base = follows ? round2(fallback || 0) : sumExpr(sheet[key]);
+    const amount = round2(base - off);
     credits += amount;
     const inp = el('input', {
       class: 'msheet-val-input',
       type: 'number', inputmode: 'decimal', step: 'any',
-      value: gross, placeholder: fmtSheetCur(fallback || 0),
+      value: amount, placeholder: fmtSheetCur(round2((fallback || 0) - off)),
       'aria-label': label,
     });
     inp.addEventListener('blur', () => {
       const raw = inp.value.trim();
-      // Cleared back to empty means "use the planned figure again", not zero.
-      const v = raw === '' ? null : round2(num(raw) || 0);
-      if (v !== gross || raw === '') saveField(key, v, fallback);
+      // Typed as what is LEFT, stored as what came in, so a bill settled after
+      // this was typed still takes its own bite - and unticking one gives it
+      // back. Cleared to empty means "use the planned figure again", not zero.
+      const v = raw === '' ? null : round2((num(raw) || 0) + off);
+      if (v !== base || raw === '') saveField(key, v, fallback);
     });
     const state = !hasSource ? document.createTextNode('')
       : follows
@@ -5414,20 +5420,14 @@ async function renderExpenseSheet(host, token) {
             text: 'set ↻',
             onclick: (e) => { e.stopPropagation(); saveField(key, null, fallback); },
           });
-    // With something deducted the box holds what came IN and the headline holds
-    // what is left, because the figure Available Balance actually adds up has to
-    // be somewhere on screen - the same reason the red rows are built this way.
     table.appendChild(el('div', { class: 'msheet-row msheet-credit' }, [
       el('div', { class: 'msheet-label' }, [
         el('span', {}, [label, state]),
+        // The deduction is named in the caption rather than shown as a second
+        // figure, so the row still explains itself with one number on it.
         el('span', { class: 'msheet-note', text: off > 0 ? note + ' − ' + fmtSheetCur(off) : note }),
       ]),
-      off > 0
-        ? el('div', { class: 'msheet-stack' }, [
-            el('span', { class: 'msheet-val', text: fmtSheetCur(amount) }),
-            el('div', { class: 'msheet-input' }, [inp]),
-          ])
-        : inp,
+      inp,
     ]));
   };
 
