@@ -3027,37 +3027,30 @@ async function renderPfReview(host, token) {
   const ownByYm = pfOwnMap(byYm);
   const ownByYmCal = pfOwnMap(byYmCal);
 
-  // The month strip still offers every month that holds entries, including one
-  // whose only entries were for others - there is a list to look at there.
-  const months = pfMonths(byYm, thisYm, mod);
-  if (!_pfYm || !months.includes(_pfYm)) _pfYm = months[months.length - 1];
-  const ym = _pfYm;
+  // THIS MONTH, always, and no strip - the same reasoning as the household
+  // Review: this tab is for a month that can still be changed. History is what
+  // the comparisons are made against, not something to page through.
+  const ym = thisYm;
   const t = pfTotals(ym, byYm, allocs, upiLimit);
 
-  const appHeader = document.querySelector('.app-header');
-  const timelineWrap = el('div', {
-    class: 'cc-timeline-scroll cc-timeline-sticky trk-timeline',
-    style: 'top:' + (appHeader ? appHeader.offsetHeight : 0) + 'px',
-  });
-  const totalOf = (k) => round2((byYm.get(k) || []).reduce((a, r) => a + (Number(r.amount) || 0), 0));
-  timelineWrap.appendChild(el('div', { class: 'cc-timeline' }, months.slice().reverse().map((k) => el('button', {
-    type: 'button',
-    class: 'cc-timeline-chip' + (k === ym ? ' active' : '') + (k === thisYm ? ' is-current' : '')
-      + (k > thisYm ? ' is-ahead' : '') + (totalOf(k) > 0 ? ' has-data' : ''),
-    text: mod.monthLabel(k),
-    onclick: () => { if (k === ym) return; _pfYm = k; _pfTimelineClicked = true; renderPersonal(); },
-  }))));
-  host.appendChild(timelineWrap);
-  _mountMonthStrip('pfreview', timelineWrap, _pfTimelineClicked);
-  _pfTimelineClicked = false;
-  _attachMonthSwipe(host, months, ym, (k) => { _pfYm = k; _pfTimelineClicked = true; renderPersonal(); });
-
   const a = _reviewAnalysis(ym, ownByYm, thisYm, t.limit, now, _pfGroupOf);
+
+  // Which month, and how far into it - the one thing the strip used to say that
+  // is still worth saying.
+  host.appendChild(el('div', { class: 'rvw-scope' }, [
+    el('span', { class: 'rvw-scope-ym', text: mod.monthLabel(ym) }),
+    el('span', { class: 'rvw-scope-note', text: a.historyMonths > 0
+      ? 'day ' + a.daysElapsed + ' of ' + a.daysInMonth + ' · read against ' + a.historyMonths
+        + (a.historyMonths === 1 ? ' earlier month' : ' earlier months')
+      : 'day ' + a.daysElapsed + ' of ' + a.daysInMonth }),
+  ]));
+
   if (!a.spent) {
     host.appendChild(el('div', { class: 'empty' }, [
       el('div', { class: 'e-icon', text: '\ud83d\udd0d' }),
-      el('p', { text: 'Nothing logged for ' + mod.monthLabel(ym) + '.' }),
-      el('p', { class: 'hint', text: 'This tab reads the Spends tab \u2014 log some and it will tell you which of them are unusual for you.' }),
+      el('p', { text: 'Nothing logged this month yet.' }),
+      el('p', { class: 'hint', text: 'This tab reads your own Spends and only ever looks at the month you are in — '
+        + 'log some and it will forecast where the month lands and tell you which of them are unusual for you.' }),
     ]));
     return;
   }
@@ -3236,6 +3229,22 @@ async function renderPfReview(host, token) {
           + 'the forecast: which day of the month you spend on is a question about the calendar.' }));
       });
   }
+
+  // The same three the household tab draws, on personal money: what is
+  // drifting upward, how it was paid, and whether the allowance is the right
+  // size to begin with. Together with the forecast above, that is the whole
+  // question this tab exists to answer - am I going to land inside my limit,
+  // and if not, what is doing it.
+  const prevD = new Date(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)) - 2, 1);
+  const prevYm = prevD.getFullYear() + '-' + String(prevD.getMonth() + 1).padStart(2, '0');
+  _rvwCreepingSection(host, _reviewCreeping(ym, ownByYm, _pfGroupOf), _pfGroupClass);
+  _rvwMethodsSection(host, _reviewMethods(ym, ownByYm, prevYm),
+    ' Card spends are counted on the statement they land on, so a late-month swipe '
+    + 'is next month\u2019s allowance rather than this one\u2019s.');
+  _rvwFitSection(host, _reviewKittyFit(ym, ownByYm, (k) => pfTotals(k, byYm, allocs, upiLimit).limit, thisYm), {
+    word: 'allowance',
+    each: () => ' — the card half of that is set on Expense’s Allocation tab, the UPI half on Limits',
+  });
 
   host.appendChild(el('p', { class: 'hint mf-foot', text: 'Each category is compared with its own median month from your own entries — not a target, and not an average, which one unusual month would skew. Month totals count UPI over the calendar month and card spends over the bill they land on, matching the Spends and Limits tabs.' }));
 }
@@ -6232,7 +6241,9 @@ function _spendDayLabel(iso) {
 // that's where we are, and this month everywhere else.
 async function openSpendQuick() {
   const now = new Date();
-  const onMonthTab = state.appMode === 'expense' && (_expTab === 'tracker' || _expTab === 'review') && _trkYm;
+  // Tracker only. Review is pinned to this month now, so taking _trkYm there
+  // would date a spend into whatever month the Tracker was last left on.
+  const onMonthTab = state.appMode === 'expense' && _expTab === 'tracker' && _trkYm;
   const ym = onMonthTab ? _trkYm : (now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0'));
   const [allocs, efLoans] = await Promise.all([
     DB.all('allocations').catch(() => []),
@@ -6564,7 +6575,8 @@ function _reviewSmallTickets(ym, byYm) {
 // on the main list misses these by design: drift that never spikes stays close
 // to its own median while quietly doubling over half a year.
 const CREEP_MIN_RUN = 3;   // months, including the selected one
-function _reviewCreeping(ym, byYm) {
+function _reviewCreeping(ym, byYm, groupOf) {
+  const grp = groupOf || _spendGroupOf;
   const months = [...byYm.keys()].filter((k) => k <= ym).sort();
   if (months.length < CREEP_MIN_RUN) return [];
   const perMonth = months.map((k) => {
@@ -6595,7 +6607,7 @@ function _reviewCreeping(ym, byYm) {
     const seq = run.slice().reverse();
     const from = seq[0].amount, to = seq[seq.length - 1].amount;
     out.push({
-      name, group: _spendGroupOf(name), seq,
+      name, group: grp(name), seq,
       rise: round2(to - from),
       risePct: from > 0 ? Math.round(((to - from) / from) * 100) : null,
       months: seq.length,
@@ -7304,13 +7316,18 @@ async function renderReview(host, token) {
     byYm.get(k).push(r);
   });
 
-  // Shares the Tracker's selected month, so switching month on one tab lands
-  // you on the same month on the other.
-  const timelineYms = [...new Set(mod.monthRangeYm(TRACKER_START_YM, thisYm).concat([...byYm.keys()], [thisYm]))]
-    .filter((k) => k <= thisYm).sort();
-  if (!timelineYms.length) timelineYms.push(thisYm);
-  if (!_trkYm || !timelineYms.includes(_trkYm)) _trkYm = timelineYms[timelineYms.length - 1];
-  const ym = _trkYm;
+  // THIS MONTH, always. There is no month strip here on purpose.
+  //
+  // Everything this tab does is about a month that can still be changed:
+  // forecasting where it lands, naming what has already gone wrong in it,
+  // pointing at what to stop doing for the rest of it. Run against a closed
+  // month all of that becomes a post-mortem - a forecast of a month that has
+  // already happened, advice for days that are gone - and the useful reading
+  // gets buried under months nobody can act on.
+  //
+  // History has not gone anywhere: it is what every comparison here is made
+  // AGAINST. It is just no longer something to browse.
+  const ym = thisYm;
 
   // House Exp is per YEAR, so a window spanning a year boundary has more than
   // one kitty in it. Looked up by month rather than assumed constant.
@@ -7318,33 +7335,22 @@ async function renderReview(host, token) {
   const kitty = kittyOf(ym);
   const a = _reviewAnalysis(ym, byYm, thisYm, kitty, now);
 
-  // ---- Month timeline (same strip as the Tracker) ----
-  const appHeader = document.querySelector('.app-header');
-  const timelineWrap = el('div', {
-    class: 'cc-timeline-scroll cc-timeline-sticky trk-timeline',
-    style: 'top:' + (appHeader ? appHeader.offsetHeight : 0) + 'px',
-  });
-  const totalOf = (k) => round2((byYm.get(k) || []).reduce((s, r) => s + (Number(r.amount) || 0), 0));
-  const timelineRow = el('div', { class: 'cc-timeline' }, timelineYms.slice().reverse().map((k) => el('button', {
-    type: 'button',
-    class: 'cc-timeline-chip'
-      + (k === ym ? ' active' : '')
-      + (k === thisYm ? ' is-current' : '')
-      + (totalOf(k) > 0 ? ' has-data' : ''),
-    text: mod.monthLabel(k),
-    onclick: () => { if (k === ym) return; _trkYm = k; _trkTimelineClicked = true; renderHomeExpense(); },
-  })));
-  timelineWrap.appendChild(timelineRow);
-  host.appendChild(timelineWrap);
-  _mountMonthStrip('review', timelineWrap, _trkTimelineClicked);
-  _trkTimelineClicked = false;
-  _attachMonthSwipe(host, timelineYms, ym, (k) => { _trkYm = k; _trkTimelineClicked = true; renderHomeExpense(); });
+  // Which month, and how much of it is behind us - the one thing the strip used
+  // to say that is still worth saying.
+  host.appendChild(el('div', { class: 'rvw-scope' }, [
+    el('span', { class: 'rvw-scope-ym', text: mod.monthLabel(ym) }),
+    el('span', { class: 'rvw-scope-note', text: a.historyMonths > 0
+      ? 'day ' + a.daysElapsed + ' of ' + a.daysInMonth + ' · read against ' + a.historyMonths
+        + (a.historyMonths === 1 ? ' earlier month' : ' earlier months')
+      : 'day ' + a.daysElapsed + ' of ' + a.daysInMonth }),
+  ]));
 
   if (!a.spent) {
     host.appendChild(el('div', { class: 'empty' }, [
       el('div', { class: 'e-icon', text: '🔍' }),
-      el('p', { text: 'Nothing logged for ' + mod.monthLabel(ym) + '.' }),
-      el('p', { class: 'hint', text: 'This tab reads the Tracker — log some spends and it will tell you which of them are unusual for you.' }),
+      el('p', { text: 'Nothing logged this month yet.' }),
+      el('p', { class: 'hint', text: 'This tab reads the Tracker and only ever looks at the month you are in — '
+        + 'log some spends and it will forecast where the month lands and tell you which of them are unusual for you.' }),
     ]));
     return;
   }
@@ -7539,25 +7545,7 @@ async function renderReview(host, token) {
       body.appendChild(el('p', { class: 'hint rvw-note', text: 'Tap a row for that category\u2019s last six months.' }));
     });
 
-  // ---- Creeping up ----
-  if (creeping.length) {
-    rvwSection(host, 'creep', '\ud83d\udcc8', 'Creeping up',
-      '+' + fmtSheetCur(creeping[0].rise) + ' ' + creeping[0].name, (body) => {
-        body.appendChild(el('div', { class: 'rvw-list' }, creeping.map((r) =>
-          el('div', { class: 'rvw-item ' + _spendGroupClass(r.group) }, [
-            el('div', { class: 'rvw-item-top' }, [
-              el('span', { class: 'rvw-item-name' }, [el('span', { class: 'rvw-item-dot' }), el('span', { text: r.name })]),
-              el('span', { class: 'rvw-item-amt', text: '+' + fmtSheetCur(r.rise) + (r.risePct != null ? ' (' + r.risePct + '%)' : '') }),
-            ]),
-            el('div', { class: 'rvw-seq' }, r.seq.map((st) => el('span', { class: 'rvw-seq-step' }, [
-              el('span', { class: 'rvw-seq-mon', text: _spendMonthLabel(st.ym).split(' ')[0] }),
-              el('span', { class: 'rvw-seq-amt', text: fmtSheetCur(st.amount) }),
-            ]))),
-            el('div', { class: 'rvw-item-mid', text: 'Up every month for ' + r.months + ' months'
-              + (r.fixed ? ' · fixed cost, but worth checking the rate' : '') }),
-          ]))));
-      });
-  }
+  _rvwCreepingSection(host, creeping, _spendGroupClass);
 
   // ---- Small spends ----
   if (small) {
@@ -7676,56 +7664,13 @@ async function renderReview(host, token) {
     });
   }
 
-  // ---- How you paid ----
-  if (methods) {
-    const lead = methods.rows.slice().sort((x, y) => y.share - x.share)[0];
-    rvwSection(host, 'method', '\ud83d\udcb3', 'How you paid',
-      lead ? lead.method + ' ' + lead.share + '%' : null, (body) => {
-        body.appendChild(el('div', { class: 'rvw-meth' }, methods.rows.map((r) => el('div', { class: 'rvw-meth-row' }, [
-          el('span', { class: 'rvw-meth-name', text: r.method }),
-          el('span', { class: 'rvw-meth-track' }, [
-            el('span', { class: 'rvw-meth-fill is-' + r.method.toLowerCase(), style: 'width:' + Math.max(2, r.share) + '%' }),
-          ]),
-          el('span', { class: 'rvw-meth-amt', text: fmtSheetCur(r.amount) }),
-          el('span', { class: 'rvw-meth-pct', text: r.share + '%' }),
-        ]))));
-        if (methods.cardAmount > 0) {
-          const moved = methods.prevCardShare != null && Math.abs(methods.cardShare - methods.prevCardShare) >= 5
-            ? ' Card was ' + methods.prevCardShare + '% last month.'
-            : '';
-          body.appendChild(el('p', { class: 'hint rvw-note', text: fmtSheetCur(methods.cardAmount)
-            + ' of this month went on a card, so it lands on a statement later rather than being gone already.'
-            + ' It is also what feeds this month\u2019s card reimbursement.' + moved }));
-        }
-      });
-  }
-
-  // ---- Is the kitty right? ----
-  if (fit) {
-    rvwSection(host, 'kitty', '\ud83e\uddee', 'Is the kitty right?',
-      fit.overCount + ' of ' + fit.months + ' over', (body) => {
-        const rows = [
-          ['Over the kitty', fit.overCount + ' of the last ' + fit.months + ' months'],
-          ['Average overshoot', fit.avgOvershoot > 0 ? fmtSheetCur(fit.avgOvershoot) : '—'],
-          ['Leanest month', _spendMonthLabel(fit.leanest.ym) + ' · ' + fmtSheetCur(fit.leanest.total)],
-          ['Heaviest month', _spendMonthLabel(fit.heaviest.ym) + ' · ' + fmtSheetCur(fit.heaviest.total)],
-        ];
-        body.appendChild(el('div', { class: 'rvw-flat' }, rows.map(([k, v]) =>
-          el('div', { class: 'rvw-flat-row' }, [el('span', { text: k }), el('span', { class: 'rvw-flat-meta', text: v })]))));
-        // Only worth saying when a bigger kitty would genuinely have covered more
-        // months than the one that's set. Otherwise the allocation is fine and the
-        // spending is the story, which the sections above already tell.
-        if (fit.suggested > fit.currentKitty && fit.covered > fit.coveredNow) {
-          body.appendChild(el('p', { class: 'hint rvw-note', text: 'A kitty of ' + fmtSheetCur(fit.suggested)
-            + ' would have covered ' + fit.covered + ' of those ' + fit.months + ' months, against '
-            + fit.coveredNow + ' on the ' + fmtSheetCur(fit.currentKitty) + ' set now — that is '
-            + fmtSheetCur(round2(fit.suggested / 2)) + ' each on House Exp. Sized to cover all but the single '
-            + 'heaviest month, so one unusual month does not set the budget.' }));
-        } else if (fit.overCount === 0) {
-          body.appendChild(el('p', { class: 'hint rvw-note', text: 'The kitty has covered every one of those months, so the allocation looks about right.' }));
-        }
-      });
-  }
+  _rvwMethodsSection(host, methods, ' It is also what feeds this month\u2019s card reimbursement.');
+  _rvwFitSection(host, fit, {
+    word: 'kitty',
+    // The kitty is House Exp DOUBLED, so a suggested figure is only actionable
+    // once it is halved back into the line actually typed on Allocation.
+    each: (f) => ' — that is ' + fmtSheetCur(round2(f.suggested / 2)) + ' each on House Exp',
+  });
 
   // ---- Context: what wasn't judged, and what can't be ----
   if (a.unjudged.length) {
@@ -7753,6 +7698,87 @@ async function renderReview(host, token) {
   }
 
   host.appendChild(el('p', { class: 'hint mf-foot', text: 'Each category is compared with its own median month from your own entries — not a target, and not an average, which one unusual month would skew. Only categories already past a normal month appear.' }));
+}
+
+// ---------- Sections both Review tabs draw ----------
+//
+// Written once rather than copied, because the two tabs are asking the same
+// question of different money - what is drifting, how it was paid, whether the
+// limit is the right size - and a wording or a rule that drifted apart between
+// them would be a bug nobody would ever notice.
+function _rvwCreepingSection(host, creeping, groupClass) {
+  if (!creeping.length) return;
+  rvwSection(host, 'creep', '\ud83d\udcc8', 'Creeping up',
+    '+' + fmtSheetCur(creeping[0].rise) + ' ' + creeping[0].name, (body) => {
+      body.appendChild(el('div', { class: 'rvw-list' }, creeping.map((r) =>
+        el('div', { class: 'rvw-item ' + groupClass(r.group) }, [
+          el('div', { class: 'rvw-item-top' }, [
+            el('span', { class: 'rvw-item-name' }, [el('span', { class: 'rvw-item-dot' }), el('span', { text: r.name })]),
+            el('span', { class: 'rvw-item-amt', text: '+' + fmtSheetCur(r.rise) + (r.risePct != null ? ' (' + r.risePct + '%)' : '') }),
+          ]),
+          el('div', { class: 'rvw-seq' }, r.seq.map((st) => el('span', { class: 'rvw-seq-step' }, [
+            el('span', { class: 'rvw-seq-mon', text: _spendMonthLabel(st.ym).split(' ')[0] }),
+            el('span', { class: 'rvw-seq-amt', text: fmtSheetCur(st.amount) }),
+          ]))),
+          el('div', { class: 'rvw-item-mid', text: 'Up every month for ' + r.months + ' months'
+            + (r.fixed ? ' · fixed cost, but worth checking the rate' : '') }),
+        ]))));
+    });
+}
+
+function _rvwMethodsSection(host, methods, cardNote) {
+  if (!methods) return;
+  const lead = methods.rows.slice().sort((x, y) => y.share - x.share)[0];
+  rvwSection(host, 'method', '\ud83d\udcb3', 'How you paid',
+    lead ? lead.method + ' ' + lead.share + '%' : null, (body) => {
+      body.appendChild(el('div', { class: 'rvw-meth' }, methods.rows.map((r) => el('div', { class: 'rvw-meth-row' }, [
+        el('span', { class: 'rvw-meth-name', text: r.method }),
+        el('span', { class: 'rvw-meth-track' }, [
+          el('span', { class: 'rvw-meth-fill is-' + r.method.toLowerCase(), style: 'width:' + Math.max(2, r.share) + '%' }),
+        ]),
+        el('span', { class: 'rvw-meth-amt', text: fmtSheetCur(r.amount) }),
+        el('span', { class: 'rvw-meth-pct', text: r.share + '%' }),
+      ]))));
+      if (methods.cardAmount > 0) {
+        const moved = methods.prevCardShare != null && Math.abs(methods.cardShare - methods.prevCardShare) >= 5
+          ? ' Card was ' + methods.prevCardShare + '% last month.'
+          : '';
+        body.appendChild(el('p', { class: 'hint rvw-note', text: fmtSheetCur(methods.cardAmount)
+          + ' of this month went on a card, so it lands on a statement later rather than being gone already.'
+          + cardNote + moved }));
+      }
+    });
+}
+
+// `o.word` is what this money is called, `o.each` an extra clause for the
+// suggestion where the limit is shared or doubled on its way in.
+function _rvwFitSection(host, fit, o) {
+  if (!fit) return;
+  const word = o.word;
+  rvwSection(host, 'kitty', '\ud83e\uddee', 'Is the ' + word + ' right?',
+    fit.overCount + ' of ' + fit.months + ' over', (body) => {
+      const rows = [
+        ['Over the ' + word, fit.overCount + ' of the last ' + fit.months + ' months'],
+        ['Average overshoot', fit.avgOvershoot > 0 ? fmtSheetCur(fit.avgOvershoot) : '—'],
+        ['Leanest month', _spendMonthLabel(fit.leanest.ym) + ' · ' + fmtSheetCur(fit.leanest.total)],
+        ['Heaviest month', _spendMonthLabel(fit.heaviest.ym) + ' · ' + fmtSheetCur(fit.heaviest.total)],
+      ];
+      body.appendChild(el('div', { class: 'rvw-flat' }, rows.map(([k, v]) =>
+        el('div', { class: 'rvw-flat-row' }, [el('span', { text: k }), el('span', { class: 'rvw-flat-meta', text: v })]))));
+      // Only worth saying when a bigger limit would genuinely have covered more
+      // months than the one that's set. Otherwise the limit is fine and the
+      // spending is the story, which the sections above already tell.
+      if (fit.suggested > fit.currentKitty && fit.covered > fit.coveredNow) {
+        body.appendChild(el('p', { class: 'hint rvw-note', text: 'A ' + word + ' of ' + fmtSheetCur(fit.suggested)
+          + ' would have covered ' + fit.covered + ' of those ' + fit.months + ' months, against '
+          + fit.coveredNow + ' on the ' + fmtSheetCur(fit.currentKitty) + ' set now'
+          + (o.each ? o.each(fit) : '') + '. Sized to cover all but the single '
+          + 'heaviest month, so one unusual month does not set the budget.' }));
+      } else if (fit.overCount === 0) {
+        body.appendChild(el('p', { class: 'hint rvw-note', text: 'The ' + word
+          + ' has covered every one of those months, so it looks about right.' }));
+      }
+    });
 }
 
 // Categories that keep turning up, and roughly when. This is pattern
@@ -11651,7 +11677,15 @@ async function renderCreditCards(host, token) {
       const tr = el('tr', {}, [el('th', { class: 'rowhead', text: card.name || 'Card' })]);
       displayYms.forEach((ym) => {
         const v = cell(ym);
-        tr.appendChild(el('td', { class: v && v.billed ? '' : 'flat', text: v && v.billed ? fmtIntCur(v.billed) : '—' }));
+        // Struck through once settled, per card per month. The grid is read to
+        // find what is still owed, and a figure that has been paid answering
+        // that question the same way as one that has not is the whole problem.
+        const paid = !!(v && v.status);
+        tr.appendChild(el('td', {
+          class: (v && v.billed ? '' : 'flat') + (paid ? ' is-paid' : '') + (v && v.status === 'late' ? ' is-late' : ''),
+          title: paid ? (v.status === 'late' ? 'Paid late' : 'Paid') + (v.paidOn ? ' · ' + _spendDayLabel(String(v.paidOn).slice(0, 10)) : '') : '',
+          text: v && v.billed ? fmtIntCur(v.billed) : '—',
+        }));
       });
       tbody.appendChild(tr);
     });

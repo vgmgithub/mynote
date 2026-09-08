@@ -2616,3 +2616,12 @@ input.vb-amt { flex: 0 0 96px; width: 96px; padding: 9px 11px; border: 1px solid
 /* Drawn wallet on the Personal Finance home card - sized like the metal bars,
    which is the other drawn icon in that row. */
 .wallet-ico { width: 30px; height: 30px; display: block; }
+
+/* ---- Month by month: a settled bill is struck through ---- */
+.cc-grid td.is-paid { text-decoration: line-through; text-decoration-thickness: 1.5px; opacity: 0.55; }
+.cc-grid td.is-paid.is-late { text-decoration-color: var(--warn); }
+
+/* ---- Review: which month, since there is no strip to say so ---- */
+.rvw-scope { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; margin: 2px 0 12px; }
+.rvw-scope-ym { font-size: 1.02rem; font-weight: 800; letter-spacing: -0.2px; }
+.rvw-scope-note { font-size: 0.66rem; color: var(--muted); }
