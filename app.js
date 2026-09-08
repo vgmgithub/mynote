@@ -2429,6 +2429,10 @@ async function renderPersonal() {
   if (_pfTab === 'limits') { await renderPfLimits(host, token); return; }
   if (_pfTab === 'review') { await renderPfReview(host, token); return; }
   if (_pfTab === 'cards') { await renderPfCardCheck(host, token); return; }
+  if (_pfTab === 'tags') {
+    await renderTagAnalysis(host, token, { fixedSource: 'personal', rerender: renderPersonal, stale: pfRenderStale });
+    return;
+  }
   await renderPfSpends(host, token);
 }
 
@@ -3247,7 +3251,8 @@ function buildPfBottomNav() {
   if (nav.childElementCount) { updatePfNavActive(); return; }
   nav.innerHTML = '';
   [['spends', '\ud83d\uded2', 'Spends'], ['limits', '\ud83c\udfaf', 'Limits'],
-   ['review', '\ud83d\udd0d', 'Review'], ['cards', '\ud83e\uddfe', 'Card check']].forEach(([v, ico, label]) => {
+   ['review', '\ud83d\udd0d', 'Review'], ['cards', '\ud83e\uddfe', 'Card check'],
+   ['tags', '\ud83c\udff7\ufe0f', 'Tags']].forEach(([v, ico, label]) => {
     nav.appendChild(el('button', { 'data-view': v, onclick: () => { if (_pfTab === v) return; _pfTab = v; renderPersonal(); } },
       [el('span', { class: 'bn-ico', text: ico }), label]));
   });
@@ -4434,7 +4439,7 @@ async function renderHomeSavings() {
 // tabs count a card spend on the bill it lands on, which is right for a bill -
 // but a tag is about when a habit happened, and two stores counting months by
 // different rules would put incomparable bars side by side.
-const TAG_RANGES = [[3, '3m'], [6, '6m'], [12, '12m'], [0, 'All']];
+const TAG_RANGES = [[1, 'This month'], [3, '3m'], [6, '6m'], [12, '12m'], [0, 'All']];
 const TAG_SOURCES = [['all', 'Both'], ['house', 'Household'], ['personal', 'Personal']];
 let _tagRange = 0;          // months back from this one; 0 means everything
 let _tagSource = 'all';
@@ -4468,14 +4473,26 @@ function _tagRollup(entries) {
   return [...byTag.values()].sort((a, b) => b.total - a.total || b.count - a.count || a.tag.localeCompare(b.tag));
 }
 
-async function renderTagAnalysis(host, token) {
+// `o.fixedSource` pins the tab to one side of the books and takes the source
+// chips away with it. Personal Finance uses that: every other tab in the
+// section is about own spending, and a Tags tab that could quietly fold the
+// household kitty in would make the section's figures unreadable. The Expense
+// copy keeps the chooser, since that is where the two are meant to be compared.
+//
+// `o.rerender` / `o.stale` are the owning section's, so a chip press repaints
+// the right view and a slow load that has been navigated away from is dropped.
+async function renderTagAnalysis(host, token, o) {
+  o = o || {};
+  const fixedSource = o.fixedSource || null;
+  const rerender = o.rerender || renderHomeExpense;
+  const stale = o.stale || expRenderStale;
   const mod = await import('./credit.js');
   const [houseRows, pfRows, cards] = await Promise.all([
     DB.all('spends').catch(() => []),
     DB.all('personalSpends').catch(() => []),
     DB.all('creditCards').catch(() => []),
   ]);
-  if (expRenderStale(token)) return;
+  if (stale(token)) return;
   const cardName = new Map((cards || []).map((c) => [c.id, c.name || 'Card']));
 
   const shape = (rows, src) => (rows || []).map((r) => ({
@@ -4493,24 +4510,28 @@ async function renderTagAnalysis(host, token) {
     const d = new Date(Number(thisYm.slice(0, 4)), Number(thisYm.slice(5, 7)) - _tagRange, 1);
     fromYm = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
   }
+  const source = fixedSource || _tagSource;
   const scoped = all
     .filter((x) => (fromYm ? x.ym >= fromYm : true))
-    .filter((x) => _tagSource === 'all' || x.src === _tagSource);
+    .filter((x) => source === 'all' || x.src === source);
 
   const chipRow = (opts, cur, pick) => el('div', { class: 'pf-filter' }, opts.map(([v, label]) => el('button', {
     type: 'button', class: 'pf-filter-chip' + (String(v) === String(cur) ? ' active' : ''), text: label,
-    onclick: () => { if (String(v) === String(cur)) return; pick(v); renderHomeExpense(); },
+    onclick: () => { if (String(v) === String(cur)) return; pick(v); rerender(); },
   })));
   host.appendChild(el('div', { class: 'tag-an-scope' }, [
     chipRow(TAG_RANGES, _tagRange, (v) => { _tagRange = v; }),
-    chipRow(TAG_SOURCES, _tagSource, (v) => { _tagSource = v; }),
+    fixedSource ? document.createTextNode('')
+      : chipRow(TAG_SOURCES, _tagSource, (v) => { _tagSource = v; }),
   ]));
 
   if (!all.length) {
     host.appendChild(el('div', { class: 'empty' }, [
       el('div', { class: 'e-icon', text: '\ud83c\udff7\ufe0f' }),
       el('p', { text: 'Nothing logged yet.' }),
-      el('p', { class: 'hint', text: 'Tag a spend on the Tracker or in Personal Finance and it turns up here.' }),
+      el('p', { class: 'hint', text: fixedSource === 'personal'
+        ? 'Tag a personal spend and it turns up here.'
+        : 'Tag a spend on the Tracker or in Personal Finance and it turns up here.' }),
     ]));
     return;
   }
@@ -4522,15 +4543,16 @@ async function renderTagAnalysis(host, token) {
   const taggedTotal = sum(tagged);
   const untagged = round2(total - taggedTotal);
   const pct = total > 0 ? (taggedTotal / total) * 100 : 0;
-  const rangeLabel = _tagRange > 0 ? 'last ' + _tagRange + ' months' : 'all time';
-  const srcLabel = (TAG_SOURCES.find(([v]) => v === _tagSource) || [null, 'Both'])[1].toLowerCase();
+  const rangeLabel = _tagRange === 1 ? 'this month'
+    : (_tagRange > 0 ? 'last ' + _tagRange + ' months' : 'all time');
+  const srcLabel = (TAG_SOURCES.find(([v]) => v === source) || [null, 'Both'])[1].toLowerCase();
 
   const tags = _tagRollup(tagged);
   host.appendChild(el('div', { class: 'chart-card tag-cover' }, [
     el('h3', { text: 'Tagged spending' }),
     el('p', { class: 'hint', style: 'margin:0 0 10px',
-      text: rangeLabel + ' · ' + (_tagSource === 'all' ? 'household and personal' : srcLabel + ' only')
-        + ' · months counted by the date spent' }),
+      text: rangeLabel + ' · ' + (source === 'all' ? 'household and personal' : srcLabel + ' only')
+        + ' · ' + (_tagRange === 1 ? 'by the date spent' : 'months counted by the date spent') }),
     el('div', { class: 'tag-cover-bar' }, [
       el('span', { class: 'tag-cover-fill', style: 'width:' + pct.toFixed(1) + '%' }),
     ]),
@@ -4566,8 +4588,12 @@ async function renderTagAnalysis(host, token) {
     // A handle used across most of the months in scope is a standing cost; one
     // on a single entry is a label. Worth saying which, since they want
     // completely different reactions from the reader.
-    const cadence = t.months >= 3 && t.months >= Math.ceil(scopeYms.length * 0.6) ? 'every month'
-      : (t.months >= 3 ? 'recurring' : (t.count === 1 ? 'one-off' : null));
+    // Meaningless inside a single month: everything there happened once, in
+    // one month, so "one-off" would be a statement about the filter rather
+    // than about the tag.
+    const cadence = scopeYms.length < 2 ? null
+      : (t.months >= 3 && t.months >= Math.ceil(scopeYms.length * 0.6) ? 'every month'
+        : (t.months >= 3 ? 'recurring' : (t.count === 1 ? 'one-off' : null)));
     // Where it is heading, measured against its OWN median rather than against
     // the month before - one quiet month is not a trend.
     let trend = null;
@@ -4610,7 +4636,7 @@ async function renderTagAnalysis(host, token) {
         barYms.map((ym) => ({ ym, amount: t.yms.get(ym) || 0, current: ym === thisYm })),
         t.months > 1 ? t.usual : 0));
     }
-    if (_tagSource === 'all' && t.house > 0 && t.personal > 0) {
+    if (source === 'all' && t.house > 0 && t.personal > 0) {
       body.appendChild(el('p', { class: 'hint tag-an-split' }, [
         el('i', { class: 'rvw-dot is-house' }), el('span', { text: 'household ' + fmtIntCur(t.house) }),
         el('i', { class: 'rvw-dot is-personal' }), el('span', { text: 'personal ' + fmtIntCur(t.personal) }),
@@ -5319,7 +5345,7 @@ async function saveCategoryList(kind, list) {
 }
 const _pfGroupClass = (group) => 'pf-g-' + String(group).toLowerCase().replace(/[^a-z]/g, '');
 
-let _pfTab = 'spends';        // 'spends' | 'limits' | 'review' | 'cards'
+let _pfTab = 'spends';        // 'spends' | 'limits' | 'review' | 'cards' | 'tags'
 let _pfYm = null;
 let _pfTimelineClicked = false;
 let _pfView = 'category';     // 'category' | 'entries'
