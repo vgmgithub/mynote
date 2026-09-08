@@ -2019,11 +2019,23 @@ async function openPfSpendForm(existing, defaultDate) {
     if (editing) rec.id = existing.id;
     await DB.put('personalSpends', rec);
     closeModal();
+    // The strip moves to the month the entry is FILED under, so a back-dated
+    // spend is visible instead of appearing to have done nothing. For a card
+    // spend that month is the statement it lands on, not the calendar month it
+    // happened in - 20 July on a card that closes on the 7th is August's.
+    //
+    // Using the calendar month here sent the strip to a month the entry was
+    // NOT in; the strip then clamped to the newest month it did know, which is
+    // how saving into a past month jumped to the current one.
+    const cmod = await import('./credit.js');
+    const filedYm = pfCountedYm(rec, cards, cmod);
+    const jumped = filedYm !== _pfYm;
     toast((editing ? 'Updated ' : 'Added ') + fmtSheetCur(typed)
-      + (refund ? ' back · off the month\u2019s total' : ''));
-    // The month just logged into becomes the one on screen, so a back-dated
-    // entry is visible instead of appearing to have done nothing.
-    _pfYm = rec.ym;
+      + (refund ? ' back · off the month\u2019s total' : '')
+      // Named only when the view is about to change under them, never for a
+      // spend logged into the month already on screen.
+      + (jumped ? ' · ' + cmod.monthLabel(filedYm) : ''));
+    _pfYm = filedYm;
     renderPersonal();
   };
   const del = async () => {
@@ -2473,6 +2485,23 @@ async function renderPersonal() {
   await renderPfSpends(host, token);
 }
 
+// Which month a personal spend is COUNTED in - see the note inside pfLoad for
+// why card and UPI answer that differently.
+//
+// Out here rather than inside pfLoad because the SPEND FORM needs it too: after
+// saving it moves the month strip to the month it just wrote into, and if it
+// worked that out by a different rule than the one grouping the months, it
+// would land on a month the new entry is not in. The strip then clamps to the
+// newest month it does know, which is how saving into a past month ended up
+// jumping to the current one.
+function pfCountedYm(r, cards, mod) {
+  const d = String((r && r.date) || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return String((r && r.ym) || '').slice(0, 7);
+  if (r.method !== 'Card' || r.cardId == null) return d.slice(0, 7);
+  const card = (cards || []).find((c) => c.id === r.cardId);
+  return card ? mod.statementYmFor(d, card) : d.slice(0, 7);
+}
+
 // Everything the section needs, read once. Personal spend rows are a few
 // hundred a year, so loading every month costs less than a read per month and
 // the month-on-month comparisons need the history anyway.
@@ -2520,14 +2549,7 @@ async function pfLoad() {
   // A card spend with no card chosen, or on a card with no cycle recorded,
   // falls back to its calendar month: nothing is known about when that bill
   // closes, and guessing would be worse than saying so.
-  const cardById = new Map((cards || []).map((c) => [c.id, c]));
-  const countedYm = (r) => {
-    const d = String(r.date || '').slice(0, 10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return String(r.ym || '').slice(0, 7);
-    if (r.method !== 'Card' || r.cardId == null) return d.slice(0, 7);
-    const card = cardById.get(r.cardId);
-    return card ? mod.statementYmFor(d, card) : d.slice(0, 7);
-  };
+  const countedYm = (r) => pfCountedYm(r, cards, mod);
 
   const byYm = new Map();       // counted months - limits are measured on these
   const byYmCal = new Map();    // calendar months - see the note below
