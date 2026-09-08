@@ -168,22 +168,37 @@ export const fyLabelOf = (y) => `${String(y).slice(-2)}-${String(y + 1).slice(-2
 
 // Year-wise analysis for a set of records (all the SAME market/currency).
 // Returns rows sorted NEWEST first:
-//   { year, total, monthly, fyTotal, fyLabel, profit, incrementPct }
-// profit  = total − previousYearTotal (immediately preceding year present in data)
+//   { year, total, monthly, fyTotal, fyLabel, profit, incrementPct, prevYear }
+// profit  = total − the previous LISTED year's total
 // monthly = total / 12
 // fyTotal = financial-year total for FY Apr(year)–Mar(year+1) (see financialYearTotal)
 // incrementPct = prevTotal>0 ? profit/prevTotal*100 : null (null = no base to compare)
+// prevYear = which year that comparison is against, or null for the first row
+//
+// A year is listed only if a dividend was actually RECORDED in it. A record
+// carries a row for every year the editor offered, blank ones included, and a
+// stock held since 2019 therefore drags six empty years onto a table that is
+// meant to show what was received. A year nobody entered a figure for is not a
+// year of no dividend, it is a year with nothing to say - and a row of dashes
+// says it worse than its absence does.
+//
+// The comparison is therefore against the previous year that HAS a figure,
+// which is also the only comparison worth making: measuring against a year
+// recorded as zero would read as a collapse or an infinite jump, neither of
+// which happened. `prevYear` says which year it was, so a jump across a gap
+// can be labelled rather than passed off as year-on-year.
 export function annualAnalysis(records) {
   const years = new Set();
   records.forEach((rec) => yearsOf(rec).forEach((y) => years.add(y)));
-  const asc = [...years].sort((a, b) => a - b);
   const totalFor = (year) => records.reduce((s, rec) => s + yearTotal(rec, year), 0);
+  const asc = [...years].sort((a, b) => a - b).filter((y) => totalFor(y) > 0);
   const rows = asc.map((year, i) => {
     const total = totalFor(year);
-    const prev = i > 0 ? totalFor(asc[i - 1]) : null;
+    const prevYear = i > 0 ? asc[i - 1] : null;
+    const prev = prevYear == null ? null : totalFor(prevYear);
     const profit = prev == null ? null : total - prev;
     const incrementPct = prev != null && prev > 0 ? (profit / prev) * 100 : null;
-    return { year, total, monthly: total / 12, fyTotal: financialYearTotal(records, year), fyLabel: fyLabelOf(year), profit, incrementPct };
+    return { year, total, monthly: total / 12, fyTotal: financialYearTotal(records, year), fyLabel: fyLabelOf(year), profit, incrementPct, prevYear };
   });
   return rows.reverse(); // newest first
 }

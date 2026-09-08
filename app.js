@@ -8015,11 +8015,17 @@ function renderDivOverview(host, all, mod) {
         el('span', { class: 'div-yoy ' + (r.incrementPct == null ? '' : pctClass(r.incrementPct)) }, [
           el('div', { text: incTxt }),
           profitTxt ? el('div', { class: 'div-profit', text: profitTxt }) : el('span'),
+          // Only years with a figure are listed, so two rows can sit next to
+          // each other across a gap. Naming the year being compared against
+          // stops a two-year jump reading as one year's growth.
+          r.prevYear != null && r.prevYear !== r.year - 1
+            ? el('div', { class: 'div-fy-sub', text: 'vs ' + r.prevYear }) : el('span'),
         ]),
       ]));
     });
     card.appendChild(table);
-    card.appendChild(el('p', { class: 'hint', style: 'margin-top:8px', text: 'FY total = financial year (Apr–Mar), e.g. FY 25-26 = Apr 2025 – Mar 2026. Each calendar year is split across its payout months to fill the Apr–Mar buckets.' }));
+    card.appendChild(el('p', { class: 'hint', style: 'margin-top:8px', text: 'Only years with a dividend recorded are listed. '
+      + 'FY total = financial year (Apr–Mar), e.g. FY 25-26 = Apr 2025 – Mar 2026. Each calendar year is split across its payout months to fill the Apr–Mar buckets.' }));
     return card;
   };
   host.appendChild(build('in'));
