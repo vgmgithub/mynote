@@ -55,7 +55,7 @@ let _bondSort = 'maturity';  // 'maturity' | 'amount' | 'rate'
 let _efTab = 'fund';         // 'fund' | 'targets' | 'loans' | 'log' | 'terms' (bottom nav)
 let _efLoanFilter = 'open';  // 'open' | 'closed' | 'all'
 // Expense view state (only used inside the Expense section page).
-let _expTab = 'cc';          // 'cc' | 'alloc' | 'spend' | 'tracker' | 'review' (bottom nav)
+let _expTab = 'cc';          // 'cc' | 'alloc' | 'spend' | 'tracker' | 'review' | 'tags' (bottom nav)
 let _expSheetYm = null;      // month shown on the Expense tab; null = this month
 // First month the monthly sheet covers. Nothing before this is reachable — the
 // sheet simply wasn't being kept then, so those months would be blank forever.
@@ -3264,7 +3264,7 @@ function buildExpBottomNav() {
   const nav = $('#expBottomNav');
   if (nav.childElementCount) { updateExpNavActive(); return; }
   nav.innerHTML = '';
-  [['cc', '💳', 'Credit Card'], ['alloc', '🧭', 'Allocation'], ['spend', '🧾', 'Expense'], ['tracker', '📍', 'Tracker'], ['review', '🔍', 'Review']].forEach(([v, ico, label]) => {
+  [['cc', '💳', 'Credit Card'], ['alloc', '🧭', 'Allocation'], ['spend', '🧾', 'Expense'], ['tracker', '📍', 'Tracker'], ['review', '🔍', 'Review'], ['tags', '🏷️', 'Tags']].forEach(([v, ico, label]) => {
     nav.appendChild(el('button', { 'data-view': v, onclick: () => { if (_expTab === v) return; _expTab = v; renderHomeExpense(); } },
       [el('span', { class: 'bn-ico', text: ico }), label]));
   });
@@ -4414,6 +4414,250 @@ async function renderHomeSavings() {
   } catch (_) {}
 }
 
+// ---------- Tags tab: what the handles add up to ----------
+//
+// A tag is only worth writing if it can be read back, and this is the reading:
+// every tag in use, what it has cost, how often it recurs, and how that has
+// moved month on month - across BOTH trackers, household and personal, since a
+// habit does not care which pocket paid for it.
+//
+// Two things are stated rather than left for the user to trip over:
+//
+//   * COVERAGE. An analysis of the third of spending that happens to carry a
+//     tag, presented as an analysis of spending, is a lie by omission. The
+//     untagged remainder is named first, before any single tag is.
+//   * OVERLAP. An entry carries up to six tags, so the tag totals add up to
+//     MORE than the tagged spend. A column of figures that does not sum to its
+//     own total, with nothing saying why, reads as a bug.
+//
+// Months here are the months the money was SPENT in, for both stores. The card
+// tabs count a card spend on the bill it lands on, which is right for a bill -
+// but a tag is about when a habit happened, and two stores counting months by
+// different rules would put incomparable bars side by side.
+const TAG_RANGES = [[3, '3m'], [6, '6m'], [12, '12m'], [0, 'All']];
+const TAG_SOURCES = [['all', 'Both'], ['house', 'Household'], ['personal', 'Personal']];
+let _tagRange = 0;          // months back from this one; 0 means everything
+let _tagSource = 'all';
+const _tagOpen = {};
+
+// One row per tag per entry it is on, rolled up. Kept separate from the
+// rendering so the arithmetic can be read in one piece.
+function _tagRollup(entries) {
+  const byTag = new Map();
+  entries.forEach((x) => x.tags.forEach((t) => {
+    let e = byTag.get(t);
+    if (!e) e = { tag: t, total: 0, count: 0, house: 0, personal: 0, yms: new Map(), with: new Map(), rows: [] };
+    e.total = round2(e.total + x.amount);
+    e.count += 1;
+    e[x.src] = round2(e[x.src] + x.amount);
+    e.yms.set(x.ym, round2((e.yms.get(x.ym) || 0) + x.amount));
+    e.rows.push(x);
+    // Which tags travel together. Counted per entry, so "weekly" and "eat out"
+    // on the same spend is one pairing, not two.
+    x.tags.forEach((o) => { if (o !== t) e.with.set(o, (e.with.get(o) || 0) + 1); });
+    byTag.set(t, e);
+  }));
+  byTag.forEach((e) => {
+    e.avg = round2(e.total / Math.max(1, e.count));
+    e.months = e.yms.size;
+    // Median, not mean: one heavy month should not become "what this usually
+    // costs" - the same rule the Review tab is built on.
+    e.usual = _median([...e.yms.values()]);
+    e.lastYm = [...e.yms.keys()].sort().pop() || null;
+  });
+  return [...byTag.values()].sort((a, b) => b.total - a.total || b.count - a.count || a.tag.localeCompare(b.tag));
+}
+
+async function renderTagAnalysis(host, token) {
+  const mod = await import('./credit.js');
+  const [houseRows, pfRows, cards] = await Promise.all([
+    DB.all('spends').catch(() => []),
+    DB.all('personalSpends').catch(() => []),
+    DB.all('creditCards').catch(() => []),
+  ]);
+  if (expRenderStale(token)) return;
+  const cardName = new Map((cards || []).map((c) => [c.id, c.name || 'Card']));
+
+  const shape = (rows, src) => (rows || []).map((r) => ({
+    r, src,
+    ym: String(r.date || r.ym || '').slice(0, 7),
+    amount: round2(Number(r.amount) || 0),
+    tags: tagsOf(r),
+  })).filter((x) => /^\d{4}-\d{2}$/.test(x.ym) && x.amount > 0);
+  const all = shape(houseRows, 'house').concat(shape(pfRows, 'personal'));
+
+  // ---- Scope: how far back, and whose spending ----
+  const thisYm = todayISO().slice(0, 7);
+  let fromYm = null;
+  if (_tagRange > 0) {
+    const d = new Date(Number(thisYm.slice(0, 4)), Number(thisYm.slice(5, 7)) - _tagRange, 1);
+    fromYm = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  }
+  const scoped = all
+    .filter((x) => (fromYm ? x.ym >= fromYm : true))
+    .filter((x) => _tagSource === 'all' || x.src === _tagSource);
+
+  const chipRow = (opts, cur, pick) => el('div', { class: 'pf-filter' }, opts.map(([v, label]) => el('button', {
+    type: 'button', class: 'pf-filter-chip' + (String(v) === String(cur) ? ' active' : ''), text: label,
+    onclick: () => { if (String(v) === String(cur)) return; pick(v); renderHomeExpense(); },
+  })));
+  host.appendChild(el('div', { class: 'tag-an-scope' }, [
+    chipRow(TAG_RANGES, _tagRange, (v) => { _tagRange = v; }),
+    chipRow(TAG_SOURCES, _tagSource, (v) => { _tagSource = v; }),
+  ]));
+
+  if (!all.length) {
+    host.appendChild(el('div', { class: 'empty' }, [
+      el('div', { class: 'e-icon', text: '\ud83c\udff7\ufe0f' }),
+      el('p', { text: 'Nothing logged yet.' }),
+      el('p', { class: 'hint', text: 'Tag a spend on the Tracker or in Personal Finance and it turns up here.' }),
+    ]));
+    return;
+  }
+
+  // ---- Coverage, first: how much of this scope the tags actually speak for ----
+  const sum = (xs) => round2(xs.reduce((a, x) => a + x.amount, 0));
+  const total = sum(scoped);
+  const tagged = scoped.filter((x) => x.tags.length);
+  const taggedTotal = sum(tagged);
+  const untagged = round2(total - taggedTotal);
+  const pct = total > 0 ? (taggedTotal / total) * 100 : 0;
+  const rangeLabel = _tagRange > 0 ? 'last ' + _tagRange + ' months' : 'all time';
+  const srcLabel = (TAG_SOURCES.find(([v]) => v === _tagSource) || [null, 'Both'])[1].toLowerCase();
+
+  const tags = _tagRollup(tagged);
+  host.appendChild(el('div', { class: 'chart-card tag-cover' }, [
+    el('h3', { text: 'Tagged spending' }),
+    el('p', { class: 'hint', style: 'margin:0 0 10px',
+      text: rangeLabel + ' · ' + (_tagSource === 'all' ? 'household and personal' : srcLabel + ' only')
+        + ' · months counted by the date spent' }),
+    el('div', { class: 'tag-cover-bar' }, [
+      el('span', { class: 'tag-cover-fill', style: 'width:' + pct.toFixed(1) + '%' }),
+    ]),
+    el('div', { class: 'tag-cover-legend' }, [
+      el('span', {}, [el('i', { class: 'rvw-dot is-spent' }), 'tagged ' + fmtSheetCur(taggedTotal)]),
+      el('span', {}, [el('i', { class: 'rvw-dot is-flat' }), 'untagged ' + fmtSheetCur(untagged)]),
+      el('b', { text: pct.toFixed(0) + '% covered' }),
+    ]),
+    el('p', { class: 'hint', style: 'margin:10px 0 0', text: tags.length
+      ? tags.length + (tags.length === 1 ? ' tag' : ' tags') + ' on ' + tagged.length
+        + (tagged.length === 1 ? ' entry' : ' entries') + ', out of ' + scoped.length + ' logged. '
+        + (pct >= 99.5 ? 'Everything logged in this scope carries a tag, so the figures below cover all ' + fmtSheetCur(total) + ' of it.'
+          : pct < 60 ? 'Under ' + Math.round(pct) + '% of this spending carries a tag, so read the figures below as being about that share of it, not all of it.'
+          : 'Everything below is about that ' + Math.round(pct) + '%, not the whole ' + fmtSheetCur(total) + '.')
+      : 'Nothing in this scope carries a tag yet.' }),
+  ]));
+
+  if (!tags.length) {
+    host.appendChild(el('p', { class: 'hint', style: 'text-align:center;padding:16px 0',
+      text: 'No tags in ' + rangeLabel + '. Widen the range, or tag a few spends.' }));
+    return;
+  }
+
+  // Every month in scope, so a tag's bars line up with its neighbours' and a
+  // month it was absent from reads as a gap rather than being skipped.
+  const scopeYms = [...new Set(scoped.map((x) => x.ym))].sort();
+  const barYms = scopeYms.slice(-12);
+  const sumTagTotals = round2(tags.reduce((a, t) => a + t.total, 0));
+
+  const list = el('div', { class: 'tag-an-list' });
+  tags.forEach((t) => {
+    const share = taggedTotal > 0 ? (t.total / taggedTotal) * 100 : 0;
+    // A handle used across most of the months in scope is a standing cost; one
+    // on a single entry is a label. Worth saying which, since they want
+    // completely different reactions from the reader.
+    const cadence = t.months >= 3 && t.months >= Math.ceil(scopeYms.length * 0.6) ? 'every month'
+      : (t.months >= 3 ? 'recurring' : (t.count === 1 ? 'one-off' : null));
+    // Where it is heading, measured against its OWN median rather than against
+    // the month before - one quiet month is not a trend.
+    let trend = null;
+    if (t.months >= 3 && t.lastYm) {
+      const latest = t.yms.get(t.lastYm) || 0;
+      const rest = _median([...t.yms.entries()].filter(([k]) => k !== t.lastYm).map(([, v]) => v));
+      if (rest > 0 && latest > 0) {
+        const d = ((latest - rest) / rest) * 100;
+        if (Math.abs(d) >= 20) trend = { up: d > 0, text: (d > 0 ? '\u2191' : '\u2193') + Math.abs(d).toFixed(0) + '%' };
+      }
+    }
+
+    const open = !!_tagOpen[t.tag];
+    const body = el('div', { class: 'tag-an-body' + (open ? '' : ' hidden') });
+    const head = el('button', { class: 'tag-an-head' + (open ? ' is-open' : ''), type: 'button' }, [
+      el('div', { class: 'tag-an-top' }, [
+        el('span', { class: 'tag-pill', text: t.tag }),
+        cadence ? el('span', { class: 'tag-an-cadence', text: cadence }) : document.createTextNode(''),
+        trend ? el('span', { class: 'tag-an-trend' + (trend.up ? ' is-up' : ' is-down'), text: trend.text }) : document.createTextNode(''),
+        el('span', { class: 'tag-an-total', text: fmtSheetCur(t.total) }),
+      ]),
+      el('span', { class: 'tag-an-track' }, [
+        el('span', { class: 'tag-an-fill', style: 'width:' + Math.max(1.5, share).toFixed(1) + '%' }),
+      ]),
+      el('span', { class: 'tag-an-meta', text: share.toFixed(0) + '% of tagged · '
+        + t.count + (t.count === 1 ? ' entry' : ' entries') + ' · ' + fmtIntCur(t.avg) + ' each · '
+        + t.months + (t.months === 1 ? ' month' : ' months')
+        + (t.months > 1 ? ' · ' + fmtIntCur(t.usual) + ' in a usual month' : '') }),
+      el('span', { class: 'rvw-sec-chev tag-an-chev' }),
+    ]);
+    head.addEventListener('click', () => {
+      const closed = body.classList.toggle('hidden');
+      _tagOpen[t.tag] = !closed;
+      head.classList.toggle('is-open', !closed);
+    });
+
+    // ---- The detail, built once and kept ----
+    if (barYms.length > 1) {
+      body.appendChild(_rvwMonthBars(
+        barYms.map((ym) => ({ ym, amount: t.yms.get(ym) || 0, current: ym === thisYm })),
+        t.months > 1 ? t.usual : 0));
+    }
+    if (_tagSource === 'all' && t.house > 0 && t.personal > 0) {
+      body.appendChild(el('p', { class: 'hint tag-an-split' }, [
+        el('i', { class: 'rvw-dot is-house' }), el('span', { text: 'household ' + fmtIntCur(t.house) }),
+        el('i', { class: 'rvw-dot is-personal' }), el('span', { text: 'personal ' + fmtIntCur(t.personal) }),
+      ]));
+    }
+    const pairs = [...t.with.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 5);
+    if (pairs.length) {
+      body.appendChild(el('div', { class: 'tag-an-with' }, [
+        el('span', { class: 'tag-an-with-label', text: 'Usually with' }),
+        el('span', { class: 'tag-row' }, pairs.map(([o, n]) => el('span', { class: 'tag-pill', text: o + ' · ' + n }))),
+      ]));
+    }
+    const rows = t.rows.slice().sort((a, b) => String(b.r.date || '').localeCompare(String(a.r.date || '')));
+    const entries = el('div', { class: 'msheet tag-an-entries' });
+    rows.slice(0, 40).forEach((x) => {
+      const meta = [_spendDayLabel(x.r.date), x.r.method || 'UPI'];
+      if (x.r.cardId != null && cardName.has(x.r.cardId)) meta.push(cardName.get(x.r.cardId));
+      entries.appendChild(el('div', { class: 'msheet-row trk-entry' }, [
+        el('div', { class: 'msheet-label' }, [
+          el('span', {}, [
+            el('i', { class: 'rvw-dot ' + (x.src === 'house' ? 'is-house' : 'is-personal') }),
+            x.r.category || 'Misc',
+          ]),
+          el('span', { class: 'msheet-note', text: meta.join(' · ') }),
+        ]),
+        el('span', { class: 'msheet-val', text: fmtSheetCur(x.amount) }),
+      ]));
+    });
+    if (rows.length > 40) {
+      entries.appendChild(el('p', { class: 'hint', style: 'text-align:center;padding:10px 0;margin:0',
+        text: '+' + (rows.length - 40) + ' older entries not listed' }));
+    }
+    body.appendChild(entries);
+
+    list.appendChild(el('section', { class: 'tag-an-sec' }, [head, body]));
+  });
+  host.appendChild(list);
+
+  // The one arithmetic surprise on this page, said out loud.
+  if (sumTagTotals > taggedTotal + 0.5) {
+    host.appendChild(el('p', { class: 'hint tag-an-foot',
+      text: 'The tag totals come to ' + fmtSheetCur(sumTagTotals) + ', more than the ' + fmtSheetCur(taggedTotal)
+        + ' tagged, because an entry can carry up to ' + TAG_MAX + ' tags and counts in full under each one. '
+        + 'Read a tag against the others, not as a slice of a pie.' }));
+  }
+}
+
 // ---------- Expense section page (Credit Card | Allocation | Expense) ----------
 async function renderHomeExpense() {
   // Does nothing unless the Expense section is actually on screen. The spend
@@ -4435,6 +4679,7 @@ async function renderHomeExpense() {
   if (_expTab === 'alloc') { await renderAllocation(host, token); return; }
   if (_expTab === 'tracker') { await renderSpendTracker(host, token); return; }
   if (_expTab === 'review') { await renderReview(host, token); return; }
+  if (_expTab === 'tags') { await renderTagAnalysis(host, token); return; }
   await renderExpenseSheet(host, token);
 }
 

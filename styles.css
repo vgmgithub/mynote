@@ -2509,3 +2509,39 @@ input.vb-amt { flex: 0 0 96px; width: 96px; padding: 9px 11px; border: 1px solid
 /* The two halves behind the total, so it is never a number to take on trust. */
 .cc-reimb-split { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; margin: 8px 0 0; }
 .cc-reimb-split b { margin-left: auto; font-weight: 800; color: var(--text); }
+
+/* ---- Tags tab ---- */
+.tag-an-scope { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.rvw-dot.is-flat { background: var(--line); }
+
+/* Coverage first: how much of the scope the tags actually speak for. */
+.tag-cover-bar { height: 10px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.tag-cover-fill { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
+.tag-cover-legend { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px; font-size: 0.72rem; color: var(--muted); }
+.tag-cover-legend b { margin-left: auto; color: var(--text); font-weight: 800; }
+
+.tag-an-list { display: flex; flex-direction: column; gap: 8px; }
+.tag-an-sec { border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); overflow: hidden; }
+.tag-an-head {
+  display: block; width: 100%; padding: 12px 34px 12px 13px; position: relative;
+  background: transparent; border: none; color: var(--text); font-family: inherit; text-align: left; cursor: pointer;
+}
+.tag-an-top { display: flex; align-items: center; gap: 7px; }
+.tag-an-total { margin-left: auto; font-weight: 800; font-size: 0.95rem; white-space: nowrap; }
+.tag-an-cadence { padding: 1px 6px; border-radius: 999px; border: 1px solid var(--line); background: var(--card-2); color: var(--muted); font-size: 0.5rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.4px; }
+.tag-an-trend { font-size: 0.6rem; font-weight: 800; }
+.tag-an-trend.is-up { color: var(--bad); }
+.tag-an-trend.is-down { color: var(--good); }
+/* Share of tagged spending, not of all spending - the foot note says why. */
+.tag-an-track { display: block; height: 5px; margin: 9px 0 7px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.tag-an-fill { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
+.tag-an-meta { display: block; font-size: 0.66rem; color: var(--muted); line-height: 1.5; }
+.tag-an-chev { position: absolute; right: 12px; top: 15px; }
+.tag-an-body { padding: 0 13px 12px; border-top: 1px dashed var(--line); }
+.tag-an-body > .rvw-bars-wrap { margin-top: 12px; }
+.tag-an-split { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; margin: 10px 0 0; }
+.tag-an-with { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.tag-an-with-label { font-size: 0.58rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); }
+.tag-an-entries { margin-top: 10px; }
+.tag-an-entries .trk-entry { cursor: default; }
+.tag-an-foot { margin: 14px 0 0; line-height: 1.55; }
