@@ -5144,11 +5144,6 @@ async function renderExpenseSheet(host, token) {
       note: 'card reimbursement · ' + fmtSheetCur(reimbAmt)
         + (reimbBits && reimbBits.auto && reimbBits.others > 0
           ? ' (house ' + fmtSheetCur(reimbBits.house) + ' + others ' + fmtSheetCur(reimbBits.others) + ')' : '') },
-    // Money that has actually left the account: statements ticked off on the
-    // Credit Card tab. Separate from Next Month Due above, which is what the
-    // trackers say will be BILLED - this is what was settled.
-    { key: 'cardPaid', label: 'Card Paid', source: null, single: true, fallback: cardPaid,
-      note: cardPaid > 0 ? 'bills marked paid · ' + fmtSheetCur(cardPaid) : 'no bill settled yet' },
     // Follows the Emergency Fund's own available cash, so the two can't
     // disagree. `source: null` keeps it out of Fetch — there is nothing to
     // pull when the figure is already live — while staying overridable for a
@@ -5309,21 +5304,28 @@ async function renderExpenseSheet(host, token) {
   // `fallback` is what shows when nothing has been entered for this month — In
   // Hand starts from the Allocation salary but is overridable, since actual
   // take-home moves around (a bonus, a deduction) while the plan stays put.
-  const creditInputRow = (label, key, note, fallback, hasSource) => {
+  // `deduct` is money that has already gone OUT of this figure rather than a
+  // commitment against it - a card bill settled has left the account, so what
+  // is in hand is simply less. Taken off the row's own value rather than folded
+  // into `fallback`, so it still applies when the user has typed their actual
+  // take-home over the planned one.
+  const creditInputRow = (label, key, note, fallback, hasSource, deduct) => {
     const follows = followsSource(key, sheet[key]);
-    const amount = follows ? round2(fallback || 0) : sumExpr(sheet[key]);
+    const gross = follows ? round2(fallback || 0) : sumExpr(sheet[key]);
+    const off = round2(deduct || 0);
+    const amount = round2(gross - off);
     credits += amount;
     const inp = el('input', {
       class: 'msheet-val-input',
       type: 'number', inputmode: 'decimal', step: 'any',
-      value: amount, placeholder: fmtSheetCur(fallback || 0),
+      value: gross, placeholder: fmtSheetCur(fallback || 0),
       'aria-label': label,
     });
     inp.addEventListener('blur', () => {
       const raw = inp.value.trim();
       // Cleared back to empty means "use the planned figure again", not zero.
       const v = raw === '' ? null : round2(num(raw) || 0);
-      if (v !== amount || raw === '') saveField(key, v, fallback);
+      if (v !== gross || raw === '') saveField(key, v, fallback);
     });
     const state = !hasSource ? document.createTextNode('')
       : follows
@@ -5334,17 +5336,31 @@ async function renderExpenseSheet(host, token) {
             text: 'set ↻',
             onclick: (e) => { e.stopPropagation(); saveField(key, null, fallback); },
           });
+    // With something deducted the box holds what came IN and the headline holds
+    // what is left, because the figure Available Balance actually adds up has to
+    // be somewhere on screen - the same reason the red rows are built this way.
     table.appendChild(el('div', { class: 'msheet-row msheet-credit' }, [
       el('div', { class: 'msheet-label' }, [
         el('span', {}, [label, state]),
-        el('span', { class: 'msheet-note', text: note }),
+        el('span', { class: 'msheet-note', text: off > 0 ? note + ' − ' + fmtSheetCur(off) : note }),
       ]),
-      inp,
+      off > 0
+        ? el('div', { class: 'msheet-stack' }, [
+            el('span', { class: 'msheet-val', text: fmtSheetCur(amount) }),
+            el('div', { class: 'msheet-input' }, [inp]),
+          ])
+        : inp,
     ]));
   };
 
   // In Hand follows the Allocation salary.
-  creditInputRow('In Hand', 'inHand', planNote + ' · ' + fmtSheetCur(perMonth('salary')), perMonth('salary'), true);
+  // Card bills ticked off on the Credit Card tab come straight off here: the
+  // bank has taken the money, so it is not in hand any more. Read off the cards
+  // rather than stored again, so unticking a bill gives it straight back.
+  creditInputRow('In Hand', 'inHand',
+    planNote + ' · ' + fmtSheetCur(perMonth('salary'))
+      + (cardPaid > 0 ? ' · card paid' : ''),
+    perMonth('salary'), true, cardPaid);
   const again = () => renderHomeExpense();
   const vRow = sheetListRow(ym, sheet, SHEET_LISTS.virtual, mod.monthLabel(ym), 'msheet-credit', again);
   credits += vRow.total;
@@ -11232,8 +11248,9 @@ let _ccTimelineClicked = false;
 // Settling a bill from the card list. On time or late is a real distinction the
 // record already carries - it drives how the month reads afterwards - so it is
 // asked rather than assumed, which a plain yes/no confirm could not do.
-function openCcPayForm(card, ym, billed, mod) {
+function openCcPayForm(card, ym, billed, mod, cyc) {
   const label = mod.monthLabel(ym);
+  const overdue = !!(cyc && cyc.overdue);
   const mark = async (status) => {
     const months = (card.months || []).map((r) => (String(r.ym || '').slice(0, 7) === ym
       ? Object.assign({}, r, { status, paidOn: todayISO() })
@@ -11247,12 +11264,19 @@ function openCcPayForm(card, ym, billed, mod) {
     el('div', { class: 'sheet-scroll' }, [
       el('h2', { text: 'Pay ' + (card.name || 'card') + ' · ' + label }),
       el('p', { class: 'hint', text: 'Marks the ' + fmtSheetCur(billed) + ' statement as settled. '
-        + 'It then comes off ' + label + '’s Available Balance on the Expense sheet, as money that has '
-        + 'actually left the account.' }),
-      el('div', { class: 'btn-row cc-pay-row' }, [
-        el('button', { class: 'btn primary', text: 'Paid on time', onclick: () => mark('ontime') }),
-        el('button', { class: 'btn warn', text: 'Paid late', onclick: () => mark('late') }),
-      ]),
+        + 'It then comes off In Hand on ' + label + '’s Expense sheet, as money that has actually '
+        + 'left the account.'
+        + (cyc && cyc.dueOn ? ' Due ' + _spendDayLabel(cyc.dueOn) + (overdue ? ', so this is a late payment.' : '.') : '') }),
+      // Ordered by which one is true today rather than always the same way
+      // round: past the due date, "on time" is the unlikely answer.
+      el('div', { class: 'btn-row cc-pay-row' }, overdue
+        // Not `ghost` for the second one: that is Cancel's look on every other
+        // sheet, and a "Paid on time" button dressed as Cancel is a misclick
+        // waiting to happen on a row about money.
+        ? [el('button', { class: 'btn warn', text: 'Paid late', onclick: () => mark('late') }),
+           el('button', { class: 'btn primary', text: 'Paid on time', onclick: () => mark('ontime') })]
+        : [el('button', { class: 'btn primary', text: 'Paid on time', onclick: () => mark('ontime') }),
+           el('button', { class: 'btn warn', text: 'Paid late', onclick: () => mark('late') })]),
       el('button', { class: 'btn ghost cc-pay-cancel', text: 'Cancel', onclick: closeModal }),
     ]),
   ]));
@@ -11412,11 +11436,21 @@ async function renderCreditCards(host, token) {
         text: '● Ongoing · ' + (cyc.daysLeft === 0 ? 'closes today'
           : cyc.daysLeft === 1 ? 'closes tomorrow' : cyc.daysLeft + ' days left') });
     } else if (billed > 0) {
-      statusEl = el('button', {
-        class: 'cc-pay-btn', type: 'button', text: 'Pay ' + fmtIntCur(billed),
-        title: 'Mark this bill as paid',
-        onclick: (e) => { e.stopPropagation(); openCcPayForm(card, selYm, billed, mod); },
-      });
+      // Payable from the moment the cycle closes - paying early is normal - but
+      // the date that matters is the DUE date, so it is on screen next to the
+      // button rather than left to be remembered.
+      statusEl = el('div', { class: 'cc-due-wrap' }, [
+        el('span', { class: 'cc-due-when' + (cyc.overdue ? ' is-overdue' : ''),
+          text: cyc.overdue ? 'Overdue · was due ' + _spendDayLabel(cyc.dueOn)
+            : cyc.dueInDays === 0 ? 'Due today'
+              : 'Due ' + _spendDayLabel(cyc.dueOn) + ' · ' + cyc.dueInDays + 'd' }),
+        el('button', {
+          class: 'cc-pay-btn' + (cyc.overdue ? ' is-overdue' : ''), type: 'button',
+          text: 'Pay ' + fmtIntCur(billed),
+          title: 'Mark this bill as paid',
+          onclick: (e) => { e.stopPropagation(); openCcPayForm(card, selYm, billed, mod, cyc); },
+        }),
+      ]);
     } else {
       statusEl = el('span', { class: 'value-emphasis flat', text: 'No bill this month' });
     }

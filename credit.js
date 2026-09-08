@@ -111,6 +111,26 @@ export function cycleWindow(ym, card) {
   return { from: iso(py, pm, sd), to: iso(y, mo, sd - 1), isCycle: true, startDay: sd, endDay: ed };
 }
 
+// How long after a cycle closes the bill is actually due.
+//
+// One figure for every card, because that is what is known: a real card sets
+// its own gap (a cycle closing on the 7th with a due date on the 27th is 20
+// days) and no card record carries one. Twenty is the common case and is
+// honest about being a default - when a per-card gap is worth recording, this
+// becomes the fallback for cards that have not set one, and nothing that reads
+// `cycleState` has to change.
+export const CC_DUE_DAYS = 20;
+
+// `iso` shifted by whole days, staying on calendar dates rather than clock
+// time so a month or year boundary needs no special case.
+function addDays(iso, days) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
+  if (!m) return iso;
+  const d = new Date(+m[1], +m[2] - 1, +m[3] + days);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')
+    + '-' + String(d.getDate()).padStart(2, '0');
+}
+
 // Where a statement month stands RIGHT NOW against its own cycle.
 //
 // A bill cannot be settled while it is still being run up: until the cycle
@@ -125,17 +145,25 @@ export function cycleState(ym, card, todayIso) {
   const win = cycleWindow(ym, card);
   const today = String(todayIso || '').slice(0, 10);
   if (!win || !/^\d{4}-\d{2}-\d{2}$/.test(today)) {
-    return { win: win || null, closed: true, closesOn: win ? win.to : null, daysLeft: 0 };
+    return { win: win || null, closed: true, closesOn: win ? win.to : null,
+      dueOn: win ? addDays(win.to, CC_DUE_DAYS) : null, overdue: false, daysLeft: 0, dueInDays: 0 };
   }
   const closed = today > win.to;
+  const dueOn = addDays(win.to, CC_DUE_DAYS);
   return {
     win,
     closed,
     closesOn: win.to,
+    dueOn,
+    // Closed and past the due date with nothing paid. The bill was payable for
+    // the whole stretch between the two, so this is the only point at which
+    // being unpaid is actually a problem.
+    overdue: closed && today > dueOn,
     // Days remaining AFTER today, so a cycle closing today reads as 0 and can
     // be phrased "closes today" rather than "1 day left", which would be a day
     // out from how anybody counts it.
     daysLeft: closed ? 0 : Math.max(0, Math.round((Date.parse(win.to) - Date.parse(today)) / 86400000)),
+    dueInDays: Math.round((Date.parse(dueOn) - Date.parse(today)) / 86400000),
   };
 }
 
