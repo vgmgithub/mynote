@@ -1893,7 +1893,11 @@ async function openPfSpendForm(existing, defaultDate) {
   let chosenCardId = editing && existing.cardId != null ? existing.cardId : null;
 
   const cards = (await DB.all('creditCards').catch(() => [])) || [];
-  const amount = el('input', { type: 'number', inputmode: 'decimal', step: 'any', placeholder: '0', value: editing ? existing.amount : '' });
+  // Always typed as a positive figure. The sign is decided by the category on
+  // save, so nobody has to remember to type a minus - and an edit of a refund
+  // shows the amount as it was entered rather than as it is stored.
+  const amount = el('input', { type: 'number', inputmode: 'decimal', step: 'any', placeholder: '0',
+    value: editing ? Math.abs(Number(existing.amount) || 0) : '' });
   const dateInp = el('input', { type: 'date', value: editing ? (existing.date || todayISO()) : (defaultDate || todayISO()) });
   // Tags rather than a note, suggested from every personal spend on record.
   const allPfRows = (await DB.all('personalSpends').catch(() => [])) || [];
@@ -1910,16 +1914,40 @@ async function openPfSpendForm(existing, defaultDate) {
       catAddBtn('Add a sub-category under ' + g.group, () => openCatManager('pf', g.group, reopen)),
     ]),
     el('div', { class: 'spend-cat-grid' }, g.items.map((name) => {
-      const btn = el('button', { class: 'spend-cat-btn' + (name === chosenCat ? ' active' : ''), type: 'button', text: name });
+      const btn = el('button', {
+        class: 'spend-cat-btn' + (name === chosenCat ? ' active' : '')
+          + (name === PF_REFUND_CAT ? ' is-refund' : ''),
+        type: 'button', text: name,
+      });
       btn.addEventListener('click', () => {
         chosenCat = name;
         catBtns.forEach((x) => x.classList.toggle('active', x === btn));
+        syncRefund();
         amount.focus();
       });
       catBtns.push(btn);
       return btn;
     })),
   ])));
+
+  // The form says which way the money is going, rather than leaving the user to
+  // work it out from the category they picked.
+  const amountField = field('Amount (₹)', amount);
+  const amountLabel = amountField.querySelector('label span') || amountField.querySelector('label');
+  const refundNote = el('p', { class: 'hint pf-refund-note hidden',
+    text: 'Money coming back. Enter it as a positive figure — it comes off the month\u2019s '
+      + 'total, off both limits, and off the card it was credited to.' });
+  const syncRefund = () => {
+    const on = chosenCat === PF_REFUND_CAT;
+    if (amountLabel) amountLabel.textContent = on ? 'Refunded (₹)' : 'Amount (₹)';
+    amountField.classList.toggle('is-refund', on);
+    refundNote.classList.toggle('hidden', !on);
+    // "For others" is about a spend somebody will pay back. A refund is money
+    // already back, so the two cannot both be true and the switch goes away
+    // rather than sitting there meaning nothing.
+    othersField.classList.toggle('hidden', on);
+    if (on) { chosenForOthers = false; othersChk.checked = false; }
+  };
 
   const cardBtns = [];
   const cardGrid = el('div', { class: 'spend-card-grid' }, cards.map((c) => {
@@ -1969,8 +1997,12 @@ async function openPfSpendForm(existing, defaultDate) {
 
   const save = async () => {
     if (!chosenCat) { toast('Pick a category'); return; }
-    const amt = round2(num(amount.value) || 0);
-    if (!(amt > 0)) { toast('Enter an amount'); return; }
+    const typed = round2(Math.abs(num(amount.value) || 0));
+    if (!(typed > 0)) { toast('Enter an amount'); return; }
+    // The sign goes on here, once, and every sum downstream is then simply
+    // right - see PF_REFUND_CAT.
+    const refund = chosenCat === PF_REFUND_CAT;
+    const amt = refund ? -typed : typed;
     const nowIso = new Date().toISOString();
     // Filed under the month of the DATE CHOSEN, not today's - logging last
     // night's spend after midnight must not land it in the wrong month.
@@ -1978,7 +2010,7 @@ async function openPfSpendForm(existing, defaultDate) {
     const rec = {
       ym: d.slice(0, 7), date: d, category: chosenCat, amount: amt,
       method: chosenMethod, cardId: chosenMethod === 'Card' ? chosenCardId : null,
-      forOthers: chosenForOthers,
+      forOthers: refund ? false : chosenForOthers,
       tags: tagBox.get(),
       // Kept rather than dropped, same as the household form.
       note: editing && existing.note ? existing.note : null,
@@ -1987,7 +2019,8 @@ async function openPfSpendForm(existing, defaultDate) {
     if (editing) rec.id = existing.id;
     await DB.put('personalSpends', rec);
     closeModal();
-    toast((editing ? 'Updated ' : 'Added ') + fmtSheetCur(amt));
+    toast((editing ? 'Updated ' : 'Added ') + fmtSheetCur(typed)
+      + (refund ? ' back · off the month\u2019s total' : ''));
     // The month just logged into becomes the one on screen, so a back-dated
     // entry is visible instead of appearing to have done nothing.
     _pfYm = rec.ym;
@@ -2001,6 +2034,8 @@ async function openPfSpendForm(existing, defaultDate) {
     toast('Deleted');
     renderPersonal();
   };
+
+  syncRefund();
 
   const btns = [el('button', { class: 'btn primary', text: editing ? 'Save' : 'Add spend', onclick: save })];
   if (editing) btns.push(el('button', { class: 'btn danger', text: 'Delete', onclick: del }));
@@ -2018,7 +2053,8 @@ async function openPfSpendForm(existing, defaultDate) {
           catGrid,
         ]),
         formSection('\ud83d\udcb0', 'How much', [
-          el('div', { class: 'field-row' }, [field('Amount (₹)', amount), field('Date', dateInp)]),
+          el('div', { class: 'field-row' }, [amountField, field('Date', dateInp)]),
+          refundNote,
           field('Paid by', methodRow),
           cardField,
           othersField,
@@ -2089,6 +2125,10 @@ async function openCatManager(kind, group, onDone) {
         class: 'icon-btn cat-del', type: 'button', text: '×',
         title: 'Remove ' + name, 'aria-label': 'Remove ' + name,
         onclick: () => {
+          if (kind === 'pf' && name === PF_REFUND_CAT) {
+            toast('Refund is built in — it is how money coming back is recorded');
+            return;
+          }
           if (used > 0) {
             toast(name + ' is on ' + used + ' ' + (used === 1 ? 'entry' : 'entries') + ' · rename it instead');
             return;
@@ -2531,18 +2571,23 @@ function pfTotals(ym, byYm, allocs, upiLimit) {
   const sum = (f) => round2(own.filter(f).reduce((a, r) => a + (Number(r.amount) || 0), 0));
   const othersTotal = round2(rows.filter(isForOthers).reduce((a, r) => a + (Number(r.amount) || 0), 0));
   const othersCount = rows.filter(isForOthers).length;
+  // Refunds are negative, so they are already off both of these.
   const cardSpent = sum((r) => r.method === 'Card');
   const upiSpent = sum((r) => r.method === 'UPI');
+  const refundTotal = round2(Math.abs(own.filter(isRefund).reduce((a, r) => a + (Number(r.amount) || 0), 0)));
+  const refundCount = own.filter(isRefund).length;
   const cardLimit = _pfCardLimit(ym, allocs);
   const upi = round2(upiLimit || 0);
   return {
-    rows, own, othersTotal, othersCount,
+    rows, own, othersTotal, othersCount, refundTotal, refundCount,
     cardSpent, upiSpent, spent: round2(cardSpent + upiSpent),
     cardLimit, upiLimit: upi, limit: round2(cardLimit + upi),
     cardLeft: round2(cardLimit - cardSpent), upiLeft: round2(upi - upiSpent),
     left: round2(cardLimit + upi - cardSpent - upiSpent),
-    cardPct: cardLimit > 0 ? Math.min(100, (cardSpent / cardLimit) * 100) : 0,
-    upiPct: upi > 0 ? Math.min(100, (upiSpent / upi) * 100) : 0,
+    // Clamped at BOTH ends: refunds can take a month's spending below zero,
+    // and a negative width draws nothing while reading as a bug.
+    cardPct: cardLimit > 0 ? Math.max(0, Math.min(100, (cardSpent / cardLimit) * 100)) : 0,
+    upiPct: upi > 0 ? Math.max(0, Math.min(100, (upiSpent / upi) * 100)) : 0,
   };
 }
 
@@ -2634,6 +2679,10 @@ async function renderPfSpends(host, token) {
   host.appendChild(el('div', { class: 'pf-both' + (t.left < 0 ? ' is-over' : ''), text: bits.join('  ·  ') }));
   // The roll-up below counts these and the strips above do not, so the gap is
   // named rather than left for the user to find by subtracting.
+  if (t.refundCount) {
+    host.appendChild(el('p', { class: 'hint pf-refund-line', text: fmtSheetCur(t.refundTotal) + ' came back across '
+      + t.refundCount + (t.refundCount === 1 ? ' refund' : ' refunds') + ' — already off the figures above.' }));
+  }
   if (t.othersCount) {
     host.appendChild(el('p', { class: 'hint pf-others-note', text: fmtSheetCur(t.othersTotal) + ' across '
       + t.othersCount + (t.othersCount === 1 ? ' entry' : ' entries') + ' marked for others — listed below, '
@@ -2704,23 +2753,29 @@ async function renderPfSpends(host, token) {
       };
       othersChk.addEventListener('change', flip);
       othersSwitch.addEventListener('click', (e) => e.stopPropagation());
-      wrap.appendChild(el('div', { class: 'msheet-row trk-entry is-tappable' + (isForOthers(r) ? ' is-others' : ''), onclick: () => openPfSpendForm(r) }, [
+      const refunded = isRefund(r);
+      wrap.appendChild(el('div', { class: 'msheet-row trk-entry is-tappable'
+        + (isForOthers(r) ? ' is-others' : '') + (refunded ? ' is-refund' : ''), onclick: () => openPfSpendForm(r) }, [
         el('div', { class: 'msheet-label' }, [
           el('span', { text: r.category || 'Misc' }),
           el('span', { class: 'msheet-note', text: meta.join(' · ') }),
           tagRow(r) || document.createTextNode(''),
-          el('div', { class: 'pf-others-row' }, [
-            othersSwitch,
-            el('span', { class: 'pf-others-label', text: isForOthers(r) ? 'For others — off the limits' : 'For others' }),
-          ]),
+          // A refund cannot also be a spend somebody will pay back, so the
+          // switch is not offered on one.
+          refunded
+            ? el('span', { class: 'pf-refund-tag', text: 'Money back — off the total' })
+            : el('div', { class: 'pf-others-row' }, [
+                othersSwitch,
+                el('span', { class: 'pf-others-label', text: isForOthers(r) ? 'For others — off the limits' : 'For others' }),
+              ]),
         ]),
         el('div', { class: 'trk-entry-right' }, [
-          el('span', { class: 'msheet-val', text: fmtSheetCur(r.amount) }),
+          el('span', { class: 'msheet-val', text: fmtSigned(r.amount) }),
           el('button', {
             class: 'icon-btn trk-del', type: 'button', text: '×', 'aria-label': 'Delete this spend',
             onclick: async (e) => {
               e.stopPropagation();   // the row opens the editor; the delete must not
-              if (!window.confirm('Delete ' + fmtSheetCur(r.amount) + ' on ' + (r.category || 'Misc') + '?')) return;
+              if (!window.confirm('Delete ' + fmtSigned(r.amount) + ' on ' + (r.category || 'Misc') + '?')) return;
               await DB.del('personalSpends', r.id);
               toast('Deleted');
               renderPersonal();
@@ -2744,10 +2799,17 @@ async function renderPfSpends(host, token) {
     else e.upi = round2(e.upi + (Number(r.amount) || 0));
     byCat.set(n, e);
   });
-  // Percentages here are a share of what this list SHOWS - every row in the
-  // month, for-others included. Dividing by the limit total instead put a
-  // for-others category at 264% of a figure it is deliberately not part of.
-  const rollupTotal = round2(t.rows.reduce((a, r) => a + (Number(r.amount) || 0), 0));
+  // Percentages here are a share of what was SPENT - every positive row in the
+  // month, for-others included. Two things this is deliberately not:
+  //
+  //   * not the limit total - that put a for-others category at 264% of a
+  //     figure it is deliberately not part of;
+  //   * not the net of the month - subtracting refunds from the denominator
+  //     pushed a category to 113% of a total its own money is only part of.
+  //
+  // Refund lines carry no percentage at all, so nothing is left unexplained by
+  // leaving them out of it.
+  const rollupTotal = round2(t.rows.reduce((a, r) => a + Math.max(0, Number(r.amount) || 0), 0));
   const catWrap = el('div', { class: 'trk-groups' });
   catList('pf').forEach((g) => {
     const rows = g.items.filter((n) => byCat.has(n)).map((n) => Object.assign({ name: n }, byCat.get(n)));
@@ -2764,16 +2826,18 @@ async function renderPfSpends(host, token) {
       // Share of the WHOLE month, not of its group - a bar filling up inside
       // its own group would make a small group's top row look like the
       // month's biggest spend.
-      const pct = rollupTotal > 0 ? (r.total / rollupTotal) * 100 : 0;
+      const back = r.total < 0;
+      // A share of the month is meaningless for a line that came off it, so a
+      // refund says what it is instead of quoting a negative percentage.
+      const pct = !back && rollupTotal > 0 ? (r.total / rollupTotal) * 100 : 0;
       const meta = [r.count + '×'];
-      // How it was paid only earns a mention where a category is split across
-      // both, which is the case worth seeing.
-      if (r.card > 0 && r.upi > 0) meta.push('card ' + fmtIntCur(r.card));
+      if (back) meta.push('came back');
+      else if (r.card > 0 && r.upi > 0) meta.push('card ' + fmtIntCur(r.card));
       else meta.push(pct.toFixed(0) + '%');
-      catRows.appendChild(el('div', { class: 'trk-cat' }, [
+      catRows.appendChild(el('div', { class: 'trk-cat' + (back ? ' is-refund' : '') }, [
         el('div', { class: 'trk-cat-top' }, [
           el('span', { class: 'trk-cat-name' }, [el('span', { class: 'trk-cat-dot' }), el('span', { text: r.name })]),
-          el('span', { class: 'trk-cat-amt', text: fmtSheetCur(r.total) }),
+          el('span', { class: 'trk-cat-amt', text: fmtSigned(r.total) }),
         ]),
         el('div', { class: 'trk-cat-bottom' }, [
           el('span', { class: 'trk-cat-track' }, [
@@ -2786,8 +2850,9 @@ async function renderPfSpends(host, token) {
     catWrap.appendChild(el('section', { class: 'trk-group ' + _pfGroupClass(g.group) }, [
       el('div', { class: 'trk-group-head' }, [
         el('span', { class: 'trk-group-name', text: g.group }),
-        el('span', { class: 'trk-group-total', text: fmtSheetCur(gTotal) }),
-        el('span', { class: 'trk-group-pct', text: (rollupTotal > 0 ? (gTotal / rollupTotal) * 100 : 0).toFixed(0) + '%' }),
+        el('span', { class: 'trk-group-total', text: fmtSigned(gTotal) }),
+        el('span', { class: 'trk-group-pct', text: gTotal < 0 || rollupTotal <= 0 ? ''
+          : ((gTotal / rollupTotal) * 100).toFixed(0) + '%' }),
       ]),
       catRows,
     ]));
@@ -4498,7 +4563,9 @@ async function renderTagAnalysis(host, token, o) {
     ym: String(r.date || r.ym || '').slice(0, 7),
     amount: round2(Number(r.amount) || 0),
     tags: tagsOf(r),
-  })).filter((x) => /^\d{4}-\d{2}$/.test(x.ym) && x.amount > 0);
+    // `!== 0` rather than `> 0`: a refund is a real, tagged movement, and it
+    // belongs against the tag it is giving money back to.
+  })).filter((x) => /^\d{4}-\d{2}$/.test(x.ym) && x.amount !== 0);
   const all = shape(houseRows, 'house').concat(shape(pfRows, 'personal'));
 
   // ---- Scope: how far back, and whose spending ----
@@ -4533,11 +4600,19 @@ async function renderTagAnalysis(host, token, o) {
 
   // ---- Coverage, first: how much of this scope the tags actually speak for ----
   const sum = (xs) => round2(xs.reduce((a, x) => a + x.amount, 0));
-  const total = sum(scoped);
+  // Coverage is a share, so it is measured on money that WENT OUT - gross,
+  // refunds left out of both halves. Netting them in made the untagged
+  // remainder go negative and the coverage read 105%, which is not a share of
+  // anything. The refunds are named on their own line instead, and they still
+  // net off inside the tag they belong to, which is where they mean something.
+  const gross = (xs) => round2(xs.reduce((a, x) => a + Math.max(0, x.amount), 0));
+  const total = gross(scoped);
   const tagged = scoped.filter((x) => x.tags.length);
-  const taggedTotal = sum(tagged);
+  const taggedTotal = gross(tagged);
   const untagged = round2(total - taggedTotal);
   const pct = total > 0 ? (taggedTotal / total) * 100 : 0;
+  const backTotal = round2(Math.abs(sum(scoped.filter((x) => x.amount < 0))));
+  const backTagged = round2(Math.abs(sum(tagged.filter((x) => x.amount < 0))));
   const rangeLabel = _tagRange === 1 ? 'this month'
     : (_tagRange > 0 ? 'last ' + _tagRange + ' months' : 'all time');
   const srcLabel = (TAG_SOURCES.find(([v]) => v === source) || [null, 'Both'])[1].toLowerCase();
@@ -4563,6 +4638,12 @@ async function renderTagAnalysis(host, token, o) {
           : pct < 60 ? 'Under ' + Math.round(pct) + '% of this spending carries a tag, so read the figures below as being about that share of it, not all of it.'
           : 'Everything below is about that ' + Math.round(pct) + '%, not the whole ' + fmtSheetCur(total) + '.')
       : 'Nothing in this scope carries a tag yet.' }),
+    backTotal > 0
+      ? el('p', { class: 'hint pf-refund-line', style: 'margin:8px 0 0',
+          text: fmtSheetCur(backTotal) + ' came back in this scope'
+            + (backTagged > 0 ? ', ' + fmtSheetCur(backTagged) + ' of it tagged — netted off the tag it belongs to' : '')
+            + '. Refunds are out of the coverage figures above, which measure money that went out.' })
+      : document.createTextNode(''),
   ]));
 
   if (!tags.length) {
@@ -4580,6 +4661,7 @@ async function renderTagAnalysis(host, token, o) {
   const list = el('div', { class: 'tag-an-list' });
   tags.forEach((t) => {
     const share = taggedTotal > 0 ? (t.total / taggedTotal) * 100 : 0;
+    const netBack = t.total < 0;
     // A handle used across most of the months in scope is a standing cost; one
     // on a single entry is a label. Worth saying which, since they want
     // completely different reactions from the reader.
@@ -4604,16 +4686,16 @@ async function renderTagAnalysis(host, token, o) {
     const open = !!_tagOpen[t.tag];
     const body = el('div', { class: 'tag-an-body' + (open ? '' : ' hidden') });
     const head = el('button', { class: 'tag-an-head' + (open ? ' is-open' : ''), type: 'button' }, [
-      el('div', { class: 'tag-an-top' }, [
+      el('div', { class: 'tag-an-top' + (netBack ? ' is-refund' : '') }, [
         el('span', { class: 'tag-pill', text: t.tag }),
         cadence ? el('span', { class: 'tag-an-cadence', text: cadence }) : document.createTextNode(''),
         trend ? el('span', { class: 'tag-an-trend' + (trend.up ? ' is-up' : ' is-down'), text: trend.text }) : document.createTextNode(''),
-        el('span', { class: 'tag-an-total', text: fmtSheetCur(t.total) }),
+        el('span', { class: 'tag-an-total', text: fmtSigned(t.total) }),
       ]),
       el('span', { class: 'tag-an-track' }, [
         el('span', { class: 'tag-an-fill', style: 'width:' + Math.max(1.5, share).toFixed(1) + '%' }),
       ]),
-      el('span', { class: 'tag-an-meta', text: share.toFixed(0) + '% of tagged · '
+      el('span', { class: 'tag-an-meta', text: (netBack ? 'came back' : share.toFixed(0) + '% of tagged') + ' · '
         + t.count + (t.count === 1 ? ' entry' : ' entries') + ' · ' + fmtIntCur(t.avg) + ' each · '
         + t.months + (t.months === 1 ? ' month' : ' months')
         + (t.months > 1 ? ' · ' + fmtIntCur(t.usual) + ' in a usual month' : '') }),
@@ -5320,8 +5402,31 @@ const PERSONAL_CATEGORIES = [
   { group: 'Travel', items: ['Fuel', 'Cab & Auto', 'Train & Bus', 'Stay', 'Trip'] },
   { group: 'Health', items: ['Gym', 'Grooming', 'Medicine', 'Supplements'] },
   { group: 'Fun', items: ['Movies', 'Subscriptions', 'Games', 'Books', 'Outing'] },
-  { group: 'Other', items: ['Gift', 'Recharge', 'Fees & Charges', 'Misc'] },
+  { group: 'Other', items: ['Gift', 'Recharge', 'Fees & Charges', 'Misc', 'Refund'] },
 ];
+
+// ---------- Refund: a spend that came back ----------
+//
+// The one category that is not spending. A return, a cancelled booking, a
+// friend settling up - money that has already been logged as gone and has now
+// come back, so the month's total has to come down by it.
+//
+// It is stored as a NEGATIVE amount, and that is the whole implementation.
+// Every figure on this section is some `reduce((a, r) => a + r.amount)` over
+// the same rows - the two limits, the category roll-up, Review, what is logged
+// against a card, Card check - and a negative term is already correct in all
+// of them. A positive amount plus a "this one is a refund" flag would mean
+// finding and fixing every one of those sums, and being wrong wherever one was
+// missed.
+//
+// So the SIGN is what the arithmetic and the colour read, never the name: a
+// category renamed later leaves its entries adding up exactly as before.
+const PF_REFUND_CAT = 'Refund';
+const isRefund = (r) => (Number(r && r.amount) || 0) < 0;
+// What a refund reads as on screen: money back, in green, never a minus sign
+// buried in a column of black figures.
+const fmtRefund = (amt) => '+' + fmtSheetCur(Math.abs(Number(amt) || 0));
+const fmtSigned = (amt) => (Number(amt) < 0 ? fmtRefund(amt) : fmtSheetCur(amt));
 // Card and UPI only. There is no cash line because a personal allowance is
 // held on a card and a UPI handle, and a method nobody uses is one more tap
 // on every entry.
@@ -5378,6 +5483,14 @@ async function loadCategoryLists() {
         if (!list.length) list = null;
       }
     } catch (_) { list = null; }
+    // Refund is not an ordinary category the user curates - it is how money
+    // coming back is recorded, and the personal tab's arithmetic assumes it can
+    // be reached. Put back in memory only, so a list saved before it existed
+    // still offers it without rewriting what the user saved.
+    if (kind === 'pf' && list && !list.some((g) => (g.items || []).indexOf(PF_REFUND_CAT) >= 0)) {
+      const other = list.find((g) => g.group === 'Other') || list[list.length - 1];
+      if (other) other.items = (other.items || []).concat([PF_REFUND_CAT]);
+    }
     _catLists[kind] = list;
     _catMaps[kind] = _buildCatMap(catList(kind));
   }

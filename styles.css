@@ -2547,3 +2547,20 @@ input.vb-amt { flex: 0 0 96px; width: 96px; padding: 9px 11px; border: 1px solid
 .tag-an-entries { margin-top: 10px; }
 .tag-an-entries .trk-entry { cursor: default; }
 .tag-an-foot { margin: 14px 0 0; line-height: 1.55; }
+
+/* ---- Refund: a personal spend that came back ---- */
+/* Green wherever it appears, and shown as "+₹500" rather than a minus sign
+   buried in a column of black figures. */
+.spend-cat-btn.is-refund { border-color: rgba(52,211,153,0.55); color: var(--good); }
+.spend-cat-btn.is-refund.active { background: var(--good); border-color: var(--good); color: #06281c; }
+.field.is-refund > label { color: var(--good); }
+.pf-refund-note { margin: -2px 0 10px; line-height: 1.5; color: var(--good); }
+
+.trk-entry.is-refund .msheet-val { color: var(--good); }
+.pf-refund-tag { display: inline-block; margin-top: 6px; padding: 1px 7px; border-radius: 999px; font-size: 0.5rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.4px; background: rgba(52,211,153,0.16); color: var(--good); border: 1px solid rgba(52,211,153,0.4); }
+.pf-refund-line { margin: 6px 0 0; color: var(--good); line-height: 1.5; }
+
+.trk-cat.is-refund .trk-cat-amt { color: var(--good); }
+.trk-cat.is-refund .trk-cat-dot { background: var(--good); }
+.trk-cat.is-refund .trk-cat-fill { background: var(--good); }
+.tag-an-top.is-refund .tag-an-total { color: var(--good); }
