@@ -4138,9 +4138,33 @@ async function renderHome() {
   const investmentCard = _homeCard('💼', 'Investment', 'Stocks · MF · FD · Metals · Bonds · Dividends', () => setAppMode('investment'));
   const savingsCard = _homeCard('🏦', 'Savings', 'Emergency Fund · Goals', () => setAppMode('savings'));
   const expenseCard = _homeCard('💳', 'Expense', 'Credit Card · Allocation · Monthly sheet', () => setAppMode('expense'));
-  const personalCard = _homeCard('👤', 'Personal Finance', 'Own spends · card & UPI limits', () => setAppMode('personal'));
+  const personalCard = _homeCard('👛', 'Personal Finance', 'Own spends · card & UPI limits', () => setAppMode('personal'));
   host.appendChild(el('div', { class: 'home-cards' }, [investmentCard, savingsCard, expenseCard, personalCard]));
   host.appendChild(el('p', { class: 'hint home-foot', text: 'Backup covers everything - open the ⋮ menu → Backup & Restore.' }));
+
+  // Per-day room on the two cards that have a budget behind them. Wrapped, and
+  // last, for the same reason the investment stats are: a failure reading one
+  // of these must leave Home standing rather than blank it.
+  try {
+    const thisYm = todayISO().slice(0, 7);
+    // Remaining days INCLUDE today - today's money is still to spend.
+    const daysLeft = Math.max(1, _daysInYm(thisYm) - new Date().getDate() + 1);
+
+    const [allocs, efLoans, kittyRows] = await Promise.all([
+      DB.all('allocations').catch(() => []),
+      DB.byIndex('emergency', 'kind', 'loan').catch(() => []),
+      DB.byIndex('spends', 'ym', thisYm).catch(() => []),
+    ]);
+    const kitty = _kittyFor(thisYm, allocs, efLoans);
+    if (kitty > 0) {
+      const spent = round2((kittyRows || []).reduce((a, r) => a + (Number(r.amount) || 0), 0));
+      _perDayBadge(expenseCard.querySelector('.home-card-badge'), round2(kitty - spent), daysLeft);
+    }
+
+    const pf = await pfLoad();
+    const t = pfTotals(thisYm, pf.byYm, pf.allocs, pf.upiLimit);
+    if (t.limit > 0) _perDayBadge(personalCard.querySelector('.home-card-badge'), t.left, daysLeft);
+  } catch (_) { /* Home stands without it */ }
 }
 // Horizontally-scrolling strip of money ARRIVING within the next week, shown on
 // Home above the section cards. Two sources, one rail:
@@ -4412,14 +4436,46 @@ function _homeCard(icon, title, sub, onclick) {
   const ico = el('span', { class: 'home-card-ico' });
   if (icon && typeof icon === 'object' && icon.nodeType) ico.appendChild(icon);
   else ico.textContent = icon;
+  // The badge slot is empty and hidden unless something fills it (see
+  // _perDayBadge). It sits between the text and the chevron and is shorter than
+  // the 52px icon, so a card that has one is exactly as tall as one that
+  // does not.
   return el('button', { class: 'home-card', type: 'button', onclick }, [
     ico,
     el('span', { class: 'home-card-body' }, [
       el('span', { class: 'home-card-title', text: title }),
       el('span', { class: 'home-card-sub', text: sub }),
     ]),
+    el('span', { class: 'home-card-badge hidden' }),
     el('span', { class: 'home-card-arrow', text: '›' }),
   ]);
+}
+
+// ---------- What a day still has in it ----------
+//
+// The one figure on Home meant to change a decision BEFORE it is made rather
+// than explain one afterwards: not what is left this month, which is easy to
+// spend against, but what is left per remaining day.
+//
+// The bands are a rule of thumb, not a calculation. Under 200 a day will not
+// cover an ordinary day out, 200-300 is tight, and from 300 the month has room.
+// Only the bottom band blinks - a badge that always moves stops being read.
+const PER_DAY_LOW = 200;
+const PER_DAY_MID = 300;
+function _perDayBadge(node, left, daysLeft) {
+  if (!node) return;
+  // Nothing honest to say: no budget set, or the month is already over.
+  if (!(daysLeft > 0)) return;
+  const over = left < 0;
+  const perDay = over ? 0 : Math.floor(round2(left) / daysLeft);
+  const band = over || perDay < PER_DAY_LOW ? 'is-low' : (perDay < PER_DAY_MID ? 'is-mid' : 'is-ok');
+  node.innerHTML = '';
+  node.className = 'home-card-badge ' + band;
+  node.appendChild(el('span', { class: 'home-card-badge-val', text: over ? fmtIntCur(-left) : fmtIntCur(perDay) }));
+  node.appendChild(el('span', { class: 'home-card-badge-cap', text: over ? 'over' : 'a day' }));
+  node.title = over
+    ? fmtSheetCur(-left) + ' over budget with ' + daysLeft + (daysLeft === 1 ? ' day' : ' days') + ' to go'
+    : fmtSheetCur(left) + ' left across ' + daysLeft + (daysLeft === 1 ? ' day' : ' days');
 }
 
 // Two stacked bullion bars (gold + silver) — the Metals launcher icon. Static
