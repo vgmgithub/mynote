@@ -55,7 +55,7 @@ let _bondSort = 'maturity';  // 'maturity' | 'amount' | 'rate'
 let _efTab = 'fund';         // 'fund' | 'targets' | 'loans' | 'log' | 'terms' (bottom nav)
 let _efLoanFilter = 'open';  // 'open' | 'closed' | 'all'
 // Expense view state (only used inside the Expense section page).
-let _expTab = 'cc';          // 'cc' | 'alloc' | 'spend' | 'tracker' | 'review' | 'tags' (bottom nav)
+let _expTab = 'cc';          // 'cc' | 'alloc' | 'spend' | 'tracker' | 'review' (bottom nav)
 let _expSheetYm = null;      // month shown on the Expense tab; null = this month
 // First month the monthly sheet covers. Nothing before this is reachable — the
 // sheet simply wasn't being kept then, so those months would be blank forever.
@@ -2429,10 +2429,7 @@ async function renderPersonal() {
   if (_pfTab === 'limits') { await renderPfLimits(host, token); return; }
   if (_pfTab === 'review') { await renderPfReview(host, token); return; }
   if (_pfTab === 'cards') { await renderPfCardCheck(host, token); return; }
-  if (_pfTab === 'tags') {
-    await renderTagAnalysis(host, token, { fixedSource: 'personal', rerender: renderPersonal, stale: pfRenderStale });
-    return;
-  }
+  if (_pfTab === 'tags') { await renderTagAnalysis(host, token); return; }
   await renderPfSpends(host, token);
 }
 
@@ -3269,7 +3266,10 @@ function buildExpBottomNav() {
   const nav = $('#expBottomNav');
   if (nav.childElementCount) { updateExpNavActive(); return; }
   nav.innerHTML = '';
-  [['cc', '💳', 'Credit Card'], ['alloc', '🧭', 'Allocation'], ['spend', '🧾', 'Expense'], ['tracker', '📍', 'Tracker'], ['review', '🔍', 'Review'], ['tags', '🏷️', 'Tags']].forEach(([v, ico, label]) => {
+  // Tags lives in Personal Finance, not here. It reads BOTH stores and has its
+  // own household/personal chooser, so a second copy on this nav was the same
+  // page reached two ways - and this nav was the one running out of room.
+  [['cc', '💳', 'Credit Card'], ['alloc', '🧭', 'Allocation'], ['spend', '🧾', 'Expense'], ['tracker', '📍', 'Tracker'], ['review', '🔍', 'Review']].forEach(([v, ico, label]) => {
     nav.appendChild(el('button', { 'data-view': v, onclick: () => { if (_expTab === v) return; _expTab = v; renderHomeExpense(); } },
       [el('span', { class: 'bn-ico', text: ico }), label]));
   });
@@ -4473,19 +4473,17 @@ function _tagRollup(entries) {
   return [...byTag.values()].sort((a, b) => b.total - a.total || b.count - a.count || a.tag.localeCompare(b.tag));
 }
 
-// `o.fixedSource` pins the tab to one side of the books and takes the source
-// chips away with it. Personal Finance uses that: every other tab in the
-// section is about own spending, and a Tags tab that could quietly fold the
-// household kitty in would make the section's figures unreadable. The Expense
-// copy keeps the chooser, since that is where the two are meant to be compared.
+// Household or personal is a CHOICE here, not a property of where the tab
+// lives. The same handle turns up on both sides of the books - "weekly" on the
+// grocery run and on the Friday coffee - and the useful question is usually
+// both at once, with either side available on its own.
 //
 // `o.rerender` / `o.stale` are the owning section's, so a chip press repaints
 // the right view and a slow load that has been navigated away from is dropped.
 async function renderTagAnalysis(host, token, o) {
   o = o || {};
-  const fixedSource = o.fixedSource || null;
-  const rerender = o.rerender || renderHomeExpense;
-  const stale = o.stale || expRenderStale;
+  const rerender = o.rerender || renderPersonal;
+  const stale = o.stale || pfRenderStale;
   const mod = await import('./credit.js');
   const [houseRows, pfRows, cards] = await Promise.all([
     DB.all('spends').catch(() => []),
@@ -4510,7 +4508,7 @@ async function renderTagAnalysis(host, token, o) {
     const d = new Date(Number(thisYm.slice(0, 4)), Number(thisYm.slice(5, 7)) - _tagRange, 1);
     fromYm = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
   }
-  const source = fixedSource || _tagSource;
+  const source = _tagSource;
   const scoped = all
     .filter((x) => (fromYm ? x.ym >= fromYm : true))
     .filter((x) => source === 'all' || x.src === source);
@@ -4521,17 +4519,14 @@ async function renderTagAnalysis(host, token, o) {
   })));
   host.appendChild(el('div', { class: 'tag-an-scope' }, [
     chipRow(TAG_RANGES, _tagRange, (v) => { _tagRange = v; }),
-    fixedSource ? document.createTextNode('')
-      : chipRow(TAG_SOURCES, _tagSource, (v) => { _tagSource = v; }),
+    chipRow(TAG_SOURCES, _tagSource, (v) => { _tagSource = v; }),
   ]));
 
   if (!all.length) {
     host.appendChild(el('div', { class: 'empty' }, [
       el('div', { class: 'e-icon', text: '\ud83c\udff7\ufe0f' }),
       el('p', { text: 'Nothing logged yet.' }),
-      el('p', { class: 'hint', text: fixedSource === 'personal'
-        ? 'Tag a personal spend and it turns up here.'
-        : 'Tag a spend on the Tracker or in Personal Finance and it turns up here.' }),
+      el('p', { class: 'hint', text: 'Tag a spend here or on the household Tracker and it turns up here.' }),
     ]));
     return;
   }
@@ -4705,7 +4700,6 @@ async function renderHomeExpense() {
   if (_expTab === 'alloc') { await renderAllocation(host, token); return; }
   if (_expTab === 'tracker') { await renderSpendTracker(host, token); return; }
   if (_expTab === 'review') { await renderReview(host, token); return; }
-  if (_expTab === 'tags') { await renderTagAnalysis(host, token); return; }
   await renderExpenseSheet(host, token);
 }
 
