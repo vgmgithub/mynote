@@ -3395,7 +3395,11 @@ function buildExpBottomNav() {
   // Tags lives in Personal Finance, not here. It reads BOTH stores and has its
   // own household/personal chooser, so a second copy on this nav was the same
   // page reached two ways - and this nav was the one running out of room.
-  [['cc', '💳', 'Credit Card'], ['alloc', '🧭', 'Allocation'], ['spend', '🧾', 'Expense'], ['tracker', '📍', 'Tracker'], ['review', '🔍', 'Review']].forEach(([v, ico, label]) => {
+  // Ordered by how often a tab is actually opened, left to right. Allocation is
+  // the annual plan - set once, glanced at - so it sits at the far end next to
+  // Review rather than second, where it was taking the easiest reach on the bar
+  // from the three tabs touched every week.
+  [['cc', '💳', 'Credit Card'], ['spend', '🧾', 'Expense'], ['tracker', '📍', 'Tracker'], ['review', '🔍', 'Review'], ['alloc', '🧭', 'Allocation']].forEach(([v, ico, label]) => {
     nav.appendChild(el('button', { 'data-view': v, onclick: () => { if (_expTab === v) return; _expTab = v; renderHomeExpense(); } },
       [el('span', { class: 'bn-ico', text: ico }), label]));
   });
