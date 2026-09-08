@@ -2349,15 +2349,47 @@ function tagField(current, suggestions, label) {
     });
     chips.classList.toggle('hidden', !tags.length);
     count.textContent = tags.length ? tags.length + '/' + TAG_MAX : '';
+    drawSuggest();
+  }
+
+  // The box doubles as a SEARCH over the tags already in use. Twenty tags in,
+  // the strip underneath stops being a shortcut and becomes a wall - and the
+  // whole point of a tag is that the same word gets reused rather than retyped
+  // in a fourth shape, which only happens if the existing one is easy to find.
+  function drawSuggest() {
+    // Matched on the NORMALISED word, the same shape tags are stored in, so
+    // "Weekly ", "#weekly" and "weekly" all find `weekly`.
+    const q = normaliseTag(input.value);
     // Suggestions already chosen are dropped rather than shown inert - a chip
     // that does nothing when tapped is worse than no chip.
-    const left = (suggestions || []).filter((t) => tags.indexOf(t) < 0).slice(0, 12);
+    const free = (suggestions || []).filter((t) => tags.indexOf(t) < 0);
+    // `free` arrives most-used first (knownTags), which is the right order with
+    // nothing typed. With a word typed, STARTS-WITH comes first and frequency
+    // breaks the tie: the tag you are part-way through typing belongs under
+    // your thumb, not behind a longer word that merely contains those letters.
+    const rank = new Map(free.map((t, i) => [t, i]));
+    const hits = q
+      ? free.filter((t) => t.indexOf(q) >= 0)
+        .sort((a, b) => (a.indexOf(q) - b.indexOf(q)) || (rank.get(a) - rank.get(b)))
+      : free;
+    const left = hits.slice(0, 12);
     suggWrap.innerHTML = '';
     left.forEach((t) => suggWrap.appendChild(el('button', {
-      type: 'button', class: 'tag-sugg', text: t,
-      onclick: () => { add(t); input.focus(); },
+      type: 'button', class: 'tag-sugg' + (t === q ? ' is-exact' : ''), text: t,
+      // The typed fragment was the SEARCH, not a tag - clearing it matters
+      // rather than merely tidies, because whatever is left in the box is
+      // committed on save, so "we" would have ridden along beside "weekly".
+      onclick: () => { add(t); input.value = ''; drawSuggest(); input.focus(); },
     })));
-    suggWrap.classList.toggle('hidden', !left.length || tags.length >= TAG_MAX);
+    // A word typed with nothing matching needs saying. An empty strip reads as
+    // "the suggestions broke" rather than "this one will be new".
+    if (!left.length && q && tags.length < TAG_MAX) {
+      suggWrap.appendChild(el('span', { class: 'tag-sugg-none',
+        text: free.length
+          ? 'No tag matches “' + q + '” — Enter makes it a new one'
+          : 'Enter makes “' + q + '” a tag' }));
+    }
+    suggWrap.classList.toggle('hidden', !suggWrap.childElementCount || tags.length >= TAG_MAX);
   }
 
   input.addEventListener('keydown', (e) => {
@@ -2365,18 +2397,21 @@ function tagField(current, suggestions, label) {
       if (!input.value.trim()) return;          // Tab still moves on when empty
       e.preventDefault();
       if (add(input.value)) input.value = '';
+      drawSuggest();               // box cleared, so the filter lifts
       return;
     }
     // Backspace on an empty box takes the last chip off, which is what every
     // tag field does and what the fingers expect.
     if (e.key === 'Backspace' && !input.value && tags.length) remove(tags[tags.length - 1]);
   });
-  // Pasting "one, two" should not become a single tag with a comma in it.
   input.addEventListener('input', () => {
-    if (input.value.indexOf(',') < 0) return;
-    const parts = input.value.split(',');
-    input.value = parts.pop();
-    parts.forEach(add);
+    // Pasting "one, two" should not become a single tag with a comma in it.
+    if (input.value.indexOf(',') >= 0) {
+      const parts = input.value.split(',');
+      input.value = parts.pop();
+      parts.forEach(add);          // add() redraws, including the suggestions
+    }
+    drawSuggest();
   });
   // Whatever is half-typed when the sheet is saved counts - losing it because
   // Enter was not pressed is the classic way a tag field annoys people.

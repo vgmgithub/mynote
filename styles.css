@@ -2564,3 +2564,9 @@ input.vb-amt { flex: 0 0 96px; width: 96px; padding: 9px 11px; border: 1px solid
 .trk-cat.is-refund .trk-cat-dot { background: var(--good); }
 .trk-cat.is-refund .trk-cat-fill { background: var(--good); }
 .tag-an-top.is-refund .tag-an-total { color: var(--good); }
+
+/* The tag box doubles as a search over the tags already in use. */
+.tag-sugg.is-exact { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+/* The only child when it shows, and it has to WRAP rather than scroll off
+   the side of a strip built for short chips. */
+.tag-sugg-none { flex: 1 1 auto; min-width: 0; white-space: normal; font-size: 0.66rem; color: var(--muted); line-height: 1.5; padding: 2px 0; }
