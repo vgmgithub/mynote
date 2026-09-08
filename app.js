@@ -5121,6 +5121,10 @@ async function renderExpenseSheet(host, token) {
   // personal ones made for somebody else, over each card's own cycle.
   const reimbAmt = round2((reimb && reimb.map && reimb.map[ym]) || 0);
   const reimbBits = (reimb && reimb.detail && reimb.detail.get(ym)) || null;
+  // Card bills marked paid on the Credit Card tab. A statement is named for the
+  // month it closes in, which is the month it is paid in, so it belongs on
+  // THIS month's sheet.
+  const cardPaid = round2((reimb && reimb.paid && reimb.paid[ym]) || 0);
 
   // Allocation figures are already monthly — used as entered.
   const perMonth = (key) => (alloc ? Number(alloc[key]) || 0 : 0);
@@ -5140,6 +5144,11 @@ async function renderExpenseSheet(host, token) {
       note: 'card reimbursement · ' + fmtSheetCur(reimbAmt)
         + (reimbBits && reimbBits.auto && reimbBits.others > 0
           ? ' (house ' + fmtSheetCur(reimbBits.house) + ' + others ' + fmtSheetCur(reimbBits.others) + ')' : '') },
+    // Money that has actually left the account: statements ticked off on the
+    // Credit Card tab. Separate from Next Month Due above, which is what the
+    // trackers say will be BILLED - this is what was settled.
+    { key: 'cardPaid', label: 'Card Paid', source: null, single: true, fallback: cardPaid,
+      note: cardPaid > 0 ? 'bills marked paid · ' + fmtSheetCur(cardPaid) : 'no bill settled yet' },
     // Follows the Emergency Fund's own available cash, so the two can't
     // disagree. `source: null` keeps it out of Fetch — there is nothing to
     // pull when the figure is already live — while staying overridable for a
@@ -5980,6 +5989,21 @@ function _reimbMap(parts, reimbRows) {
   return { map, detail };
 }
 
+// What has actually been SETTLED in each statement month: the bills marked
+// paid. Money that has left the account, which is why the monthly sheet
+// subtracts it - and it is read off the cards rather than stored a second
+// time, so unmarking a bill takes it straight back off.
+function _ccPaidByYm(cards) {
+  const out = {};
+  (cards || []).forEach((c) => (c.months || []).forEach((r) => {
+    const ym = String((r && r.ym) || '').slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(ym)) return;
+    if (r.status !== 'ontime' && r.status !== 'late') return;
+    out[ym] = round2((out[ym] || 0) + (Number(r.billed) || 0));
+  }));
+  return out;
+}
+
 // Both readers - the Credit Card tab and the monthly sheet's Next Month Due -
 // go through here, so the two can never disagree about the same month.
 async function ccReimbursements() {
@@ -5990,7 +6014,8 @@ async function ccReimbursements() {
     DB.all('spends').catch(() => []),
     DB.all('personalSpends').catch(() => []),
   ]);
-  return _reimbMap(_reimbParts(cards, house, personal, mod), rows);
+  return Object.assign(_reimbMap(_reimbParts(cards, house, personal, mod), rows),
+    { paid: _ccPaidByYm(cards) });
 }
 
 // What this month's spending says when read against the months before it.
@@ -11204,6 +11229,35 @@ let _ccSelectedYm = null;
 // right position instantly, not visibly slide there.
 let _ccTimelineClicked = false;
 
+// Settling a bill from the card list. On time or late is a real distinction the
+// record already carries - it drives how the month reads afterwards - so it is
+// asked rather than assumed, which a plain yes/no confirm could not do.
+function openCcPayForm(card, ym, billed, mod) {
+  const label = mod.monthLabel(ym);
+  const mark = async (status) => {
+    const months = (card.months || []).map((r) => (String(r.ym || '').slice(0, 7) === ym
+      ? Object.assign({}, r, { status, paidOn: todayISO() })
+      : r));
+    await DB.put('creditCards', Object.assign({}, card, { months, updatedAt: new Date().toISOString() }));
+    closeModal();
+    toast(label + ' bill paid · ' + fmtSheetCur(billed) + (status === 'late' ? ' · marked late' : ''));
+    renderHomeExpense();
+  };
+  openModal(el('div', { class: 'sheet' }, [
+    el('div', { class: 'sheet-scroll' }, [
+      el('h2', { text: 'Pay ' + (card.name || 'card') + ' · ' + label }),
+      el('p', { class: 'hint', text: 'Marks the ' + fmtSheetCur(billed) + ' statement as settled. '
+        + 'It then comes off ' + label + '’s Available Balance on the Expense sheet, as money that has '
+        + 'actually left the account.' }),
+      el('div', { class: 'btn-row cc-pay-row' }, [
+        el('button', { class: 'btn primary', text: 'Paid on time', onclick: () => mark('ontime') }),
+        el('button', { class: 'btn warn', text: 'Paid late', onclick: () => mark('late') }),
+      ]),
+      el('button', { class: 'btn ghost cc-pay-cancel', text: 'Cancel', onclick: closeModal }),
+    ]),
+  ]));
+}
+
 async function renderCreditCards(host, token) {
   // Called again on every timeline click (via renderHomeExpense, which
   // clears first) — but also defensively cleared here, the same lesson the
@@ -11334,19 +11388,37 @@ async function renderCreditCards(host, token) {
     // warn-at-a-threshold like the month-specific badge above.
     const avgUtilPct = c.limit > 0 && c.averageUse > 0 ? (c.averageUse / c.limit) * 100 : null;
 
-    // Ontime/Late is set on the card's own Details > Months tab, not from
-    // this list. "Ontime" reads here as a "Paid" badge instead — from the
-    // outside, the distinction that matters is settled vs not; Ontime-vs-Late
-    // detail stays in the editor.
+    // Where this month stands, in the order the states actually happen:
+    //
+    //   ONGOING  the cycle is still open, so the figure is not final and there
+    //            is nothing to settle yet.
+    //   DUE      the cycle has closed and the bill is unpaid. The only state
+    //            that wants an action, so it IS the action - a button.
+    //   PAID     settled, with the day it was marked.
+    //
+    // Paying is offered here rather than only inside Details > Months because
+    // this is the one thing on this page that has to happen every month, and
+    // burying a monthly chore two taps into a form is how it stops happening.
+    const cyc = mod.cycleState(selYm, card, todayISO());
+    const billed = monthCell ? monthCell.billed : 0;
     let statusEl;
-    if (!monthCell) {
-      statusEl = el('span', { class: 'value-emphasis flat', text: 'No bill this month' });
-    } else if (monthCell.status === 'ontime') {
-      statusEl = el('span', { class: 'badge good cc-status-badge', text: '✓ Paid' });
-    } else if (monthCell.status === 'late') {
-      statusEl = el('span', { class: 'value-emphasis cc-status-late', text: '⚠ Late payment' });
+    if (monthCell && monthCell.status) {
+      const late = monthCell.status === 'late';
+      const on = monthCell.paidOn ? String(monthCell.paidOn).slice(0, 10) : null;
+      statusEl = el('span', { class: 'badge ' + (late ? 'warn' : 'good') + ' cc-status-badge',
+        text: (late ? '✓ Paid late' : '✓ Paid') + (on ? ' · ' + _spendDayLabel(on) : '') });
+    } else if (!cyc.closed) {
+      statusEl = el('span', { class: 'badge cc-status-ongoing',
+        text: '● Ongoing · ' + (cyc.daysLeft === 0 ? 'closes today'
+          : cyc.daysLeft === 1 ? 'closes tomorrow' : cyc.daysLeft + ' days left') });
+    } else if (billed > 0) {
+      statusEl = el('button', {
+        class: 'cc-pay-btn', type: 'button', text: 'Pay ' + fmtIntCur(billed),
+        title: 'Mark this bill as paid',
+        onclick: (e) => { e.stopPropagation(); openCcPayForm(card, selYm, billed, mod); },
+      });
     } else {
-      statusEl = el('span', { class: 'value-emphasis cc-status-unpaid', text: '⏳ Unpaid' });
+      statusEl = el('span', { class: 'value-emphasis flat', text: 'No bill this month' });
     }
 
     // What is logged against this card in the selected month's cycle. Shown

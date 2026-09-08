@@ -2570,3 +2570,17 @@ input.vb-amt { flex: 0 0 96px; width: 96px; padding: 9px 11px; border: 1px solid
 /* The only child when it shows, and it has to WRAP rather than scroll off
    the side of a strip built for short chips. */
 .tag-sugg-none { flex: 1 1 auto; min-width: 0; white-space: normal; font-size: 0.66rem; color: var(--muted); line-height: 1.5; padding: 2px 0; }
+
+/* ---- Card bill: ongoing / due / paid ---- */
+/* Ongoing is information, so it stays quiet. Due is the one state that wants
+   an action, so it IS the action - a filled button, not a badge. */
+.cc-status-ongoing { background: var(--card-2); color: var(--muted); border: 1px solid var(--line); font-weight: 700; }
+.cc-pay-btn {
+  padding: 6px 13px; border-radius: 999px; border: none;
+  background: var(--bad); color: #fff;
+  font: inherit; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.2px;
+  cursor: pointer; white-space: nowrap;
+}
+.cc-pay-btn:active { filter: brightness(0.9); }
+.cc-pay-row { margin-top: 14px; }
+.cc-pay-cancel { width: 100%; margin-top: 10px; }

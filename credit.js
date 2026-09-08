@@ -111,6 +111,34 @@ export function cycleWindow(ym, card) {
   return { from: iso(py, pm, sd), to: iso(y, mo, sd - 1), isCycle: true, startDay: sd, endDay: ed };
 }
 
+// Where a statement month stands RIGHT NOW against its own cycle.
+//
+// A bill cannot be settled while it is still being run up: until the cycle
+// closes the figure is not final, so the month is ONGOING and there is nothing
+// to pay. Once the window has passed the statement is whole, and the only two
+// states left are paid and not.
+//
+// The close date is the cycle window's own end - the day before the next cycle
+// opens (see cycleWindow) - so a card with no cycle recorded closes at the end
+// of its calendar month, which is the only reading its data supports.
+export function cycleState(ym, card, todayIso) {
+  const win = cycleWindow(ym, card);
+  const today = String(todayIso || '').slice(0, 10);
+  if (!win || !/^\d{4}-\d{2}-\d{2}$/.test(today)) {
+    return { win: win || null, closed: true, closesOn: win ? win.to : null, daysLeft: 0 };
+  }
+  const closed = today > win.to;
+  return {
+    win,
+    closed,
+    closesOn: win.to,
+    // Days remaining AFTER today, so a cycle closing today reads as 0 and can
+    // be phrased "closes today" rather than "1 day left", which would be a day
+    // out from how anybody counts it.
+    daysLeft: closed ? 0 : Math.max(0, Math.round((Date.parse(win.to) - Date.parse(today)) / 86400000)),
+  };
+}
+
 // Which statement a date falls on: the inverse of cycleWindow, so it can
 // answer "which month does this spend count in" without walking every month.
 // The two MUST agree - inCycleWindow(d, cycleWindow(statementYmFor(d, c), c))
