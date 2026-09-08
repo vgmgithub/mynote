@@ -2597,6 +2597,10 @@ input.vb-amt { flex: 0 0 96px; width: 96px; padding: 9px 11px; border: 1px solid
   flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; justify-content: center;
   min-width: 62px; padding: 5px 9px; margin-right: 2px;
   border-radius: 11px; border: 1px solid transparent; line-height: 1.1;
+  /* Pinned to the TOP of the row rather than centred, so it reads as the
+     card's top-right corner. Still a flex item, not absolute, so it reserves
+     its own width and the subtitle can never run underneath it. */
+  align-self: flex-start; margin-top: -2px;
 }
 .home-card-badge-val { font-size: 0.86rem; font-weight: 800; letter-spacing: -0.2px; white-space: nowrap; }
 .home-card-badge-cap { font-size: 0.5rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.6px; opacity: 0.75; margin-top: 1px; }
@@ -2609,3 +2613,6 @@ input.vb-amt { flex: 0 0 96px; width: 96px; padding: 9px 11px; border: 1px solid
 @keyframes homePerDayPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 .home-card-badge.is-low { animation: homePerDayPulse 1.3s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .home-card-badge.is-low { animation: none; } }
+/* Drawn wallet on the Personal Finance home card - sized like the metal bars,
+   which is the other drawn icon in that row. */
+.wallet-ico { width: 30px; height: 30px; display: block; }
