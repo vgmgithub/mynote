@@ -11322,6 +11322,9 @@ let _ccSelectedYm = null;
 // (or any other re-render, e.g. after saving a card) should land on the
 // right position instantly, not visibly slide there.
 let _ccTimelineClicked = false;
+// Where the month-by-month grid was left. null means "not scrolled yet", which
+// is what sends it to the newest month the first time.
+let _ccGridScroll = null;
 
 // Settling a bill from the card list. On time or late is a real distinction the
 // record already carries - it drives how the month reads afterwards - so it is
@@ -11631,14 +11634,14 @@ async function renderCreditCards(host, token) {
     rbSplit,
   ]));
 
-  // ---- The wide grid (the sheet's A:AB), newest month first ----
+  // ---- The wide grid (the sheet's A:AB), oldest month first ----
   if (g.yms.length) {
-    // credit.js computes diff/fullyPaid in ascending order internally (that
-    // math depends on chronological neighbours) — reverse only here, for
-    // display, so scrolling the grid moves from recent into history instead
-    // of the other way round.
-    const displayYms = g.yms.slice().reverse();
-    const displayMonthly = g.monthly.slice().reverse();
+    // Chronological, left to right, like the sheet this grew out of and like
+    // anybody reads a run of months. That puts the newest at the RIGHT end,
+    // which is where the grid opens - the month you are actually paying should be
+    // on screen without a swipe, and history is a scroll leftwards.
+    const displayYms = g.yms.slice();
+    const displayMonthly = g.monthly.slice();
 
     const wrapCard = el('div', { class: 'chart-card' }, [el('h3', { text: 'Month by month' })]);
     const head = el('tr', {}, [el('th', { class: 'corner', text: 'Month' })]);
@@ -11680,11 +11683,30 @@ async function renderCreditCards(host, token) {
       // deliberately inverted vs. every other surface in the app.
       : { text: (m.diff > 0 ? '+' : '') + fmtIntCur(m.diff), cls: m.diff > 0 ? 'neg' : m.diff < 0 ? 'pos' : 'flat' });
 
-    wrapCard.appendChild(el('div', { class: 'heatmap-scroll cc-scroll' }, [
+    const gridScroll = el('div', { class: 'heatmap-scroll cc-scroll' }, [
       el('table', { class: 'heatmap cc-grid' }, [el('thead', {}, [head]), tbody]),
-    ]));
-    wrapCard.appendChild(el('p', { class: 'hint', style: 'margin-top:8px', text: 'Newest month first — scroll sideways for older ones. "vs last month" compares the to-be-paid figure against the previous month that has data.' }));
+    ]);
+    // Parked at the newest month. Remembered after that, because this whole tab
+    // re-renders on every timeline tap and on every bill paid, and snapping a
+    // grid somebody had scrolled into history back to the far right each time
+    // is worse than not scrolling it at all.
+    //
+    // What is remembered is an offset UNLESS the grid is sitting at the end, in
+    // which case it stays null - "keep me on the newest". Storing the offset
+    // there would strand the view one column short the month a new one appears.
+    const gridEnd = () => Math.max(0, gridScroll.scrollWidth - gridScroll.clientWidth);
+    gridScroll.addEventListener('scroll', () => {
+      _ccGridScroll = Math.abs(gridScroll.scrollLeft - gridEnd()) < 4 ? null : gridScroll.scrollLeft;
+    }, { passive: true });
+    const parkGrid = () => { gridScroll.scrollLeft = _ccGridScroll == null ? gridEnd() : Math.min(_ccGridScroll, gridEnd()); };
+    wrapCard.appendChild(gridScroll);
+    wrapCard.appendChild(el('p', { class: 'hint', style: 'margin-top:8px', text: 'Oldest month first, so the newest is on the right — where this opens. Scroll left for history. "vs last month" compares the to-be-paid figure against the previous month that has data.' }));
     host.appendChild(wrapCard);
+    // Once, synchronously - reading scrollWidth on an attached element settles
+    // layout, so this needs no frame to wait for. Again on the next frame in
+    // case a late webfont reflows the columns under it.
+    parkGrid();
+    requestAnimationFrame(parkGrid);
   }
 
   host.appendChild(el('p', { class: 'hint mf-foot', text: 'Credit card bills are money going out, so nothing here counts toward Home\'s Total Invested. Log each card\'s statement as "Billed", set the combined monthly reimbursement below the card list, and mark each card Ontime/Late on its own Details > Months tab once paid.' }));
