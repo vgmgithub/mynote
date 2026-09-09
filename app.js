@@ -6254,6 +6254,28 @@ async function openSpendQuick() {
 
 // Add one spend: category, amount, how it was paid. Deliberately that short —
 // this gets opened several times a day, and anything longer stops being used.
+// ---------- Splitting the milk out of a shop run ----------
+//
+// The Brigade run and the local shop are one payment but two kinds of spend:
+// the groceries, and the milk that goes on the same bill every time. Logged as
+// a single line the milk disappears inside "Brigade", and its own month-on-month
+// trend - the one thing about it actually worth watching - can never be read
+// back out.
+//
+// So the form offers to split it at the point of entry, while the number is
+// still in front of you, rather than asking for two entries every time or for a
+// correction afterwards. One payment becomes two rows that share a date, a
+// method and a card, and add back up to what was really paid.
+//
+// Offered on a NEW entry only. Afterwards there are two ordinary rows to edit
+// directly, and re-splitting an already-split row is a good way to end up with
+// three.
+const MILK_SPLIT_FROM = ['Brigade', 'Local Shop'];
+const MILK_CAT = 'Milk';
+// Categories are the user's to rename and delete, so the offer is only made
+// when there is somewhere for the milk to go.
+const milkSplitAvailable = () => catList('spend').some((g) => (g.items || []).indexOf(MILK_CAT) >= 0);
+
 async function openSpendForm(budget, existing, defaultDate) {
   const editing = !!(existing && existing.id != null);
   let chosenCat = editing ? existing.category : null;
@@ -6281,12 +6303,70 @@ async function openSpendForm(budget, existing, defaultDate) {
       btn.addEventListener('click', () => {
         chosenCat = name;
         catBtns.forEach((x) => x.classList.toggle('active', x === btn));
+        syncMilk();
         amount.focus();
       });
       catBtns.push(btn);
       return btn;
     })),
   ])));
+
+  const milkChk = el('input', { type: 'checkbox' });
+  const milkAmt = el('input', {
+    type: 'number', inputmode: 'decimal', step: 'any', class: 'milk-amt',
+    placeholder: '0', 'aria-label': 'Milk amount',
+  });
+  const milkAmtWrap = el('div', { class: 'milk-amt-wrap hidden' }, [
+    el('span', { class: 'milk-amt-cur', text: '₹' }), milkAmt,
+  ]);
+  const milkNote = el('p', { class: 'hint milk-note hidden' });
+  // The switch has to be the .switch element itself: .switch-track is
+  // position:absolute;inset:0, so without that positioned parent it stretches
+  // over whatever ancestor is positioned instead - which, in a modal, is the
+  // whole sheet.
+  const milkBox = el('div', { class: 'field milk-split hidden' }, [
+    el('div', { class: 'milk-row' }, [
+      el('label', { class: 'switch switch-sm' }, [
+        milkChk,
+        el('span', { class: 'switch-track' }, [el('span', { class: 'switch-thumb' })]),
+      ]),
+      el('span', { class: 'milk-lbl', text: 'Milk on this bill' }),
+      milkAmtWrap,
+    ]),
+    milkNote,
+  ]);
+  // What the split will actually record, worked out live - the two figures are
+  // the whole point, and a checkbox that only says what it does after you save
+  // it is a checkbox nobody trusts.
+  const syncMilkNote = () => {
+    const total = round2(num(amount.value) || 0);
+    const milk = round2(num(milkAmt.value) || 0);
+    const on = milkChk.checked;
+    milkNote.classList.toggle('hidden', !on);
+    if (!on) return;
+    if (!(total > 0)) { milkNote.textContent = 'Enter the bill total above first.'; return; }
+    if (!(milk > 0)) { milkNote.textContent = 'How much of the ' + fmtSheetCur(total) + ' was milk?'; return; }
+    if (milk >= total) {
+      milkNote.textContent = 'That is the whole bill \u2014 pick Milk as the category instead.';
+      return;
+    }
+    milkNote.textContent = fmtSheetCur(round2(total - milk)) + ' to ' + (chosenCat || 'the shop')
+      + ' · ' + fmtSheetCur(milk) + ' to ' + MILK_CAT + ', same date and payment.';
+  };
+  const syncMilk = () => {
+    const offer = !editing && milkSplitAvailable() && MILK_SPLIT_FROM.indexOf(chosenCat) >= 0;
+    milkBox.classList.toggle('hidden', !offer);
+    if (!offer) { milkChk.checked = false; milkAmt.value = ''; }
+    milkAmtWrap.classList.toggle('hidden', !milkChk.checked);
+    syncMilkNote();
+  };
+  milkChk.addEventListener('change', () => {
+    milkAmtWrap.classList.toggle('hidden', !milkChk.checked);
+    syncMilkNote();
+    if (milkChk.checked) milkAmt.focus();
+  });
+  milkAmt.addEventListener('input', syncMilkNote);
+  amount.addEventListener('input', syncMilkNote);
 
   // Which card the swipe went on — only asked once "Card" is the method, since
   // it's meaningless otherwise. Choosing one adds the spend to that month's
@@ -6363,13 +6443,36 @@ async function openSpendForm(budget, existing, defaultDate) {
       note: editing && existing.note ? existing.note : null,
       createdAt: editing ? (existing.createdAt || nowIso) : nowIso, updatedAt: nowIso,
     };
+    // The milk comes OFF the amount typed, because what was typed is the bill:
+    // adding it on top instead would record more than was actually paid.
+    const milkOn = !milkBox.classList.contains('hidden') && milkChk.checked;
+    const milkVal = milkOn ? round2(num(milkAmt.value) || 0) : 0;
+    if (milkOn) {
+      if (!(milkVal > 0)) { toast('Enter the milk amount'); return; }
+      if (milkVal >= amt) {
+        toast('Milk is the whole ' + fmtSheetCur(amt) + ' · pick Milk as the category instead');
+        return;
+      }
+    }
+    rec.amount = round2(amt - milkVal);
+
     if (editing) rec.id = existing.id;
     await DB.put('spends', rec);
+    if (milkOn) {
+      // Same trip, same payment: everything is carried over but the category
+      // and the figure. No id - this is a second row, never an overwrite.
+      const milkRec = Object.assign({}, rec, { category: MILK_CAT, amount: milkVal, createdAt: nowIso });
+      delete milkRec.id;
+      await DB.put('spends', milkRec);
+    }
     closeModal();
-    toast((editing ? 'Updated ' : 'Added ') + fmtSheetCur(amt)
+    toast((editing ? 'Updated ' : 'Added ') + fmtSheetCur(rec.amount)
+      + (milkOn ? ' · ' + fmtSheetCur(milkVal) + ' to ' + MILK_CAT : '')
       + (chosenMethod === 'Card' ? ' · on the card reimbursement' : ''));
     renderHomeExpense();
   };
+
+  syncMilk();
 
   openModal(el('div', { class: 'sheet has-fixed-footer' }, [
     el('div', { class: 'sheet-scroll' }, [
@@ -6383,6 +6486,7 @@ async function openSpendForm(budget, existing, defaultDate) {
         catGrid,
       ]),
       el('div', { class: 'field-row' }, [field('Amount', amount), field('Date', dateInp)]),
+      milkBox,
       field('Paid by', methodRow),
       cardField,
       tagBox.node,
