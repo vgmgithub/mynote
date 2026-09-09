@@ -7859,7 +7859,7 @@ function _recurringDue(ym, byYm) {
       perCat.set(n, e);
     });
     perCat.forEach((v, n) => {
-      if (!seen.has(n)) seen.set(n, { months: new Set(), totals: [], days: [] });
+      if (!seen.has(n)) seen.set(n, { months: new Set(), totals: [], days: [], dayMonths: new Set() });
       const e = seen.get(n);
       e.months.add(k);
       e.totals.push(v.total);
@@ -7868,7 +7868,7 @@ function _recurringDue(ym, byYm) {
       // WHICH DAY it lands on is not, so days come only from months that were
       // logged as they happened. A long history still says "rent has not gone
       // out yet"; it just will not name the 5th until it has seen the 5th.
-      if (dayDetailOk(k)) v.days.forEach((d) => e.days.push(d));
+      if (dayDetailOk(k) && v.days.length) { v.days.forEach((d) => e.days.push(d)); e.dayMonths.add(k); }
     });
   });
 
@@ -7878,7 +7878,12 @@ function _recurringDue(ym, byYm) {
   seen.forEach((e, name) => {
     if (already.has(name)) return;          // already logged this month
     if (e.months.size < threshold) return;  // not regular enough to call
-    const day = Math.round(_median(e.days)) || null;
+    // A date needs more than one month behind it. One observed month gives a
+    // median of exactly that month and a spread of zero, which would announce
+    // "usually the 5th" off a single sighting - the same false precision the
+    // day floor exists to avoid, arrived at from the other direction.
+    const enoughDays = e.dayMonths.size >= REVIEW_FORECAST_MIN;
+    const day = enoughDays ? (Math.round(_median(e.days)) || null) : null;
     // How tightly the day clusters. A category that lands anywhere in the month
     // is still worth expecting, but naming a date for it would be false
     // precision, so the date is dropped instead of the row.
