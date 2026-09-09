@@ -6502,10 +6502,16 @@ function _attachMonthSwipe(node, months, curYm, pick) {
 // window spanning a year boundary has two different kitties in it.
 function _reviewKittyFit(ym, byYm, kittyOf, thisYm) {
   const totalOf = (k) => round2((byYm.get(k) || []).reduce((s, r) => s + (Number(r.amount) || 0), 0));
+  // Every month on record that had spending and a budget behind it - no window.
+  // This is a month-TOTAL question, so it is not day-floored, and it does not
+  // age out either: each month is judged against the kitty that applied in that
+  // month (kittyOf(k), not today's), so an older month is compared fairly
+  // rather than against a figure it never had. More months simply means a
+  // better-founded answer, and the count is printed so the reader can see how
+  // much is behind it.
   const months = [...byYm.keys()]
     .filter((k) => k < thisYm && totalOf(k) > 0 && kittyOf(k) > 0)
-    .sort()
-    .slice(-12);
+    .sort();
   if (months.length < 3) return null;
 
   const rows = months.map((k) => ({ ym: k, total: totalOf(k), kitty: kittyOf(k) }));
