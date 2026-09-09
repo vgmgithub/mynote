@@ -2728,11 +2728,10 @@ async function renderPfSpends(host, token) {
   // Both together, plus what a day can still take. The per-day figure is the
   // one that changes behaviour on the day, and it is only meaningful while the
   // month is still running.
-  const dim = _daysInYm(ym);
-  const daysLeft = ym === thisYm ? Math.max(1, dim - now.getDate() + 1) : 0;
+  const daysLeft = _spendableDaysLeft(ym, now);
   const bits = [fmtSheetCur(t.spent) + ' of ' + fmtSheetCur(t.limit) + ' together'];
   if (t.left < 0) bits.push(fmtSheetCur(-t.left) + ' over');
-  else if (daysLeft > 0) bits.push(fmtIntCur(round2(t.left / daysLeft)) + ' a day for ' + daysLeft + (daysLeft === 1 ? ' day' : ' days'));
+  else if (daysLeft > 0) bits.push(fmtIntCur(perDayAllowance(t.left, daysLeft)) + ' a day for ' + perDayLabel(daysLeft));
   host.appendChild(el('div', { class: 'pf-both' + (t.left < 0 ? ' is-over' : ''), text: bits.join('  ·  ') }));
   // The roll-up below counts these and the strips above do not, so the gap is
   // named rather than left for the user to find by subtracting.
@@ -3052,7 +3051,7 @@ async function renderPfReview(host, token) {
       [fmtSheetCur(a.spent) + (t.limit > 0 ? ' of ' + fmtSheetCur(t.limit) : '')]),
     el('div', { class: 'rvw-head-note', text: [
       t.limit > 0 ? (a.overKitty > 0 ? 'Over the allowance by ' + fmtSheetCur(a.overKitty) : fmtSheetCur(-a.overKitty) + ' still allowed') : null,
-      a.isCurrent ? a.daysLeft + (a.daysLeft === 1 ? ' day left' : ' days left') : null,
+      a.isCurrent ? perDayLabel(a.daysLeft + 1) : null,
       t.othersCount ? fmtSheetCur(t.othersTotal) + ' for others, not counted' : null,
     ].filter(Boolean).join(' · ') }),
   ]));
@@ -3105,10 +3104,11 @@ async function renderPfReview(host, token) {
         ]),
       ]));
       const lines = [];
-      if (f.restPerDay != null) lines.push(['-', 'The rest of your month usually costs ' + fmtIntCur(f.restPerDay) + ' a day · ' + f.daysLeft + (f.daysLeft === 1 ? ' day' : ' days') + ' left']);
+      if (f.restPerDay != null) lines.push(['-', 'The rest of your month usually costs ' + fmtIntCur(f.restPerDay) + ' a day · the ' + f.daysLeft + (f.daysLeft === 1 ? ' day' : ' days') + ' after today']);
       if (f.fitPerDay != null) {
         lines.push(f.fitPerDay > 0
-          ? ['OK', fmtIntCur(f.fitPerDay) + ' a day from here keeps you inside the ' + fmtSheetCur(t.limit) + ' allowance']
+          ? ['OK', fmtIntCur(f.fitPerDay) + ' a day for the ' + perDayLabel(f.fitDays)
+              + ', to stay inside the ' + fmtSheetCur(t.limit) + ' allowance']
           : ['NO', 'The allowance is already spent · anything from here is over it']);
       }
       if (f.overKitty != null && f.overKitty > 0) lines.push(['NO', 'On this estimate the month ends ' + fmtSheetCur(f.overKitty) + ' over']);
@@ -4149,8 +4149,7 @@ async function renderHome() {
   // of these must leave Home standing rather than blank it.
   try {
     const thisYm = todayISO().slice(0, 7);
-    // Remaining days INCLUDE today - today's money is still to spend.
-    const daysLeft = Math.max(1, _daysInYm(thisYm) - new Date().getDate() + 1);
+    const daysLeft = _spendableDaysLeft(thisYm);
 
     const [allocs, efLoans, kittyRows] = await Promise.all([
       DB.all('allocations').catch(() => []),
@@ -4453,6 +4452,32 @@ function _homeCard(icon, title, sub, onclick) {
   ]);
 }
 
+// ---------- What a day can still take ----------
+//
+// Two things this got wrong in three places, which is how the same money came
+// out as 228 a day on Home and 229 on the Tracker.
+//
+// THE DIVISOR. Days you can still spend on, TODAY INCLUDED: the 9th of a
+// 30-day month leaves 22 of them, not 21, because the money in your pocket can
+// be spent in the next hour. Deliberately NOT the same count as the forecast's
+// "days left", which is the 21 days AFTER today - the figure it spreads covers
+// only those, since today's spending is already counted in what has been spent.
+// Both are right for their own question; showing them without saying which is
+// what makes a per-day figure look wrong.
+//
+// THE ROUNDING. Floored, never rounded to nearest. This is an ALLOWANCE, and a
+// figure rounded up says you can spend more than you have: 5,032 over 22 days
+// is 228 a day, and at 229 you finish 6 short.
+function _spendableDaysLeft(ym, nowDate) {
+  const now = nowDate || new Date();
+  const thisYm = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  if (ym !== thisYm) return 0;
+  return Math.max(1, _daysInYm(ym) - now.getDate() + 1);
+}
+const perDayAllowance = (left, days) => (days > 0 ? Math.floor(round2(left) / days) : null);
+// Said the same way everywhere it appears, so the divisor is never a mystery.
+const perDayLabel = (days) => days + (days === 1 ? ' day' : ' days') + ' left, today included';
+
 // ---------- What a day still has in it ----------
 //
 // The one figure on Home meant to change a decision BEFORE it is made rather
@@ -4469,15 +4494,15 @@ function _perDayBadge(node, left, daysLeft) {
   // Nothing honest to say: no budget set, or the month is already over.
   if (!(daysLeft > 0)) return;
   const over = left < 0;
-  const perDay = over ? 0 : Math.floor(round2(left) / daysLeft);
+  const perDay = over ? 0 : perDayAllowance(left, daysLeft);
   const band = over || perDay < PER_DAY_LOW ? 'is-low' : (perDay < PER_DAY_MID ? 'is-mid' : 'is-ok');
   node.innerHTML = '';
   node.className = 'home-card-badge ' + band;
   node.appendChild(el('span', { class: 'home-card-badge-val', text: over ? fmtIntCur(-left) : fmtIntCur(perDay) }));
   node.appendChild(el('span', { class: 'home-card-badge-cap', text: over ? 'over' : 'a day' }));
   node.title = over
-    ? fmtSheetCur(-left) + ' over budget with ' + daysLeft + (daysLeft === 1 ? ' day' : ' days') + ' to go'
-    : fmtSheetCur(left) + ' left across ' + daysLeft + (daysLeft === 1 ? ' day' : ' days');
+    ? fmtSheetCur(-left) + ' over budget with ' + perDayLabel(daysLeft)
+    : fmtSheetCur(left) + ' across ' + perDayLabel(daysLeft);
 }
 
 // Two stacked bullion bars (gold + silver) — the Metals launcher icon. Static
@@ -5761,12 +5786,12 @@ async function renderSpendTracker(host, token) {
   const spends = (byYm.get(ym) || []).slice().sort((a, b2) => String(b2.date || '').localeCompare(String(a.date || '')) || (b2.id - a.id));
   const spent = totalOf(ym);
   const left = round2(budget - spent);
-  // Days remaining INCLUDING today, since today can still be spent on. Only
-  // meaningful for the month in progress, and only while something is left —
-  // dividing an overspend across the days ahead would read as an allowance.
+  // Only meaningful for the month in progress, and only while something is
+  // left - dividing an overspend across the days ahead would read as an
+  // allowance. Same divisor and same rounding as Home, via the one helper.
   const daysInMonth = new Date(year, Number(ym.slice(5, 7)), 0).getDate();
-  const daysRemaining = ym === thisYm ? Math.max(1, daysInMonth - now.getDate() + 1) : 0;
-  const perDayLeft = daysRemaining > 0 && left > 0 ? round2(left / daysRemaining) : null;
+  const daysRemaining = _spendableDaysLeft(ym, now);
+  const perDayLeft = daysRemaining > 0 && left > 0 ? perDayAllowance(left, daysRemaining) : null;
 
   // ---- Month timeline, same as the Credit Card tab ----
   // Fixed under the app header while the rest scrolls, so the month picker
@@ -5830,9 +5855,11 @@ async function renderSpendTracker(host, token) {
       // actually guides a decision today; the percentage used is already drawn
       // as the bar underneath. Whole rupees on purpose — a daily allowance
       // quoted to the paisa is precision nobody spends to.
-      el('div', { class: 'trk-sum-note', text: perDayLeft != null
-        ? fmtIntCur(perDayLeft) + '/day'
-        : (budget > 0 ? Math.round((spent / budget) * 100) + '% used' : '—') }),
+      el('div', { class: 'trk-sum-note', title: perDayLeft != null
+        ? fmtSheetCur(left) + ' across ' + perDayLabel(daysRemaining) : '',
+        text: perDayLeft != null
+          ? fmtIntCur(perDayLeft) + '/day × ' + daysRemaining
+          : (budget > 0 ? Math.round((spent / budget) * 100) + '% used' : '—') }),
     ]),
   ]));
 
@@ -7011,7 +7038,10 @@ function _reviewForecast(ym, byYm, nowDate, dueTotal, kitty) {
     restPerDay: daysLeft > 0 ? round2(rest / daysLeft) : null,
     // What is affordable per day from here to finish inside the kitty. Negative
     // is meaningful and is shown as such: the kitty is already gone.
-    fitPerDay: (kitty > 0 && daysLeft > 0) ? round2((kitty - f.spent) / daysLeft) : null,
+    // Today included: what is left can still be spent today, unlike `rest`
+    // above, which prices only the days after it.
+    fitDays: daysLeft + 1,
+    fitPerDay: kitty > 0 ? perDayAllowance(kitty - f.spent, daysLeft + 1) : null,
     overKitty: kitty > 0 ? round2(forecast - kitty) : null,
     backtests: back, errPct, grade,
   };
@@ -7532,7 +7562,7 @@ async function renderReview(host, token) {
       ? 'Over the kitty by ' + fmtSheetCur(overKitty)
       : fmtSheetCur(-overKitty) + ' still in the kitty');
   }
-  if (a.isCurrent) headNotes.push(a.daysLeft + (a.daysLeft === 1 ? ' day left' : ' days left'));
+  if (a.isCurrent) headNotes.push(perDayLabel(a.daysLeft + 1));
   // No straight-line pace figure here any more. Dividing by days elapsed and
   // multiplying by days in the month ignores that rent lands on the 5th, which
   // makes it wildly high early in a month and low late in one. The forecast
@@ -7599,11 +7629,12 @@ async function renderReview(host, token) {
       const lines = [];
       if (f.restPerDay != null) {
         lines.push(['-', 'The rest of your month usually costs ' + fmtIntCur(f.restPerDay)
-          + ' a day · ' + f.daysLeft + (f.daysLeft === 1 ? ' day' : ' days') + ' left']);
+          + ' a day · the ' + f.daysLeft + (f.daysLeft === 1 ? ' day' : ' days') + ' after today']);
       }
       if (f.fitPerDay != null) {
         lines.push(f.fitPerDay > 0
-          ? ['OK', fmtIntCur(f.fitPerDay) + ' a day from here keeps this month inside the ' + fmtSheetCur(kitty) + ' kitty']
+          ? ['OK', fmtIntCur(f.fitPerDay) + ' a day for the ' + perDayLabel(f.fitDays)
+              + ', to stay inside the ' + fmtSheetCur(kitty) + ' kitty']
           : ['NO', 'The kitty is already spent · anything from here is over it']);
       }
       if (f.overKitty != null && f.overKitty > 0) {
