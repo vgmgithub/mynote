@@ -3035,15 +3035,7 @@ async function renderPfReview(host, token) {
 
   const a = _reviewAnalysis(ym, ownByYm, thisYm, t.limit, now, _pfGroupOf);
 
-  // Which month, and how far into it - the one thing the strip used to say that
-  // is still worth saying.
-  host.appendChild(el('div', { class: 'rvw-scope' }, [
-    el('span', { class: 'rvw-scope-ym', text: mod.monthLabel(ym) }),
-    el('span', { class: 'rvw-scope-note', text: a.historyMonths > 0
-      ? 'day ' + a.daysElapsed + ' of ' + a.daysInMonth + ' · read against ' + a.historyMonths
-        + (a.historyMonths === 1 ? ' earlier month' : ' earlier months')
-      : 'day ' + a.daysElapsed + ' of ' + a.daysInMonth }),
-  ]));
+  _rvwScopeLine(host, mod, ym, a, ownByYm);
 
   if (!a.spent) {
     host.appendChild(el('div', { class: 'empty' }, [
@@ -6546,6 +6538,30 @@ function _reviewKittyFit(ym, byYm, kittyOf, thisYm) {
 // individual entries — every other view sums them — and a month is often lost
 // to forty small taps rather than one big one.
 const SMALL_TICKET = 200;
+// ---------- Where the DAY inside a month can be trusted ----------
+//
+// Two different questions are asked of history on the Review tabs, and the same
+// months are not equally good at answering both.
+//
+//   WHAT was spent, by category, month by month - "how much on food in March" -
+//   is sound all the way back. Those months were entered from records that had
+//   the totals right.
+//
+//   WHEN inside the month it was spent - which day, how many separate
+//   payments, weekday or weekend - is not. Older months were reconstructed
+//   afterwards: the category totals were known, the individual dates were not,
+//   so entries carry a date that was near enough for the month and no better
+//   than that.
+//
+// Reading a day-of-month pattern out of dates that were never observed would
+// invent a spending habit and then advise against it. So anything that looks
+// INSIDE a month is floored at the month real day-by-day logging began, while
+// the category comparisons keep the full history.
+//
+// One line to move if the floor ever changes; nothing else needs touching.
+const DAY_DETAIL_FROM_YM = '2026-09';
+const dayDetailOk = (ym) => String(ym || '') >= DAY_DETAIL_FROM_YM;
+
 function _reviewSmallTickets(ym, byYm) {
   const rows = byYm.get(ym) || [];
   if (!rows.length) return null;
@@ -6828,7 +6844,9 @@ function _reviewForecast(ym, byYm, nowDate, dueTotal, kitty) {
   const dim = _daysInYm(ym);
   const day = Math.min(nowDate.getDate(), dim);
   const totalOf = (k) => round2((byYm.get(k) || []).reduce((s, r) => s + (Number(r.amount) || 0), 0));
-  const hist = [...byYm.keys()].filter((k) => k < ym && totalOf(k) > 0).sort();
+  // Priced from what the SAME DAYS cost before, so only months whose days are
+  // real can be priced from.
+  const hist = [...byYm.keys()].filter((k) => k < ym && dayDetailOk(k) && totalOf(k) > 0).sort();
   const f = _forecastFrom(ym, hist, byYm, day);
   if (!f) return null;
 
@@ -6892,7 +6910,9 @@ const _DOW = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 
 
 function _reviewCycle(ym, byYm, nowDate, isCurrent) {
   const totalOf = (k) => round2((byYm.get(k) || []).reduce((s, r) => s + (Number(r.amount) || 0), 0));
-  const hist = [...byYm.keys()].filter((k) => k < ym && totalOf(k) > 0).sort().slice(-CYCLE_LOOKBACK);
+  // The shape of a month IS the day question, so this is day-floored too - and
+  // returns null rather than a shape drawn from dates nobody recorded.
+  const hist = [...byYm.keys()].filter((k) => k < ym && dayDetailOk(k) && totalOf(k) > 0).sort().slice(-CYCLE_LOOKBACK);
   if (hist.length < CYCLE_MIN_MONTHS) return null;
 
   const thirds = [[], [], []];
@@ -6993,7 +7013,8 @@ function _reviewCycle(ym, byYm, nowDate, isCurrent) {
 function _reviewCurve(ym, byYm, day) {
   const dim = _daysInYm(ym);
   const totalOf = (k) => round2((byYm.get(k) || []).reduce((sum, r) => sum + (Number(r.amount) || 0), 0));
-  const hist = [...byYm.keys()].filter((k) => k < ym && totalOf(k) > 0).sort();
+  // A usual-month curve is cumulative BY DAY, so day-floored as well.
+  const hist = [...byYm.keys()].filter((k) => k < ym && dayDetailOk(k) && totalOf(k) > 0).sort();
   if (!hist.length) return null;
   const histCum = hist.map((k) => {
     const hd = _daysInYm(k);
@@ -7028,7 +7049,10 @@ function _catMonthHistory(name, ym, byYm, count) {
 
 // A usual month's worth of small change, for comparison against this one.
 function _smallTicketUsual(ym, byYm) {
-  const vals = [...byYm.keys()].filter((k) => k < ym).sort().slice(-CYCLE_LOOKBACK)
+  // How many separate small payments a month usually holds. A month entered as
+  // one lump per category has no small payments in it by construction, so a
+  // reconstructed month would drag this figure to nothing.
+  const vals = [...byYm.keys()].filter((k) => k < ym && dayDetailOk(k)).sort().slice(-CYCLE_LOOKBACK)
     .map((k) => round2((byYm.get(k) || [])
       .filter((r) => (Number(r.amount) || 0) > 0 && (Number(r.amount) || 0) <= SMALL_TICKET)
       .reduce((s, r) => s + (Number(r.amount) || 0), 0)))
@@ -7335,15 +7359,7 @@ async function renderReview(host, token) {
   const kitty = kittyOf(ym);
   const a = _reviewAnalysis(ym, byYm, thisYm, kitty, now);
 
-  // Which month, and how much of it is behind us - the one thing the strip used
-  // to say that is still worth saying.
-  host.appendChild(el('div', { class: 'rvw-scope' }, [
-    el('span', { class: 'rvw-scope-ym', text: mod.monthLabel(ym) }),
-    el('span', { class: 'rvw-scope-note', text: a.historyMonths > 0
-      ? 'day ' + a.daysElapsed + ' of ' + a.daysInMonth + ' · read against ' + a.historyMonths
-        + (a.historyMonths === 1 ? ' earlier month' : ' earlier months')
-      : 'day ' + a.daysElapsed + ' of ' + a.daysInMonth }),
-  ]));
+  _rvwScopeLine(host, mod, ym, a, byYm);
 
   if (!a.spent) {
     host.appendChild(el('div', { class: 'empty' }, [
@@ -7700,6 +7716,31 @@ async function renderReview(host, token) {
   host.appendChild(el('p', { class: 'hint mf-foot', text: 'Each category is compared with its own median month from your own entries — not a target, and not an average, which one unusual month would skew. Only categories already past a normal month appear.' }));
 }
 
+// Which month this is, how far into it, and what history is behind the figures.
+//
+// Both windows are named because they differ, and a tab that showed a category
+// compared against ten months next to a cycle built on one - without saying so -
+// would look broken rather than careful. See DAY_DETAIL_FROM_YM for why.
+function _rvwScopeLine(host, mod, ym, a, byYm) {
+  const catMonths = a.historyMonths;
+  const dayMonths = [...byYm.keys()].filter((k) => k < ym && dayDetailOk(k)
+    && (byYm.get(k) || []).length > 0).length;
+  const bits = ['day ' + a.daysElapsed + ' of ' + a.daysInMonth];
+  if (catMonths > 0) bits.push(catMonths + (catMonths === 1 ? ' earlier month' : ' earlier months'));
+  host.appendChild(el('div', { class: 'rvw-scope' }, [
+    el('span', { class: 'rvw-scope-ym', text: mod.monthLabel(ym) }),
+    el('span', { class: 'rvw-scope-note', text: bits.join(' · ') }),
+  ]));
+  if (catMonths > dayMonths) {
+    host.appendChild(el('p', { class: 'hint rvw-scope-why', text: 'Category figures use all '
+      + catMonths + ' earlier months. Anything about WHEN inside a month — the forecast, your '
+      + 'spending cycle, when things land — uses only the '
+      + (dayMonths === 0 ? 'months from ' + mod.monthLabel(DAY_DETAIL_FROM_YM) + ' on'
+        : dayMonths + (dayMonths === 1 ? ' month' : ' months') + ' from ' + mod.monthLabel(DAY_DETAIL_FROM_YM) + ' on')
+      + ', because earlier months were filled in from totals and their dates were never actually observed.' }));
+  }
+}
+
 // ---------- Sections both Review tabs draw ----------
 //
 // Written once rather than copied, because the two tabs are asking the same
@@ -7822,7 +7863,12 @@ function _recurringDue(ym, byYm) {
       const e = seen.get(n);
       e.months.add(k);
       e.totals.push(v.total);
-      v.days.forEach((d) => e.days.push(d));
+      // Split deliberately: whether a category turns up every month, and what
+      // it usually costs, are month-level facts and read from all of history.
+      // WHICH DAY it lands on is not, so days come only from months that were
+      // logged as they happened. A long history still says "rent has not gone
+      // out yet"; it just will not name the 5th until it has seen the 5th.
+      if (dayDetailOk(k)) v.days.forEach((d) => e.days.push(d));
     });
   });
 

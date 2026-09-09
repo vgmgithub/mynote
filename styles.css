@@ -2625,3 +2625,4 @@ input.vb-amt { flex: 0 0 96px; width: 96px; padding: 9px 11px; border: 1px solid
 .rvw-scope { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; margin: 2px 0 12px; }
 .rvw-scope-ym { font-size: 1.02rem; font-weight: 800; letter-spacing: -0.2px; }
 .rvw-scope-note { font-size: 0.66rem; color: var(--muted); }
+.rvw-scope-why { margin: -6px 0 12px; line-height: 1.5; }
