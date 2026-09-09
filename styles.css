@@ -2626,3 +2626,21 @@ input.vb-amt { flex: 0 0 96px; width: 96px; padding: 9px 11px; border: 1px solid
 .rvw-scope-ym { font-size: 1.02rem; font-weight: 800; letter-spacing: -0.2px; }
 .rvw-scope-note { font-size: 0.66rem; color: var(--muted); }
 .rvw-scope-why { margin: -6px 0 12px; line-height: 1.5; }
+
+/* ---- An explanation, behind an i ---- */
+.explain-row {
+  display: flex; align-items: center; gap: 7px; width: 100%; margin-top: 10px;
+  padding: 6px 0 0; border: none; border-top: 1px dashed var(--line);
+  background: transparent; color: var(--muted); font: inherit; font-size: 0.66rem;
+  text-align: left; cursor: pointer;
+}
+.explain-row:active { color: var(--text); }
+.explain-i {
+  flex: 0 0 auto; width: 15px; height: 15px; border-radius: 50%;
+  border: 1px solid var(--line); background: var(--card-2);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 0.62rem; font-weight: 700; font-style: italic; font-family: Georgia, serif;
+}
+.info-para { margin: 0 0 12px; font-size: 0.82rem; line-height: 1.6; color: var(--muted); }
+.info-para:last-of-type { margin-bottom: 4px; }
+.info-close { width: 100%; margin-top: 8px; }

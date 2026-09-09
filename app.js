@@ -3122,13 +3122,13 @@ async function renderPfReview(host, token) {
         el('span', { class: 'rvw-line-mark', text: kind === 'OK' ? '✓' : kind === 'NO' ? '!' : kind === 'UP' ? '\u2191' : kind === 'DOWN' ? '\u2193' : '\u2022' }),
         el('span', { text }),
       ]))));
-      body.appendChild(el('p', { class: 'hint rvw-note', text: (f.errPct != null
+      body.appendChild(explainRow('How the forecast works', (f.errPct != null
         ? 'Only the remainder is estimated, priced from what the same days cost in your last ' + f.months
           + ' months. Tested against those months at the same point, it came out a median ' + f.errPct + '% out.'
         : 'Only the remainder is estimated, priced from what the same days cost in your last ' + f.months
           + ' months. Too few months to have tested it yet.')
         + ' Counted on CALENDAR days, unlike the totals above — a day-of-month curve needs one month with one '
-        + 'set of days in it, and two cards on different cycles do not share one.' }));
+        + 'set of days in it, and two cards on different cycles do not share one.', 'About this estimate'));
     });
   }
 
@@ -3217,8 +3217,9 @@ async function renderPfReview(host, token) {
           : 'usually ' + cycle.noSpendTypical + ' in a month']);
         body.appendChild(el('div', { class: 'rvw-flat' }, rows.map(([k, v]) =>
           el('div', { class: 'rvw-flat-row' }, [el('span', { text: k }), el('span', { class: 'rvw-flat-meta', text: v })]))));
-        body.appendChild(el('p', { class: 'hint rvw-note', text: 'Counted on calendar days, for the same reason as '
-          + 'the forecast: which day of the month you spend on is a question about the calendar.' }));
+        body.appendChild(explainRow('Your spending cycle', 'Counted on calendar days, for the same reason '
+          + 'as the forecast: which day of the month you spend on is a question about the calendar, not '
+          + 'about a card\u2019s billing cycle.', 'How this is measured'));
       });
   }
 
@@ -3238,7 +3239,7 @@ async function renderPfReview(host, token) {
     each: () => ' — the card half of that is set on Expense’s Allocation tab, the UPI half on Limits',
   });
 
-  host.appendChild(el('p', { class: 'hint mf-foot', text: 'Each category is compared with its own median month from your own entries — not a target, and not an average, which one unusual month would skew. Month totals count UPI over the calendar month and card spends over the bill they land on, matching the Spends and Limits tabs.' }));
+  host.appendChild(explainRow('How this tab reads your months', 'Each category is compared with its own median month from your own entries — not a target, and not an average, which one unusual month would skew. Month totals count UPI over the calendar month and card spends over the bill they land on, matching the Spends and Limits tabs.', 'About these figures'));
 }
 
 // ---------- Card check tab ----------
@@ -3359,9 +3360,9 @@ async function renderPfCardCheck(host, token) {
     ]));
   });
 
-  host.appendChild(el('p', { class: 'hint mf-foot', text: anyBilled
+  host.appendChild(explainRow('About this check', anyBilled
     ? 'Each card is read over its OWN billing cycle, shown under its name, and a statement is named for the month it CLOSES in — the month you pay it. So a swipe early in the month is usually on that month\u2019s bill, while one later in it is already on next month\u2019s. That is also why these card figures differ from the Spends tab, which measures a calendar month because the allowance is monthly. Logged is what the two trackers hold for that card in the window: household spends from the Tracker, personal ones from here. Nothing is written back to the card — the statement already contains every swipe, so adding a logged spend to it would count the same one twice. The gap is what was swiped and never written down.'
-    : 'Enter the month\u2019s billed figure on a card (Expense \u2192 Credit Card \u2192 tap a card \u2192 Months) and this will tell you how much of that bill your two trackers actually explain, read over the card\u2019s own billing cycle.' }));
+    : 'Enter the month\u2019s billed figure on a card (Expense \u2192 Credit Card \u2192 tap a card \u2192 Months) and this will tell you how much of that bill your two trackers actually explain, read over the card\u2019s own billing cycle.', 'How a card is matched to its bill'));
   if (!anyCycle) {
     host.appendChild(el('p', { class: 'hint warn rvw-note', text: 'None of these cards has a billing cycle set, so each is being read as a calendar month. Add the cycle days on the card (Expense \u2192 Credit Card \u2192 tap a card) and the comparison lines up with what the bank actually bills.' }));
   }
@@ -3537,7 +3538,7 @@ async function renderFD() {
     list.forEach(({ f, c }) => wrap.appendChild(_fdCard(f, c, chainOf(f))));
     holdContent.appendChild(wrap);
   }
-  holdContent.appendChild(el('p', { class: 'hint mf-foot', text: 'Cumulative FDs compound (quarterly by default); payout FDs return principal at maturity with interest paid out along the way. Matured FDs reinvested into a newer FD that has since also matured are hidden here (still in the chain). Not financial advice.' }));
+  holdContent.appendChild(explainRow('About these FDs', 'Cumulative FDs compound (quarterly by default); payout FDs return principal at maturity with interest paid out along the way. Matured FDs reinvested into a newer FD that has since also matured are hidden here (still in the chain). Not financial advice.', 'How interest is worked out'));
 
   // ---- Overview tab: allocation by bank + income potential + next maturity ----
   const byBank = {};
@@ -3576,7 +3577,7 @@ async function renderFD() {
   if (!ladderRows.length) {
     ladderContent.appendChild(el('div', { class: 'empty' }, [el('div', { class: 'e-icon', text: '🪜' }), el('p', { text: 'No upcoming maturities. Add an active FD with a maturity date to see your ladder.' })]));
   } else {
-    ladderContent.appendChild(el('p', { class: 'hint', text: 'Your upcoming maturities, in order — the rungs of the ladder. A gap month means no FD matures then (no interest landing that month), so you can plug it. Tap a rung to edit.' }));
+    ladderContent.appendChild(explainRow('About the ladder', 'Your upcoming maturities, in order — the rungs of the ladder. A gap month means no FD matures then (no interest landing that month), so you can plug it. Tap a rung to edit.', 'How the rungs are read'));
     const wrap = el('div', { class: 'fd-ladder' });
     const mkey = (iso) => (iso || '').slice(0, 7);   // YYYY-MM
     const byMonth = {};
@@ -5540,7 +5541,7 @@ async function renderExpenseSheet(host, token) {
     el('span', { class: 'msheet-total-val', text: fmtSheetCur(available) }),
   ]));
 
-  host.appendChild(el('p', { class: 'hint mf-foot', text: 'Available Balance = (In Hand + Virtual Bal) − every red row. Each box takes a running total you can add to: type "2000+5000" and the figure above shows the sum. ↻ Fetch appends this month\'s figure (the amount after the · in a row\'s caption) as another term. In Hand starts from the Allocation salary and Monthly Expense from the Tracker balance left in the kitty — type over either for a month that differed, or clear it to follow the source again. Virtual Bal and Other Expense are lists rather than boxes: tap + to itemise them, and the row shows the total.' }));
+  host.appendChild(explainRow('About this sheet', 'Available Balance = (In Hand + Virtual Bal) − every red row. Each box takes a running total you can add to: type "2000+5000" and the figure above shows the sum. ↻ Fetch appends this month\'s figure (the amount after the · in a row\'s caption) as another term. In Hand starts from the Allocation salary and Monthly Expense from the Tracker balance left in the kitty — type over either for a month that differed, or clear it to follow the source again. Virtual Bal and Other Expense are lists rather than boxes: tap + to itemise them, and the row shows the total.', 'How the sheet adds up'));
 }
 
 // ---------- Daily spend tracker (Expense → Tracker tab) ----------
@@ -6002,7 +6003,7 @@ async function renderSpendTracker(host, token) {
     }
   } catch (_) { /* commentary only — the month's figures above stand on their own */ }
 
-  host.appendChild(el('p', { class: 'hint mf-foot', text: 'The kitty is the Allocation tab\'s House Exp doubled — the same figure from each of you. Every spend logged here comes off it. This tab always shows the current month; earlier months stay in the backup.' }));
+  host.appendChild(explainRow('About the kitty', 'The kitty is the Allocation tab\'s House Exp doubled — the same figure from each of you. Every spend logged here comes off it. This tab always shows the current month; earlier months stay in the backup.', 'Where the kitty comes from'));
 }
 
 // 'YYYY-MM' -> "Sep '26", for form copy that has no credit.js import to hand.
@@ -7217,6 +7218,33 @@ function _reviewAnalysis(ym, byYm, thisYm, kitty, nowDate, groupOf) {
 const _rvwOpen = Object.create(null);
 const RVW_DEFAULT_OPEN = { forecast: true, savings: true, look: true };
 
+// ---------- Explanations, behind an i ----------
+//
+// A note that says HOW something is worked out is read once and then costs
+// space on every visit afterwards. A note that carries a FIGURE is the content
+// and stays where it is. So the first kind moves behind an i: one short line
+// instead of a paragraph, and the prose is still a tap away for the visit where
+// it is actually wanted.
+function openInfoSheet(title, text) {
+  const paras = (Array.isArray(text) ? text : [text]).filter(Boolean);
+  openModal(el('div', { class: 'sheet' }, [
+    el('div', { class: 'sheet-scroll' }, [el('h2', { text: title })]
+      .concat(paras.map((t) => el('p', { class: 'info-para', text: t })))
+      .concat([el('button', { class: 'btn ghost info-close', text: 'Close', onclick: closeModal })])),
+  ]));
+}
+
+// The one-line affordance that replaces a paragraph.
+function explainRow(title, text, label) {
+  return el('button', {
+    class: 'explain-row', type: 'button', 'aria-label': title,
+    onclick: (e) => { e.stopPropagation(); openInfoSheet(title, text); },
+  }, [
+    el('span', { class: 'explain-i', text: 'i' }),
+    el('span', { text: label || 'How this is worked out' }),
+  ]);
+}
+
 function rvwSection(host, id, icon, title, summary, build) {
   const open = _rvwOpen[id] == null ? !!RVW_DEFAULT_OPEN[id] : !!_rvwOpen[id];
   const body = el('div', { class: 'rvw-sec-body' + (open ? '' : ' hidden') });
@@ -7483,12 +7511,12 @@ async function renderReview(host, token) {
         el('span', { text }),
       ]))));
 
-      body.appendChild(el('p', { class: 'hint rvw-note', text: f.errPct != null
+      body.appendChild(explainRow('How the forecast works', f.errPct != null
         ? 'Only the REMAINDER is estimated · what is already spent is counted, and the days still to come are priced from what the same days cost in your last '
           + f.months + ' months. Run against those months at the same point in the month, this came out a median '
           + f.errPct + '% away from what they actually cost.'
         : 'Only the REMAINDER is estimated · what is already spent is counted, and the days still to come are priced from what the same days cost in your last '
-          + f.months + ' months. Too few months to have tested it against yet, so treat it as a rough shape.' }));
+          + f.months + ' months. Too few months to have tested it against yet, so treat it as a rough shape.', 'About this estimate'));
     });
   }
 
@@ -7509,9 +7537,9 @@ async function renderReview(host, token) {
             el('div', { class: 'rvw-save-unit', text: r.kind === 'weekend' ? 'a day' : 'this month' }),
           ]),
         ]))));
-        body.appendChild(el('p', { class: 'hint rvw-note', text: 'These overlap on purpose and are not added up — the same '
+        body.appendChild(explainRow('Why these overlap', 'These overlap on purpose and are not added up — the same '
           + 'spend can be a small one, a weekend one and an over-median one at once. Three ways of seeing one leak is useful; '
-          + 'counting it three times is not. The one figure that IS a total is under Worth a look, where the evidence for it sits.' }));
+          + 'counting it three times is not. The one figure that IS a total is under Worth a look, where the evidence for it sits.', 'Why these are not added up'));
       });
     void top;
   }
@@ -7657,9 +7685,9 @@ async function renderReview(host, token) {
           : 'usually ' + cycle.noSpendTypical + ' in a month']);
         body.appendChild(el('div', { class: 'rvw-flat' }, cycRows.map(([k, v]) =>
           el('div', { class: 'rvw-flat-row' }, [el('span', { text: k }), el('span', { class: 'rvw-flat-meta', text: v })]))));
-        body.appendChild(el('p', { class: 'hint rvw-note', text: 'From your last ' + cycle.months
+        body.appendChild(explainRow('Your spending cycle', 'From your last ' + cycle.months
           + ' months. This is the WHEN behind the total — the half of a spending habit that a monthly figure hides, '
-          + 'and the reason a forecast on the 6th and one on the 26th cannot use the same arithmetic.' }));
+          + 'and the reason a forecast on the 6th and one on the 26th cannot use the same arithmetic.', 'How this is measured'));
       });
   }
 
@@ -7681,8 +7709,8 @@ async function renderReview(host, token) {
       // No running total here. It would only ever count items that RECUR, so it
       // sat below the forecast by everything ordinary a month also costs, and
       // two forward totals that disagree are worse than one.
-      body.appendChild(el('p', { class: 'hint rvw-note', text: 'Items that have landed in most recent months and have not yet this one. '
-        + 'A description of what keeps happening, not a promise about this month.' }));
+      body.appendChild(explainRow('What is still to land', 'Items that have landed in most recent months and have not yet this one. '
+        + 'A description of what keeps happening, not a promise about this month.', 'How these are picked'));
     });
   }
 
@@ -7702,8 +7730,8 @@ async function renderReview(host, token) {
           el('span', { text: r.name }),
           el('span', { class: 'rvw-flat-meta', text: fmtSheetCur(r.now) + ' · ' + (r.months ? r.months + ' earlier month' + (r.months === 1 ? '' : 's') : 'first time') }),
         ]))));
-      body.appendChild(el('p', { class: 'hint rvw-note', text: 'A category needs ' + REVIEW_MIN_HISTORY
-        + ' earlier months before it has a normal to be compared with.' }));
+      body.appendChild(explainRow('Too new to judge', 'A category needs ' + REVIEW_MIN_HISTORY
+        + ' earlier months before it has a normal to be compared with.', 'Why these are held back'));
     });
   }
   if (a.fixedRows.length) {
@@ -7714,12 +7742,12 @@ async function renderReview(host, token) {
           el('span', { text: r.name }),
           el('span', { class: 'rvw-flat-meta', text: fmtSheetCur(r.now) }),
         ]))));
-      body.appendChild(el('p', { class: 'hint rvw-note', text: 'Rent, bills and medicine — real money, but not this month\u2019s decisions, '
-        + 'so they are kept out of the comparisons above rather than flagged every month for being large.' }));
+      body.appendChild(explainRow('Nothing to decide', 'Rent, bills and medicine — real money, but not this month\u2019s decisions, '
+        + 'so they are kept out of the comparisons above rather than flagged every month for being large.', 'Why these are set aside'));
     });
   }
 
-  host.appendChild(el('p', { class: 'hint mf-foot', text: 'Each category is compared with its own median month from your own entries — not a target, and not an average, which one unusual month would skew. Only categories already past a normal month appear.' }));
+  host.appendChild(explainRow('How this tab reads your months', 'Each category is compared with its own median month from your own entries — not a target, and not an average, which one unusual month would skew. Only categories already past a normal month appear.', 'About these figures'));
 }
 
 // Which month this is, how far into it, and what history is behind the figures.
@@ -8469,8 +8497,8 @@ function renderDivOverview(host, all, mod) {
       ]));
     });
     card.appendChild(table);
-    card.appendChild(el('p', { class: 'hint', style: 'margin-top:8px', text: 'Only years with a dividend recorded are listed. '
-      + 'FY total = financial year (Apr–Mar), e.g. FY 25-26 = Apr 2025 – Mar 2026. Each calendar year is split across its payout months to fill the Apr–Mar buckets.' }));
+    card.appendChild(explainRow('About these years', 'Only years with a dividend recorded are listed. '
+      + 'FY total = financial year (Apr–Mar), e.g. FY 25-26 = Apr 2025 – Mar 2026. Each calendar year is split across its payout months to fill the Apr–Mar buckets.', 'Which years are listed'));
     return card;
   };
   host.appendChild(build('in'));
@@ -9397,7 +9425,7 @@ async function renderBond() {
     list.forEach(({ b: b2, c }) => wrap.appendChild(_bondCard(b2, c)));
     holdContent.appendChild(wrap);
   }
-  holdContent.appendChild(el('p', { class: 'hint mf-foot', text: 'Log each interest/coupon payment you actually receive on a bond\'s Payouts tab — once logged, it replaces the projected estimate as the real interest-earned figure. Not financial advice.' }));
+  holdContent.appendChild(explainRow('About these bonds', 'Log each interest/coupon payment you actually receive on a bond\'s Payouts tab — once logged, it replaces the projected estimate as the real interest-earned figure. Not financial advice.', 'How payouts are counted'));
 
   // ---- Overview tab: allocation by rating + next maturity ----
   const byRating = {};
@@ -9918,9 +9946,9 @@ async function openBondForm(existing) {
       scheduleContent.appendChild(el('p', { class: 'hint', text: 'Nothing to project yet — set a start date, a maturity date, and either an interest frequency or a principal repayment frequency other than "At maturity".' }));
       return;
     }
-    scheduleContent.appendChild(el('p', { class: 'hint', text: c.amortizes
+    scheduleContent.appendChild(explainRow('About this schedule', c.amortizes
       ? 'Projected from the reducing balance: each row pays interest on whatever principal was still outstanding for that period, then returns its slice of principal. This is a plan, not actuals — log real receipts on the Payouts tab.'
-      : 'Projected coupon dates. Principal returns as a single lump at maturity. This is a plan, not actuals — log real receipts on the Payouts tab.' }));
+      : 'Projected coupon dates. Principal returns as a single lump at maturity. This is a plan, not actuals — log real receipts on the Payouts tab.', 'How the projection works'));
     const today = todayISO();
     const head = el('div', { class: 'bond-sched-row bond-sched-head' }, [
       el('span', { text: 'Date' }), el('span', { text: 'Interest' }), el('span', { text: 'Principal' }), el('span', { text: 'Balance' }),
@@ -10270,7 +10298,7 @@ function efFundTab(c, parked) {
   }
   wrap.appendChild(rec);
 
-  wrap.appendChild(el('p', { class: 'hint mf-foot', text: 'Nothing here is counted in Home\'s Total Invested — the linked funds, bonds and FDs are tracked on this page instead of theirs, so the same money is never counted twice. Not financial advice.' }));
+  wrap.appendChild(explainRow('About these figures', 'Nothing here is counted in Home\'s Total Invested — the linked funds, bonds and FDs are tracked on this page instead of theirs, so the same money is never counted twice. Not financial advice.', 'What this does and does not count'));
   return wrap;
 }
 
@@ -10398,7 +10426,7 @@ function efTargetsTab(c) {
       ]));
     });
   }
-  wrap.appendChild(el('p', { class: 'hint mf-foot', text: 'Your emergency fund ladder progress. Each target can replace or add to the previous one.' }));
+  wrap.appendChild(explainRow('About the ladder', 'Your emergency fund ladder progress. Each target can replace or add to the previous one.', 'How the ladder works'));
   return wrap;
 }
 
@@ -11330,7 +11358,7 @@ async function renderBankSavings() {
     ]));
   });
   host.appendChild(list);
-  host.appendChild(el('p', { class: 'hint mf-foot', text: 'Balances are typed in by hand, not fetched live — update one whenever you check it. Not counted in Home\'s Total Invested (it\'s cash in hand, not capital at work).' }));
+  host.appendChild(explainRow('About these balances', 'Balances are typed in by hand, not fetched live — update one whenever you check it. Not counted in Home\'s Total Invested (it\'s cash in hand, not capital at work).', 'Where these come from'));
 }
 
 async function openBankSavForm(existing) {
@@ -11710,11 +11738,11 @@ async function renderCreditCards(host, token) {
     : document.createTextNode('');
   host.appendChild(el('div', { class: 'chart-card cc-reimb-card' }, [
     el('h3', {}, ['Reimbursed \u2014 ' + mod.monthLabel(selYm), rbBadge]),
-    el('p', { class: 'hint', style: 'margin:0 0 8px', text: 'One combined figure for this month, covering every card above. '
-      + 'Counted from what is logged: household spends put on a card, plus personal spends marked for others. '
-      + 'Type over it to set your own figure.' }),
     reimbInput,
     rbSplit,
+    explainRow('Reimbursed', 'One combined figure for this month, covering every card above. '
+      + 'Counted from what is logged: household spends put on a card, plus personal spends marked for '
+      + 'others. Type over it to set your own figure.', 'Where this figure comes from'),
   ]));
 
   // ---- The wide grid (the sheet's A:AB), oldest month first ----
@@ -11791,7 +11819,7 @@ async function renderCreditCards(host, token) {
     }, { passive: true });
     const parkGrid = () => { gridScroll.scrollLeft = _ccGridScroll == null ? gridEnd() : Math.min(_ccGridScroll, gridEnd()); };
     wrapCard.appendChild(gridScroll);
-    wrapCard.appendChild(el('p', { class: 'hint', style: 'margin-top:8px', text: 'Oldest month first, so the newest is on the right — where this opens. Scroll left for history. "vs last month" compares the to-be-paid figure against the previous month that has data.' }));
+    wrapCard.appendChild(explainRow('About this grid', 'Oldest month first, so the newest is on the right — where this opens. Scroll left for history. "vs last month" compares the to-be-paid figure against the previous month that has data.', 'How to read it'));
     host.appendChild(wrapCard);
     // Once, synchronously - reading scrollWidth on an attached element settles
     // layout, so this needs no frame to wait for. Again on the next frame in
@@ -11800,7 +11828,7 @@ async function renderCreditCards(host, token) {
     requestAnimationFrame(parkGrid);
   }
 
-  host.appendChild(el('p', { class: 'hint mf-foot', text: 'Credit card bills are money going out, so nothing here counts toward Home\'s Total Invested. Log each card\'s statement as "Billed", set the combined monthly reimbursement below the card list, and mark each card Ontime/Late on its own Details > Months tab once paid.' }));
+  host.appendChild(explainRow('About this tab', 'Credit card bills are money going out, so nothing here counts toward Home\'s Total Invested. Log each card\'s statement as "Billed", set the combined monthly reimbursement below the card list, and mark each card Ontime/Late on its own Details > Months tab once paid.', 'What this does and does not count'));
 
   // Swipe gestures on card list only (not the month-by-month table): left swipe
   // → next month (forward in time), right swipe → previous month. Prevents
@@ -12165,9 +12193,9 @@ async function renderMF() {
     holdContent.appendChild(listWrap);
   }
 
-  holdContent.appendChild(el('p', { class: 'hint mf-foot', text: viewSold
+  holdContent.appendChild(explainRow('About XIRR', viewSold
     ? 'Sold funds show your realized XIRR - from your dated investments to the sold value. Not investment advice.'
-    : 'XIRR is computed from your dated investments. Funds marked "(sheet)" still use your sheet\'s figure - add a real investment to switch to app-computed XIRR. Not investment advice.' }));
+    : 'XIRR is computed from your dated investments. Funds marked "(sheet)" still use your sheet\'s figure - add a real investment to switch to app-computed XIRR. Not investment advice.', 'How the return is worked out'));
 
   // Overview tab content: allocation (summary is common, rendered above both tabs).
   const byType = {};
@@ -12769,7 +12797,7 @@ async function openFundForm(existing) {
     field('Part of Emergency Fund — moves it to that page and out of these totals', efSwitch),
     field('Remarks', remarks),
   ]);
-  editTabContent.appendChild(el('p', { class: 'hint', text: 'Current value = total units × latest NAV. Log each buy (with units) on the Fund Holdings tab, then just refresh the latest NAV here to update value, return, XIRR and benchmark status.' }));
+  editTabContent.appendChild(explainRow('About these figures', 'Current value = total units × latest NAV. Log each buy (with units) on the Fund Holdings tab, then just refresh the latest NAV here to update value, return, XIRR and benchmark status.', 'How value is worked out'));
 
   const holdTabContent = el('div', { class: 'tab-content hidden' }, [
     unitsInfo,
