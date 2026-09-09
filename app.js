@@ -6351,7 +6351,8 @@ async function openSpendForm(budget, existing, defaultDate) {
       return;
     }
     milkNote.textContent = fmtSheetCur(round2(total - milk)) + ' to ' + (chosenCat || 'the shop')
-      + ' · ' + fmtSheetCur(milk) + ' to ' + MILK_CAT + ', same date and payment.';
+      + ' · ' + fmtSheetCur(milk) + ' to ' + MILK_CAT + ', tagged “' + normaliseTag(chosenCat || '')
+      + '” · same date and payment.';
   };
   const syncMilk = () => {
     const offer = !editing && milkSplitAvailable() && MILK_SPLIT_FROM.indexOf(chosenCat) >= 0;
@@ -6461,7 +6462,17 @@ async function openSpendForm(budget, existing, defaultDate) {
     if (milkOn) {
       // Same trip, same payment: everything is carried over but the category
       // and the figure. No id - this is a second row, never an overwrite.
-      const milkRec = Object.assign({}, rec, { category: MILK_CAT, amount: milkVal, createdAt: nowIso });
+      //
+      // Plus a tag naming where it was bought. Without it the milk row is
+      // stranded from the trip it came off, and "was the Brigade milk dearer
+      // than the local shop's" - the question the split exists to make
+      // askable - stays unanswerable. It goes FIRST so that a trip already
+      // carrying the maximum number of tags loses one of those to the cap
+      // rather than losing this one.
+      const milkTags = tagsOf({ tags: [normaliseTag(chosenCat)].concat(rec.tags || []) });
+      const milkRec = Object.assign({}, rec, {
+        category: MILK_CAT, amount: milkVal, tags: milkTags, createdAt: nowIso,
+      });
       delete milkRec.id;
       await DB.put('spends', milkRec);
     }
