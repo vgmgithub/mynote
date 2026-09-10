@@ -70,6 +70,12 @@ let _trkView = 'category';   // 'category' | 'entries'
 // component as Personal Finance uses.
 let _trkFilter = 'all';
 let _trkYm = null;           // month shown on the Tracker tab; null = this month
+// The Tracker opens on the heatmap: one month tells you what you spent, every
+// month tells you whether that is normal, and the second question is the one
+// worth opening a tracker for. Tapping a month leaves it, and that choice then
+// sticks for the session.
+let _trkHeatmap = true;
+let _trkHeatScroll = null;   // where the grid was left; null means "the newest"
 let _trkTimelineClicked = false;
 // Every Expense render takes a ticket. Each tab's renderer loads its data
 // asynchronously, so two renders started close together (a fast tab switch, a
@@ -5569,6 +5575,158 @@ async function renderExpenseSheet(host, token) {
   host.appendChild(explainRow('About this sheet', 'Available Balance = (In Hand + Virtual Bal) − every red row. Each box takes a running total you can add to: type "2000+5000" and the figure above shows the sum. ↻ Fetch appends this month\'s figure (the amount after the · in a row\'s caption) as another term. In Hand starts from the Allocation salary and Monthly Expense from the Tracker balance left in the kitty — type over either for a month that differed, or clear it to follow the source again. Virtual Bal and Other Expense are lists rather than boxes: tap + to itemise them, and the row shows the total.', 'How the sheet adds up'));
 }
 
+// ---------- The heatmap: every month at once ----------
+//
+// The spreadsheet this app replaced was read this way and nothing else came
+// close: one row per category, one column per month, and the colour doing the
+// work. A number tells you what a month cost; a row of colour tells you which
+// months were unlike the others, which is the only way an eye finds the one
+// that went wrong.
+//
+// Each row is scaled against ITS OWN median rather than a figure shared across
+// the grid. Rent would otherwise be red in every column simply for being the
+// biggest line in the house, and the milk would never be anything but green -
+// neither of which says a thing about whether a month was unusual.
+const HEAT_BANDS = [
+  [0.60, 'h-low2'],   // well under what this line usually costs
+  [0.85, 'h-low1'],
+  [1.15, 'h-mid'],    // about normal
+  [1.50, 'h-hi1'],
+  [Infinity, 'h-hi2'],
+];
+const _heatBand = (amount, median) => {
+  if (!(amount > 0)) return 'h-none';
+  if (!(median > 0)) return 'h-mid';
+  const r = amount / median;
+  return (HEAT_BANDS.find(([lim]) => r <= lim) || HEAT_BANDS[HEAT_BANDS.length - 1])[1];
+};
+
+function _trkHeatmapGrid(host, yms, byYm, allocs, efLoans, thisYm, mod, now) {
+  const totalOf = (k) => round2((byYm.get(k) || []).reduce((s, r) => s + (Number(r.amount) || 0), 0));
+  // Only months that actually hold something, plus the one in progress. A
+  // column of blanks for a month before the tracker existed is noise in a view
+  // whose whole job is making the non-blank cells stand out.
+  const cols = yms.filter((k) => totalOf(k) > 0 || k === thisYm);
+  if (cols.length < 2) {
+    host.appendChild(el('div', { class: 'empty' }, [
+      el('div', { class: 'e-icon', text: '▦' }),
+      el('p', { text: 'Not enough months yet.' }),
+      el('p', { class: 'hint', text: 'The heatmap compares months against each other, so it needs a '
+        + 'second one before it can say anything. Tap a month above to log spends meanwhile.' }),
+    ]));
+    return;
+  }
+
+  // category -> ym -> amount
+  const catByYm = new Map();
+  cols.forEach((k) => (byYm.get(k) || []).forEach((r) => {
+    const n = r.category || 'Prev Bill Bal / Misc';
+    if (!catByYm.has(n)) catByYm.set(n, new Map());
+    const m = catByYm.get(n);
+    m.set(k, round2((m.get(k) || 0) + (Number(r.amount) || 0)));
+  }));
+
+  // In the picker's own order, so the grid reads like the form does. Anything
+  // retired from the list but still sitting in an old month is kept, at the
+  // end, rather than dropped along with its money.
+  const ordered = [];
+  catList('spend').forEach((g) => g.items.forEach((n) => { if (catByYm.has(n)) ordered.push(n); }));
+  [...catByYm.keys()].forEach((n) => { if (ordered.indexOf(n) < 0) ordered.push(n); });
+
+  const table = el('table', { class: 'heatmap cc-grid trk-heat' });
+  const head = el('tr', {}, [el('th', { class: 'corner', text: 'Month' })]
+    .concat(cols.map((k) => el('th', { class: k === thisYm ? 'is-now' : '', text: mod.monthLabel(k) }))));
+  const tbody = el('tbody');
+
+  const money = (v) => (v > 0 ? fmtIntCur(v) : '—');
+  const row = (label, cls, cells) => {
+    const tr = el('tr', { class: cls || '' }, [el('th', { class: 'rowhead', text: label })]);
+    cells.forEach((c) => tr.appendChild(el('td', { class: c.cls || '', title: c.title || '', text: c.text })));
+    tbody.appendChild(tr);
+  };
+
+  // What went IN, first - every other row is read against it.
+  const kittyOf = (k) => _kittyFor(k, allocs, efLoans);
+  row('Kitty', 'trk-heat-kitty', cols.map((k) => ({ text: money(kittyOf(k)) })));
+
+  ordered.forEach((name) => {
+    const per = catByYm.get(name);
+    const vals = cols.map((k) => per.get(k) || 0).filter((v) => v > 0);
+    const med = _median(vals);
+    row(name, '', cols.map((k) => {
+      const v = per.get(k) || 0;
+      return {
+        text: money(v),
+        cls: _heatBand(v, med),
+        title: v > 0 && med > 0
+          ? name + ' ' + mod.monthLabel(k) + ': ' + fmtSheetCur(v) + ' · usually ' + fmtIntCur(med)
+          : '',
+      };
+    }));
+  });
+
+  // ---- The four summary rows ----
+  row('Spent', 'cc-sum', cols.map((k) => {
+    const t = totalOf(k), b = kittyOf(k);
+    return { text: money(t), cls: b > 0 ? (t > b ? 'h-hi2' : 'h-low1') : '',
+      title: b > 0 ? fmtSheetCur(t) + ' of a ' + fmtSheetCur(b) + ' kitty' : '' };
+  }));
+  row('Left', 'cc-sum', cols.map((k) => {
+    const b = kittyOf(k);
+    if (!(b > 0)) return { text: '—' };
+    const lf = round2(b - totalOf(k));
+    return { text: fmtIntCur(lf), cls: lf < 0 ? 'h-hi2' : 'h-low2' };
+  }));
+  // Only the month in progress has days still to come. A closed month has none,
+  // and printing 1 for it - as the sheet did - invites dividing by it.
+  row('Days left', 'cc-sum trk-heat-quiet', cols.map((k) => {
+    const d = _spendableDaysLeft(k, now);
+    return { text: d > 0 ? String(d) : '—', title: d > 0 ? perDayLabel(d) : 'Month closed' };
+  }));
+  row('Per day', 'cc-sum', cols.map((k) => {
+    const d = _spendableDaysLeft(k, now);
+    const lf = round2(kittyOf(k) - totalOf(k));
+    if (!(d > 0) || !(kittyOf(k) > 0)) return { text: '—' };
+    if (lf <= 0) return { text: fmtIntCur(0), cls: 'h-hi2', title: 'Nothing left to spread' };
+    return { text: fmtIntCur(perDayAllowance(lf, d)), cls: 'h-low2',
+      title: fmtSheetCur(lf) + ' across ' + perDayLabel(d) };
+  }));
+
+  table.appendChild(el('thead', {}, [head]));
+  table.appendChild(tbody);
+
+  const scroll = el('div', { class: 'heatmap-scroll cc-scroll' }, [table]);
+  // Opens on the newest month, and stays where it is put after that - the same
+  // rule as the Credit Card grid, for the same reason.
+  const gridEnd = () => Math.max(0, scroll.scrollWidth - scroll.clientWidth);
+  scroll.addEventListener('scroll', () => {
+    _trkHeatScroll = Math.abs(scroll.scrollLeft - gridEnd()) < 4 ? null : scroll.scrollLeft;
+  }, { passive: true });
+  host.appendChild(scroll);
+  const park = () => { scroll.scrollLeft = _trkHeatScroll == null ? gridEnd() : Math.min(_trkHeatScroll, gridEnd()); };
+  park();
+  requestAnimationFrame(park);
+
+  host.appendChild(el('div', { class: 'trk-heat-key' }, [
+    el('span', { class: 'trk-heat-key-lbl', text: 'vs its own usual' }),
+    el('span', { class: 'trk-heat-swatch h-low2', text: 'well under' }),
+    el('span', { class: 'trk-heat-swatch h-low1', text: 'under' }),
+    el('span', { class: 'trk-heat-swatch h-mid', text: 'normal' }),
+    el('span', { class: 'trk-heat-swatch h-hi1', text: 'over' }),
+    el('span', { class: 'trk-heat-swatch h-hi2', text: 'well over' }),
+  ]));
+  host.appendChild(explainRow('About the heatmap', [
+    'One row per category, one column per month. Every row is coloured against '
+      + 'ITS OWN usual month, not against the other rows - otherwise rent would be red in every '
+      + 'column for being the biggest line in the house, and milk green in every column for being '
+      + 'the smallest, and neither would tell you anything.',
+    '"Usual" is the median of the months that category appears in, so one heavy month does not '
+      + 'move the bar it is being judged against.',
+    'Kitty is what went in that month. Spent, Left and Per day are read against it. Days left and '
+      + 'Per day only apply to the month in progress - a closed month has no days still to spend.',
+  ], 'How the colours are worked out'));
+}
+
 // ---------- Daily spend tracker (Expense → Tracker tab) ----------
 // The household kitty for THIS month: what the budget is, what's gone, what's
 // left. One row per spend (see db.js `spends`), rolled up by category here.
@@ -5805,22 +5963,43 @@ async function renderSpendTracker(host, token) {
   // Newest first on screen. `timelineYms` itself stays ascending — the default
   // selection takes the last entry, and the insights compare against earlier
   // months — so only the render order is flipped.
-  const timelineRow = el('div', { class: 'cc-timeline' }, timelineYms.slice().reverse().map((k) => el('button', {
-    type: 'button',
-    class: 'cc-timeline-chip'
-      + (k === ym ? ' active' : '')
-      + (k === thisYm ? ' is-current' : '')
-      + (totalOf(k) > 0 ? ' has-data' : ''),
-    text: mod.monthLabel(k),
-    onclick: () => { if (k === ym) return; _trkYm = k; _trkTimelineClicked = true; renderHomeExpense(); },
-  })));
+  // The heatmap sits with the months but is not one of them - the same shape as
+  // the Overall chip on the stocks Overview. While it is up no month is active,
+  // and saying so is the point: the figures below are about all of them.
+  const heatChip = el('button', {
+    type: 'button', class: 'cc-timeline-chip trk-heat-chip' + (_trkHeatmap ? ' active' : ''),
+    text: '▦ All months',
+    onclick: () => { if (_trkHeatmap) return; _trkHeatmap = true; renderHomeExpense(); },
+  });
+  const timelineRow = el('div', { class: 'cc-timeline' }, [heatChip].concat(
+    timelineYms.slice().reverse().map((k) => el('button', {
+      type: 'button',
+      class: 'cc-timeline-chip'
+        + (!_trkHeatmap && k === ym ? ' active' : '')
+        + (k === thisYm ? ' is-current' : '')
+        + (totalOf(k) > 0 ? ' has-data' : ''),
+      text: mod.monthLabel(k),
+      onclick: () => {
+        if (!_trkHeatmap && k === ym) return;
+        _trkHeatmap = false; _trkYm = k; _trkTimelineClicked = true; renderHomeExpense();
+      },
+    }))));
   timelineWrap.appendChild(timelineRow);
   host.appendChild(timelineWrap);
   _mountMonthStrip('tracker', timelineWrap, _trkTimelineClicked);
   _trkTimelineClicked = false;
   // Same swipe as the Review tab. The two share this month, so leaving one
   // swipeable and the other not would read as broken rather than deliberate.
-  _attachMonthSwipe(host, timelineYms, ym, (k) => { _trkYm = k; _trkTimelineClicked = true; renderHomeExpense(); });
+  _attachMonthSwipe(host, timelineYms, ym, (k) => {
+    // Swiping to a month is a way out of the heatmap, not a thing that happens
+    // underneath it.
+    _trkHeatmap = false; _trkYm = k; _trkTimelineClicked = true; renderHomeExpense();
+  });
+
+  if (_trkHeatmap) {
+    _trkHeatmapGrid(host, timelineYms, byYm, allocs, efLoans, thisYm, mod, now);
+    return;
+  }
 
   // ---- Kitty / spent / left ----
   host.appendChild(el('div', { class: 'trk-summary' }, [

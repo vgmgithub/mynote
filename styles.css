@@ -2656,3 +2656,32 @@ input.vb-amt { flex: 0 0 96px; width: 96px; padding: 9px 11px; border: 1px solid
 input.milk-amt { width: 68px; padding: 0; border: none; background: transparent; color: var(--text); font: inherit; font-size: 0.86rem; font-weight: 700; text-align: right; }
 input.milk-amt:focus { outline: none; }
 .milk-note { margin: 8px 0 0; line-height: 1.5; }
+
+/* ---- Tracker heatmap: every month at once ---- */
+/* The chip sits with the months but is not one of them, so it reads slightly
+   apart - the same treatment the Overall chip gets on the stocks Overview. */
+.trk-heat-chip { margin-right: 10px; font-weight: 800; }
+
+.trk-heat td { text-align: right; font-variant-numeric: tabular-nums; }
+.trk-heat th.is-now { color: var(--accent); }
+.trk-heat-kitty td { background: rgba(59,130,246,0.16); font-weight: 700; }
+.trk-heat-quiet td { color: var(--muted); }
+
+/* Five bands, read against the row's own usual month. Deliberately not a
+   continuous gradient: an eye picks a band out of a grid far faster than it
+   ranks two shades of the same colour. */
+.trk-heat td.h-none { color: var(--muted); opacity: 0.45; }
+.trk-heat td.h-low2 { background: rgba(52,211,153,0.34); color: var(--text); }
+.trk-heat td.h-low1 { background: rgba(52,211,153,0.16); }
+.trk-heat td.h-mid  { background: transparent; }
+.trk-heat td.h-hi1  { background: rgba(248,113,113,0.18); }
+.trk-heat td.h-hi2  { background: rgba(248,113,113,0.4); color: var(--text); font-weight: 700; }
+
+.trk-heat-key { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+.trk-heat-key-lbl { font-size: 0.58rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin-right: 3px; }
+.trk-heat-swatch { padding: 2px 7px; border-radius: 6px; font-size: 0.58rem; font-weight: 700; color: var(--text); }
+.trk-heat-swatch.h-low2 { background: rgba(52,211,153,0.34); }
+.trk-heat-swatch.h-low1 { background: rgba(52,211,153,0.16); }
+.trk-heat-swatch.h-mid  { background: var(--card-2); color: var(--muted); }
+.trk-heat-swatch.h-hi1  { background: rgba(248,113,113,0.18); }
+.trk-heat-swatch.h-hi2  { background: rgba(248,113,113,0.4); }
