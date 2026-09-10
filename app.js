@@ -4100,9 +4100,26 @@ let _upcomingResizeHandler = null;
 async function renderHome() {
   const host = $('#homeView');
   host.innerHTML = '';
+  // Two columns: who this is on the left, when it is on the right. The date
+  // and what is left of the month are the only things on Home that change on
+  // their own, so they sit apart from the name rather than under it.
+  const _hDays = _spendableDaysLeft(todayISO().slice(0, 7));
+  const _hNow = new Date();
   host.appendChild(el('div', { class: 'home-hero' }, [
-    el('h2', { class: 'home-title', text: 'MyNotes' }),
-    el('p', { class: 'home-tag', text: 'Private tracker - everything stays on this device.' }),
+    el('div', { class: 'home-hero-left' }, [
+      el('h2', { class: 'home-title', text: 'MyNotes' }),
+      el('p', { class: 'home-tag', text: 'Private tracker - everything stays on this device.' }),
+    ]),
+    el('div', { class: 'home-hero-right' }, [
+      // The app's own month names, not the locale's - en-GB renders September
+      // as "Sept" while every other surface here says "Sep".
+      el('div', { class: 'home-today',
+        text: _hNow.getDate() + ' ' + _FD_MONS[_hNow.getMonth()] }),
+      // Days you can still spend on, today included - the same count every
+      // per-day figure in the app divides by, so the two always reconcile.
+      el('div', { class: 'home-days' + (_hDays <= 5 ? ' is-tight' : ''), title: perDayLabel(_hDays),
+        text: _hDays + (_hDays === 1 ? ' day left' : ' days left') }),
+    ]),
   ]));
 
   // Calculate total invested and earned across Stocks, Mutual Funds, Fixed Deposits, and Metals
@@ -4132,25 +4149,6 @@ async function renderHome() {
     ]),
   ]);
   host.appendChild(summaryCard);
-
-  // How much month is left, immediately above what is coming up in it. The two
-  // answer the same question from opposite ends - what is about to land, and
-  // how long there is to absorb it - so they belong together, and this one is
-  // always here rather than only when something happens to be due.
-  //
-  // Same count as every other per-day figure in the app: days you can still
-  // spend on, today included.
-  const _hDays = _spendableDaysLeft(todayISO().slice(0, 7));
-  host.appendChild(el('div', { class: 'home-month-row' }, [
-    el('span', {
-      class: 'home-month-pill' + (_hDays <= 5 ? ' is-tight' : ''),
-      title: perDayLabel(_hDays),
-    }, [
-      el('b', { text: String(_hDays) }),
-      el('span', { text: (_hDays === 1 ? ' day left in ' : ' days left in ')
-        + new Date().toLocaleString('en-US', { month: 'long' }) }),
-    ]),
-  ]));
 
   // Upcoming FD maturities + bond payouts, above the section cards. Wrapped
   // because a failure here must never blank Home - same defensive stance as the

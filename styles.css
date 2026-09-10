@@ -1124,9 +1124,19 @@ body.locked { overflow: hidden; }
 }
 
 /* ─────────────── Home launcher (Stocks / Mutual Funds) ─────────────── */
-.home-hero { padding: 22px 2px 6px; }
+/* Name on the left, date on the right. Baseline-aligned so the date sits with
+   the title rather than floating against the top of a two-line block. */
+.home-hero { padding: 22px 2px 6px; display: flex; align-items: baseline; justify-content: space-between; gap: 14px; }
+.home-hero-left { min-width: 0; }
+.home-hero-right { flex: 0 0 auto; text-align: right; }
 .home-title { margin: 0; font-size: 1.7rem; font-weight: 800; letter-spacing: 0.3px; }
 .home-tag { margin: 4px 0 0; color: var(--muted); font-size: 0.82rem; }
+/* Bigger than the tagline, smaller than the name - it is the second thing you
+   read, not the first. */
+.home-today { font-size: 1.15rem; font-weight: 800; letter-spacing: -0.2px; white-space: nowrap; }
+.home-days { margin-top: 3px; font-size: 0.74rem; font-weight: 700; color: var(--accent); white-space: nowrap; }
+/* The last few days of a month are worth noticing, not just reading. */
+.home-days.is-tight { color: var(--warn); }
 .home-summary { display: flex; gap: 12px; margin-top: 16px; }
 .summary-stat { flex: 1; background: linear-gradient(135deg, var(--card), var(--card-2)); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 12px; display: flex; flex-direction: column; gap: 4px; }
 .stat-label { color: var(--muted); font-size: 0.75rem; display: flex; align-items: center; gap: 6px; }
@@ -2688,17 +2698,3 @@ input.milk-amt:focus { outline: none; }
 .trk-heat-swatch.h-hi1  { background: rgba(248,113,113,0.18); }
 .trk-heat-swatch.h-hi2  { background: rgba(248,113,113,0.4); }
 
-/* ---- Home: how much month is left ---- */
-.home-month-row { display: flex; margin-top: 18px; }
-.home-month-pill {
-  display: inline-flex; align-items: baseline; gap: 4px;
-  padding: 5px 12px; border-radius: 999px;
-  background: rgba(56,189,248,0.16); border: 1px solid rgba(56,189,248,0.45);
-  color: var(--accent); font-size: 0.72rem; font-weight: 600;
-}
-.home-month-pill b { font-size: 0.92rem; font-weight: 800; }
-/* The last few days of a month are worth noticing, so it changes colour rather
-   than only changing its number. */
-.home-month-pill.is-tight { background: rgba(245,158,11,0.16); border-color: rgba(245,158,11,0.5); color: var(--warn); }
-/* Coming Up follows straight on, so it loses its own top gap. */
-.home-month-row + .due-soon { margin-top: 10px; }
