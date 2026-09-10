@@ -2818,6 +2818,11 @@ html[data-theme="light"] .vault-ico.is-letter {
 .vault-list > .vault-group:first-child { margin-top: 1px; }
 .vault-group-n { font-weight: 600; opacity: 0.7; letter-spacing: 0; }
 .vault-eye { font-size: 0.9rem; }
+/* Sized here rather than by the font, and coloured by the button so it dims
+   with the rest of the row and lights up when pressed. */
+.vault-copy { color: var(--muted); }
+.vault-copy:hover, .vault-copy:active { color: var(--accent); }
+.copy-ico { display: block; width: 14px; height: 14px; }
 
 /* ---- Icon picker in the form ---- */
 .vault-ico-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

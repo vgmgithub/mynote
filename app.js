@@ -4568,6 +4568,24 @@ function _walletIcon() {
   return svg;
 }
 
+// The copy button on a vault card. The clipboard emoji was the biggest, most
+// colourful thing on the row after the entry's own icon, which put the loudest
+// mark on the card next to the least interesting control - and at whatever
+// size the platform font felt like. An outline instead: it takes the row's
+// colour, sizes to the pixel, and reads as the standard copy mark everywhere.
+function _copyIcon() {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('class', 'copy-ico');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+  svg.innerHTML = '<rect x="8.6" y="8.6" width="11.8" height="11.8" rx="2.4" fill="none" '
+    + 'stroke="currentColor" stroke-width="1.8"/>'
+    + '<path d="M15.4 4.6H6c-.8 0-1.4.6-1.4 1.4v9.4" fill="none" stroke="currentColor" '
+    + 'stroke-width="1.8" stroke-linecap="round"/>';
+  return svg;
+}
+
 // ---------- Investment section page ----------
 async function renderHomeInvestment() {
   const host = $('#investmentView');
@@ -6055,9 +6073,9 @@ function _vaultCard(r, mod) {
   const sub = el('div', { class: 'vault-sub' });
   const eye = el('button', { class: 'icon-btn vault-eye', type: 'button' });
   const copy = el('button', {
-    class: 'icon-btn', type: 'button', title: 'Copy password', 'aria-label': 'Copy password',
-    text: '\ud83d\udccb',
-  });
+    class: 'icon-btn vault-copy', type: 'button',
+    title: 'Copy password', 'aria-label': 'Copy password',
+  }, [_copyIcon()]);
   copy.addEventListener('click', async (e) => {
     e.stopPropagation();
     if (!r.password) { toast('Nothing to copy'); return; }
