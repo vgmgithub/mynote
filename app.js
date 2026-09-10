@@ -6374,25 +6374,31 @@ function _vaultLockScreen(host, mod, meta) {
 // behind the single gear in the toolbar. Together, because they are the same
 // kind of decision - and because the two CSV ones each need a sentence of
 // warning beside them that would never fit on a toolbar button.
+//
+// Laid out with menuItem, the same as the app's own menu, rather than the
+// stack of full-width buttons this had first. Three centred labels with
+// left-aligned paragraphs hanging under them lined up with nothing, here or
+// anywhere else in the app; a list of actions already has a shape in this
+// codebase - icon, name, one line about it, all flush left - and this is a
+// list of actions.
 function openVaultOptions(mod, meta) {
-  const item = (label, hint, cls, fn) => el('div', { class: 'vault-opt' }, [
-    el('button', { class: 'btn ' + cls, type: 'button', text: label, onclick: fn }),
-    el('p', { class: 'hint', text: hint }),
-  ]);
   openModal(el('div', { class: 'sheet' }, [
     el('div', { class: 'sheet-scroll' }, [
       el('h2', { text: 'Vault options' }),
-      item('Change master password', 'Re-encrypts every entry with the new one. The old password stops '
-        + 'opening anything.', 'primary', () => { closeModal(); openMasterChange(mod, meta); }),
-      item('Export to CSV', 'A spreadsheet file of every entry in plain readable text, passwords and '
-        + 'all. It is for moving into another password manager — delete it once you have.', 'ghost',
-        () => { closeModal(); vaultExportCsv(mod); }),
-      item('Import from CSV', 'Reads a file from here, from Chrome, or from another manager. Entries '
-        + 'whose title and username are already in the vault are updated; the rest are added.', 'ghost',
-        () => { closeModal(); vaultImportCsv(mod); }),
-      el('p', { class: 'hint', text: 'For keeping it safe, use Export from the menu instead: the app '
-        + 'backup already includes this vault, encrypted. CSV is for getting the list into something '
-        + 'else, and protects nothing.' }),
+      el('div', { class: 'menu-list' }, [
+        menuItem('\ud83d\udd11', 'Change master password',
+          'Re-encrypts every entry. The old one stops opening anything',
+          () => { closeModal(); openMasterChange(mod, meta); }),
+        menuItem('\ud83d\udce4', 'Export to CSV',
+          'Every entry as plain readable text, passwords and all',
+          () => { closeModal(); vaultExportCsv(mod); }),
+        menuItem('\ud83d\udce5', 'Import from CSV',
+          'From here, from Chrome, or from another manager',
+          () => { closeModal(); vaultImportCsv(mod); }),
+      ]),
+      el('p', { class: 'hint vault-opt-foot', text: 'CSV is for moving the list into something else, '
+        + 'and protects nothing — delete the file once you have used it. To keep the vault safe, '
+        + 'use Backup & Restore in the menu: it already includes this vault, encrypted.' }),
       el('div', { class: 'btn-row' }, [
         el('button', { class: 'btn ghost', text: 'Close', onclick: closeModal }),
       ]),
@@ -16130,8 +16136,9 @@ async function checkBackupReminder() {
       // nothing out here can tell which one that is - the count is all there
       // is to go on, and one row means nothing has been saved yet.
       const vault = await DB.all('vault').catch(() => []);
+      const verb = now === 1 ? ' exists' : ' exist';
       msg = 'No backup yet · ' + now + (now === 1 ? ' entry' : ' entries')
-        + (vault.length > 1 ? ', passwords included, exist' : ' exist') + ' only on this phone';
+        + (vault.length > 1 ? ', passwords included,' + verb : verb) + ' only on this phone';
     } else if (drifted) {
       msg = added + ' new since your last backup, ' + ago;
     } else {
