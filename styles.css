@@ -2347,10 +2347,12 @@ input.pf-lim-input { width: 100%; padding: 9px 11px; border: 1px solid var(--lin
    puts them squarely in the footer corner. */
 body[data-mode="home"] .fab { bottom: calc(18px + var(--safe-bottom)); }
 body[data-mode="home"] .fab.fab-personal.is-second { bottom: calc(18px + 56px + 12px + var(--safe-bottom)); }
-/* ...and the page then has to end above them, or the backup line underneath
-   the section cards sits behind the stack. Height of both buttons, their gap
-   and the inset, plus a little air. */
-body[data-mode="home"] #homeView { padding-bottom: calc(18px + 56px + 12px + 56px + 14px + var(--safe-bottom)); }
+/* Just air, not clearance for the whole button stack. The buttons are FIXED,
+   so they take no page space; padding tall enough to sit under both of them
+   only bought 160px of empty scroll below a page that already ended. What
+   actually keeps the backup line off them is the padding-right below, which
+   works whether the page scrolls or not. */
+body[data-mode="home"] #homeView { padding-bottom: calc(20px + var(--safe-bottom)); }
 /* The buttons are fixed, so on a short page that line can still end up beside
    them however much padding follows it. Keeping the button column clear makes
    it wrap early instead of running underneath. */
@@ -2685,3 +2687,18 @@ input.milk-amt:focus { outline: none; }
 .trk-heat-swatch.h-mid  { background: var(--card-2); color: var(--muted); }
 .trk-heat-swatch.h-hi1  { background: rgba(248,113,113,0.18); }
 .trk-heat-swatch.h-hi2  { background: rgba(248,113,113,0.4); }
+
+/* ---- Home: how much month is left ---- */
+.home-month-row { display: flex; margin-top: 18px; }
+.home-month-pill {
+  display: inline-flex; align-items: baseline; gap: 4px;
+  padding: 5px 12px; border-radius: 999px;
+  background: rgba(56,189,248,0.16); border: 1px solid rgba(56,189,248,0.45);
+  color: var(--accent); font-size: 0.72rem; font-weight: 600;
+}
+.home-month-pill b { font-size: 0.92rem; font-weight: 800; }
+/* The last few days of a month are worth noticing, so it changes colour rather
+   than only changing its number. */
+.home-month-pill.is-tight { background: rgba(245,158,11,0.16); border-color: rgba(245,158,11,0.5); color: var(--warn); }
+/* Coming Up follows straight on, so it loses its own top gap. */
+.home-month-row + .due-soon { margin-top: 10px; }

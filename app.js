@@ -4133,6 +4133,25 @@ async function renderHome() {
   ]);
   host.appendChild(summaryCard);
 
+  // How much month is left, immediately above what is coming up in it. The two
+  // answer the same question from opposite ends - what is about to land, and
+  // how long there is to absorb it - so they belong together, and this one is
+  // always here rather than only when something happens to be due.
+  //
+  // Same count as every other per-day figure in the app: days you can still
+  // spend on, today included.
+  const _hDays = _spendableDaysLeft(todayISO().slice(0, 7));
+  host.appendChild(el('div', { class: 'home-month-row' }, [
+    el('span', {
+      class: 'home-month-pill' + (_hDays <= 5 ? ' is-tight' : ''),
+      title: perDayLabel(_hDays),
+    }, [
+      el('b', { text: String(_hDays) }),
+      el('span', { text: (_hDays === 1 ? ' day left in ' : ' days left in ')
+        + new Date().toLocaleString('en-US', { month: 'long' }) }),
+    ]),
+  ]));
+
   // Upcoming FD maturities + bond payouts, above the section cards. Wrapped
   // because a failure here must never blank Home - same defensive stance as the
   // live-stats blocks.
