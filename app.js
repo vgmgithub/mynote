@@ -5789,6 +5789,57 @@ function lockVault(quiet) {
   if (!quiet) { renderVault(); toast('Vault locked'); }
 }
 
+// ---------- Locking itself when you walk away ----------
+//
+// The key lives in a variable, so it survives the app being backgrounded -
+// and that is the case worth closing. A phone put down with the vault open,
+// screen off, picked up an hour later by somebody else, is one tap from every
+// password in it. Going away relocks it, and coming back asks again.
+//
+// But NOT instantly. Copying a password is a two-app job: copy here, switch
+// there, paste. Locking the moment the page hides would make this app's own
+// copy button demand the master password every single time, and a lock that
+// punishes normal use is a lock that gets turned off. Half a minute covers
+// that round trip and is nothing next to how long a phone sits in a pocket.
+//
+// Two triggers, because on a phone neither is reliable alone: a timer set when
+// the page hides, which a frozen tab may never get to run, and an elapsed
+// check when it comes back, which catches whatever the timer missed.
+const VAULT_AWAY_MS = 30000;
+let _vaultAwayAt = 0;
+let _vaultAwayTimer = null;
+
+function _vaultAwayClear() {
+  if (_vaultAwayTimer) { clearTimeout(_vaultAwayTimer); _vaultAwayTimer = null; }
+  _vaultAwayAt = 0;
+}
+
+function _vaultAutoLock() {
+  _vaultAwayClear();
+  if (!_vaultKey) return;
+  lockVault(true);
+  // Only worth saying if the screen it happened on is the one being looked at.
+  if (state.appMode === 'vault') { renderVault(); toast('Locked while you were away'); }
+}
+
+function watchVaultSession() {
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      if (!_vaultKey) return;
+      _vaultAwayAt = Date.now();
+      _vaultAwayTimer = setTimeout(_vaultAutoLock, VAULT_AWAY_MS);
+      return;
+    }
+    if (_vaultKey && _vaultAwayAt && Date.now() - _vaultAwayAt >= VAULT_AWAY_MS) _vaultAutoLock();
+    else _vaultAwayClear();
+  });
+  // The page is being put away for good, or frozen hard enough that nothing of
+  // ours will run again until it is restored. Drop the key quietly - there is
+  // no screen left to re-render, and if the page does come back it comes back
+  // locked, which is the right answer either way.
+  window.addEventListener('pagehide', () => { _vaultAwayClear(); if (_vaultKey) lockVault(true); });
+}
+
 async function _vaultMeta() {
   const [salt, verify] = await Promise.all([
     DB.get('meta', VAULT_SALT_KEY).catch(() => null),
@@ -5850,8 +5901,8 @@ async function renderVault() {
     search,
     el('button', { class: 'icon-btn vault-lock', type: 'button', title: 'Lock the vault',
       'aria-label': 'Lock the vault', text: '\ud83d\udd12', onclick: () => lockVault(false) }),
-    el('button', { class: 'icon-btn', type: 'button', title: 'Change master password',
-      'aria-label': 'Change master password', text: '\u2699', onclick: () => openMasterChange(mod, meta) }),
+    el('button', { class: 'icon-btn', type: 'button', title: 'Vault options',
+      'aria-label': 'Vault options', text: '\u2699', onclick: () => openVaultOptions(mod, meta) }),
   ]));
 
   if (failed) {
@@ -5889,7 +5940,12 @@ async function renderVault() {
     'Everything here is encrypted on this device with a key worked out from your master password. '
       + 'The master password itself is never saved, so there is nothing stored that could give it away '
       + '— and nothing that can recover it if you forget it.',
-    'The vault locks itself whenever you leave this screen, and again whenever the app reloads.',
+    'The vault locks itself when you leave this screen, when the app reloads, and half a minute '
+      + 'after the app goes into the background — so a phone put down with this page open, or gone '
+      + 'to sleep in a pocket, asks for the master password again on the way back in.',
+    'A backup from the menu carries this vault along with everything else. The entries travel '
+      + 'encrypted, exactly as they are stored, and open on the other side with whichever master '
+      + 'password was set when that backup was taken.',
     'What this protects: someone picking up the phone, and anyone who gets hold of a backup file, '
       + 'since the backup carries the encrypted rows and not the passwords. What it does not protect '
       + 'against: anyone who knows the master password, or software already running on the phone. '
@@ -6062,6 +6118,114 @@ function _vaultLockScreen(host, mod, meta) {
     pw, note,
   ]));
   setTimeout(() => pw.focus(), 60);
+}
+
+// ---------- The vault's own settings ----------
+//
+// The three things that act on the whole vault rather than on one entry, put
+// behind the single gear in the toolbar. Together, because they are the same
+// kind of decision - and because the two CSV ones each need a sentence of
+// warning beside them that would never fit on a toolbar button.
+function openVaultOptions(mod, meta) {
+  const item = (label, hint, cls, fn) => el('div', { class: 'vault-opt' }, [
+    el('button', { class: 'btn ' + cls, type: 'button', text: label, onclick: fn }),
+    el('p', { class: 'hint', text: hint }),
+  ]);
+  openModal(el('div', { class: 'sheet' }, [
+    el('div', { class: 'sheet-scroll' }, [
+      el('h2', { text: 'Vault options' }),
+      item('Change master password', 'Re-encrypts every entry with the new one. The old password stops '
+        + 'opening anything.', 'primary', () => { closeModal(); openMasterChange(mod, meta); }),
+      item('Export to CSV', 'A spreadsheet file of every entry in plain readable text, passwords and '
+        + 'all. It is for moving into another password manager — delete it once you have.', 'ghost',
+        () => { closeModal(); vaultExportCsv(mod); }),
+      item('Import from CSV', 'Reads a file from here, from Chrome, or from another manager. Entries '
+        + 'whose title and username are already in the vault are updated; the rest are added.', 'ghost',
+        () => { closeModal(); vaultImportCsv(mod); }),
+      el('p', { class: 'hint', text: 'For keeping it safe, use Export from the menu instead: the app '
+        + 'backup already includes this vault, encrypted. CSV is for getting the list into something '
+        + 'else, and protects nothing.' }),
+      el('div', { class: 'btn-row' }, [
+        el('button', { class: 'btn ghost', text: 'Close', onclick: closeModal }),
+      ]),
+    ]),
+  ]));
+}
+
+async function vaultExportCsv(mod) {
+  if (!_vaultKey) { toast('Unlock the vault first'); return; }
+  const { rows, failed } = await _vaultLoad(mod);
+  if (!rows.length) { toast('Nothing to export'); return; }
+  // Named in the warning rather than quietly left out. Leaving it out would be
+  // a surprise the first time an import came back missing it, and this is the
+  // one row whose presence in a plain file most deserves saying out loud.
+  const hasMaster = rows.some((r) => r.title === VAULT_MASTER_TITLE);
+  if (!window.confirm('Export ' + rows.length + (rows.length === 1 ? ' entry' : ' entries')
+    + ' as a plain CSV file?\n\nThe file is NOT encrypted. Every password in it can be read by anyone '
+    + 'who opens the file'
+    + (hasMaster ? ', including your master password' : '')
+    + '.\n\nSend it where you meant to, then delete it.')) return;
+  // A byte order mark so Excel reads it as UTF-8 instead of mangling anything
+  // outside ASCII; the parser on the way back in strips it again.
+  const blob = new Blob(['\ufeff' + mod.toCsv(rows)], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = el('a', { href: url, download: 'mynote-passwords-' + todayISO() + '.csv' });
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+  toast(rows.length + ' exported to CSV' + (failed ? ' · ' + failed + ' could not be opened' : ''));
+}
+
+// Matched on title AND username, never on title alone: two logins to the same
+// site is the ordinary case, and merging them would silently destroy one.
+// Case and surrounding space are ignored, because a file that has been through
+// a spreadsheet regularly comes back with both changed.
+const _vaultCsvKey = (r) => String(r.title || '').trim().toLowerCase()
+  + '\u0000' + String(r.username || '').trim().toLowerCase();
+
+function vaultImportCsv(mod) {
+  if (!_vaultKey) { toast('Unlock the vault first'); return; }
+  const input = el('input', { type: 'file', accept: 'text/csv,.csv' });
+  input.addEventListener('change', async () => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    let parsed;
+    try { parsed = mod.parseCsv(await file.text()); }
+    catch (e) { alert('Could not read that file: ' + (e && e.message ? e.message : e)); return; }
+    if (!parsed.entries.length) {
+      alert(parsed.unmatched.length
+        ? 'No password column found in that file.\n\nThe columns it has are: ' + parsed.unmatched.join(', ')
+          + '\n\nA first line naming the columns is what tells this app which one is which.'
+        : 'There are no entries in that file.');
+      return;
+    }
+    const { rows } = await _vaultLoad(mod);
+    const have = new Map(rows.map((r) => [_vaultCsvKey(r), r.id]));
+    let upd = 0;
+    parsed.entries.forEach((e) => { if (have.has(_vaultCsvKey(e))) upd++; });
+    const add = parsed.entries.length - upd;
+    const master = parsed.entries.some((e) => e.title === VAULT_MASTER_TITLE);
+    // Counted and shown BEFORE anything is written. An import that turns out
+    // to have updated forty rows you meant to add is not undoable.
+    if (!window.confirm('Import from ' + file.name + '?\n\n'
+      + add + ' to add, ' + upd + ' to update'
+      + (parsed.skipped ? ', ' + parsed.skipped + ' empty ' + (parsed.skipped === 1 ? 'row' : 'rows')
+        + ' ignored' : '')
+      + '.\n\nEverything imported is encrypted with your current master password.'
+      + (master ? '\n\nOne row is titled ' + VAULT_MASTER_TITLE + '. That changes only the note kept '
+        + 'inside the vault — the password that opens this page stays exactly as it is.' : ''))) return;
+    let done = 0;
+    let bad = 0;
+    for (const e of parsed.entries) {
+      const id = have.get(_vaultCsvKey(e));
+      try { await _vaultPut(mod, id != null ? Object.assign({ id }, e) : e); done++; }
+      catch (_) { bad++; }
+    }
+    toast(done + ' imported' + (bad ? ' · ' + bad + ' failed' : ''));
+    renderVault();
+  });
+  input.click();
 }
 
 // ---------- Changing the master password ----------
@@ -15501,6 +15665,7 @@ function bind() {
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) applyTheme();
   });
+  watchVaultSession();
   window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredInstall = e; });
 }
 

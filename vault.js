@@ -184,3 +184,112 @@ export function strength(pw) {
 // entries have a note or how long a username is. Searching and sorting happen
 // in memory after unlock, on a few dozen rows.
 export const VAULT_FIELDS = ['title', 'account', 'username', 'password', 'url', 'notes'];
+
+// ---------- CSV, in and out ----------
+//
+// Plain text, deliberately. A CSV only this app could read would be no use for
+// the one thing a CSV is for: getting the list out into a spreadsheet or
+// another password manager, and back in from one. So the file is readable by
+// anything - which also means readable by anyone who finds it. The screen that
+// offers it says so in those words; nothing here pretends the file is safe.
+//
+// Quoting follows RFC 4180: a field is wrapped in quotes when it contains a
+// comma, a quote or a newline, and its own quotes are doubled. Passwords
+// contain all three often enough that joining on commas loses data quietly,
+// which is the worst way for a password export to fail.
+export const CSV_COLUMNS = [
+  ['title', 'Title'], ['account', 'Account'], ['username', 'Username'],
+  ['password', 'Password'], ['url', 'Website/URL'], ['notes', 'Notes'],
+];
+
+const csvCell = (v) => {
+  const s = v == null ? '' : String(v);
+  return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+};
+
+export function toCsv(rows) {
+  const lines = [CSV_COLUMNS.map((c) => csvCell(c[1])).join(',')];
+  (rows || []).forEach((r) => lines.push(CSV_COLUMNS.map((c) => csvCell(r[c[0]])).join(',')));
+  return lines.join('\r\n') + '\r\n';
+}
+
+// Character at a time, not split(','), for the reason above - and because the
+// file being imported was probably written by something else, whose idea of a
+// line ending and an empty field may not match ours.
+export function parseCsvRaw(text) {
+  const s = String(text || '').replace(/^\uFEFF/, '');
+  const rows = [];
+  let row = [];
+  let cell = '';
+  let quoted = false;
+  const endCell = () => { row.push(cell); cell = ''; };
+  const endRow = () => { endCell(); rows.push(row); row = []; };
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (quoted) {
+      if (ch !== '"') { cell += ch; continue; }
+      if (s[i + 1] === '"') { cell += '"'; i++; continue; }   // a doubled quote is one quote
+      quoted = false;
+      continue;
+    }
+    if (ch === '"' && cell === '') { quoted = true; continue; }
+    if (ch === ',') { endCell(); continue; }
+    if (ch === '\r') { if (s[i + 1] === '\n') i++; endRow(); continue; }
+    if (ch === '\n') { endRow(); continue; }
+    cell += ch;
+  }
+  if (cell !== '' || row.length) endRow();
+  return rows.filter((r) => r.length > 1 || String(r[0] || '').trim() !== '');
+}
+
+// Column names other exports use for the same thing. Matching on the header
+// rather than on position is what lets a file from Chrome or Bitwarden come
+// straight in, and is also the only safe way to read one: a file whose columns
+// are in a different order would otherwise write the username into the
+// password field without a word.
+const CSV_ALIASES = {
+  title: ['title', 'name', 'item name', 'account name'],
+  account: ['account', 'folder', 'group'],
+  username: ['username', 'user', 'user name', 'login', 'login_username', 'email', 'login name'],
+  password: ['password', 'pass', 'login_password'],
+  url: ['website/url', 'url', 'website', 'web site', 'site', 'login_uri', 'login uri', 'urls'],
+  notes: ['notes', 'note', 'comment', 'comments', 'extra'],
+};
+
+// Trimmed everywhere except the password and the notes: a password may
+// legitimately start or end with a space, and a note may legitimately be
+// several lines. Tidying either would be silent corruption.
+const CSV_KEEP_RAW = { password: 1, notes: 1 };
+
+export function parseCsv(text) {
+  const rows = parseCsvRaw(text);
+  if (!rows.length) return { entries: [], columns: [], skipped: 0, unmatched: [] };
+  const head = rows[0].map((h) => String(h || '').trim().toLowerCase());
+  const idx = {};
+  VAULT_FIELDS.forEach((f) => {
+    const i = head.findIndex((h) => (CSV_ALIASES[f] || []).indexOf(h) >= 0);
+    if (i >= 0) idx[f] = i;
+  });
+  // Nothing recognisable in the header line. Reading on would mean guessing
+  // which column holds the secret, so it stops here and says which columns it
+  // did find, which is usually enough to see what went wrong.
+  if (idx.title == null && idx.password == null) {
+    return { entries: [], columns: [], skipped: rows.length - 1, unmatched: head };
+  }
+  const entries = [];
+  let skipped = 0;
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    const rec = {};
+    VAULT_FIELDS.forEach((f) => {
+      const raw = idx[f] == null ? '' : String(r[idx[f]] == null ? '' : r[idx[f]]);
+      rec[f] = CSV_KEEP_RAW[f] ? raw : raw.trim();
+    });
+    if (!rec.title && !rec.password && !rec.username) { skipped++; continue; }
+    // A row with a password and no title is worth keeping - it just needs
+    // something to be listed under.
+    if (!rec.title) rec.title = rec.url || rec.username || 'Untitled';
+    entries.push(rec);
+  }
+  return { entries, columns: Object.keys(idx), skipped, unmatched: [] };
+}

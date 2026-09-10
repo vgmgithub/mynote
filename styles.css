@@ -2729,6 +2729,11 @@ input.vault-master:focus { outline: none; border-color: var(--accent); }
 .vault-meter-lbl { flex: 0 0 auto; font-size: 0.6rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); }
 
 .vault-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+/* Vault options: a full-width button with its warning directly under it, so
+   the sentence that matters is read before the tap, not after. */
+.vault-opt { margin: 0 0 18px; }
+.vault-opt .btn { width: 100%; }
+.vault-opt .hint { margin: 6px 2px 0; }
 input.vault-search {
   flex: 1; min-width: 0; padding: 10px 12px; border: 1px solid var(--line);
   border-radius: 11px; background: var(--card); color: var(--text); font-family: inherit; font-size: 0.88rem;
