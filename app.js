@@ -5958,11 +5958,15 @@ function _vaultLockScreen(host, mod, meta) {
 
     const create = async () => {
       const a = pw.value, b = pw2.value;
-      if (a.length < 8) { setNote('At least 8 characters.', true); return; }
+      // No length floor and no strength gate. Whose vault it is decides what
+      // is worth locking it with; the meter below says what the choice buys
+      // and then gets out of the way. The only thing still required is a
+      // character - an empty master password would unlock on an empty field,
+      // which is not a weak lock but no lock at all.
+      if (!a) { setNote('Type something.', true); return; }
+      // Typed twice, and that stays. It is not a rule about the password, it
+      // is the only guard against a typo in a thing that cannot be recovered.
       if (a !== b) { setNote('The two do not match.', true); return; }
-      const st = mod.strength(a);
-      if (st.bits < 40 && !window.confirm('That password is rated ' + st.label
-        + '. It is the only thing standing in front of every password you store here.\n\nUse it anyway?')) return;
       if (!window.confirm('Set this as your master password?\n\nIt is never stored, so if you forget it '
         + 'the vault cannot be opened or recovered by anyone, including you.')) return;
       // Rows already here were encrypted with a DIFFERENT key - a restored
@@ -6010,8 +6014,8 @@ function _vaultLockScreen(host, mod, meta) {
     host.appendChild(el('div', { class: 'vault-gate' }, [
       el('div', { class: 'vault-gate-ico', text: '\ud83d\udd10' }),
       el('h2', { class: 'vault-gate-h', text: 'Set a master password' }),
-      el('p', { class: 'hint', text: 'One password opens this page. Everything you save here is encrypted '
-        + 'with it, on this device.' }),
+      el('p', { class: 'hint', text: 'One password opens this page. Anything you like - short, long, a word, '
+        + 'a phrase. Everything you save here is encrypted with it, on this device.' }),
       pw, meter, pw2, note,
       el('button', { class: 'btn primary vault-go', text: 'Create vault', onclick: create }),
       el('p', { class: 'hint vault-warn', text: '\u26a0 It is never stored anywhere. Forget it and the vault '
@@ -6031,7 +6035,10 @@ function _vaultLockScreen(host, mod, meta) {
   let attempt = 0;
   const tryUnlock = async () => {
     const val = pw.value;
-    if (val.length < 4) { setNote(''); return; }
+    // Anything at all is a valid master password now, so anything at all has
+    // to be tried. Waiting for four characters would leave a two-character
+    // vault permanently shut.
+    if (!val) { setNote(''); return; }
     const mine = ++attempt;
     setNote('Checking...');
     const key = await mod.deriveKey(val, meta.salt);
@@ -6085,7 +6092,7 @@ function openMasterChange(mod, meta) {
     if (!(await mod.checkVerifier(oldKey, meta.verify))) {
       note.textContent = 'That is not the current password.'; note.classList.add('warn'); return;
     }
-    if (nw.value.length < 8) { note.textContent = 'At least 8 characters.'; note.classList.add('warn'); return; }
+    if (!nw.value) { note.textContent = 'Type something.'; note.classList.add('warn'); return; }
     if (nw.value !== nw2.value) { note.textContent = 'The two new ones do not match.'; note.classList.add('warn'); return; }
 
     note.textContent = 'Re-encrypting...';
