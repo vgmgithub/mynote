@@ -2823,6 +2823,39 @@ html[data-theme="light"] .vault-ico.is-letter {
 .vault-copy { color: var(--muted); }
 .vault-copy:hover, .vault-copy:active { color: var(--accent); }
 .copy-ico { display: block; width: 14px; height: 14px; }
+.edit-ico { display: block; width: 17px; height: 17px; }
+
+/* ---- Reading one entry ---- */
+.vd-head { display: flex; align-items: center; gap: 11px; margin-bottom: 4px; }
+.vault-ico.vd-ico { flex: 0 0 42px; width: 42px; height: 42px; font-size: 1.3rem; }
+.vd-head-text { flex: 1; min-width: 0; }
+h2.vd-title { margin: 0; font-size: 1.05rem; overflow-wrap: anywhere; }
+.vd-cat { font-size: 0.68rem; color: var(--muted); margin-top: 2px; }
+.vd-edit { flex: 0 0 auto; color: var(--accent); padding: 7px; }
+
+/* Label and value on one line while the value is short, because scanning six
+   labelled lines is the whole point of this screen. The value wraps under its
+   own label rather than pushing the buttons off the edge. */
+.vd-rows { margin: 14px 0 4px; border-top: 1px solid var(--line); }
+.vd-row {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 9px 2px; border-bottom: 1px solid var(--line);
+}
+.vd-label {
+  flex: 0 0 72px; font-size: 0.62rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.5px; color: var(--muted);
+}
+.vd-value { flex: 1; min-width: 0; font-size: 0.86rem; overflow-wrap: anywhere; }
+.vd-acts { flex: 0 0 auto; display: flex; align-items: center; gap: 1px; align-self: center; }
+.vd-acts .icon-btn { padding: 3px 5px; }
+.vd-pw { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 1px; color: var(--muted); }
+.vd-pw.is-open { color: var(--text); letter-spacing: 0.5px; }
+a.vd-link { color: var(--accent); text-decoration: none; }
+a.vd-link:hover { text-decoration: underline; }
+.vd-notes-row { flex-direction: column; align-items: stretch; gap: 4px; }
+.vd-notes-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.vd-notes { white-space: pre-wrap; font-size: 0.82rem; }
+.vd-when { margin: 10px 2px 0; font-size: 0.66rem; }
 
 /* ---- Icon picker in the form ---- */
 .vault-ico-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

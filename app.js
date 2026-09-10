@@ -4586,6 +4586,18 @@ function _copyIcon() {
   return svg;
 }
 
+function _editIcon() {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('class', 'edit-ico');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+  svg.innerHTML = '<path d="M4.6 19.4h3.2L18.4 8.8a1.7 1.7 0 0 0 0-2.4l-.8-.8a1.7 1.7 0 0 0-2.4 0'
+    + 'L4.6 16.2v3.2Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>'
+    + '<path d="M13.7 7.3l3 3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>';
+  return svg;
+}
+
 // ---------- Investment section page ----------
 async function renderHomeInvestment() {
   const host = $('#investmentView');
@@ -6067,63 +6079,158 @@ function _vaultIcon(r, mod, cls) {
     style: '--ico-h:' + mod.iconHue(r.title || '') });
 }
 
+// Copying, wherever it happens. Same wording, same failure, one place.
+async function _vaultCopy(label, value) {
+  if (!value) { toast('Nothing to copy'); return; }
+  try { await navigator.clipboard.writeText(value); toast(label + ' copied'); }
+  catch (_) { toast('Could not reach the clipboard'); }
+}
+
+function _vaultCopyBtn(label, getValue) {
+  const b = el('button', {
+    class: 'icon-btn vault-copy', type: 'button',
+    title: 'Copy ' + label.toLowerCase(), 'aria-label': 'Copy ' + label.toLowerCase(),
+  }, [_copyIcon()]);
+  b.addEventListener('click', (e) => { e.stopPropagation(); _vaultCopy(label, getValue()); });
+  return b;
+}
+
 function _vaultCard(r, mod) {
   const subText = [r.account, r.username].filter(Boolean).join(' · ')
     || r.url || r.category || 'No account or username';
-  const sub = el('div', { class: 'vault-sub' });
-  const eye = el('button', { class: 'icon-btn vault-eye', type: 'button' });
-  const copy = el('button', {
-    class: 'icon-btn vault-copy', type: 'button',
-    title: 'Copy password', 'aria-label': 'Copy password',
-  }, [_copyIcon()]);
-  copy.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    if (!r.password) { toast('Nothing to copy'); return; }
-    try { await navigator.clipboard.writeText(r.password); toast('Password copied'); }
-    catch (_) { toast('Could not reach the clipboard'); }
-  });
-
-  // When it last changed, under the buttons. A password you cannot remember
-  // rotating is one you have not, and the date is the only thing on the card
-  // that says so.
+  const sub = el('div', { class: 'vault-sub', text: subText });
   const when = el('div', {
     class: 'vault-when', text: _fmtVaultTime(r.updatedAt),
     title: r.updatedAt ? 'Last updated ' + new Date(r.updatedAt).toLocaleString() : '',
   });
+  const acts = el('div', { class: 'vault-act-row' });
   const card = el('div', { class: 'vault-card' }, [
     _vaultIcon(r, mod),
-    el('div', { class: 'vault-card-main is-tappable', onclick: () => openVaultForm(mod, r) }, [
+    el('div', { class: 'vault-card-main is-tappable', onclick: () => openVaultDetail(mod, r) }, [
       el('div', { class: 'vault-title', text: r.title || 'Untitled' }),
       sub,
     ]),
-    el('div', { class: 'vault-acts' }, [
-      el('div', { class: 'vault-act-row' }, [eye, copy]),
-      when,
-    ]),
+    el('div', { class: 'vault-acts' }, [acts, when]),
   ]);
 
-  // Drawn rather than rebuilt. Re-rendering the whole list to show one
-  // password threw the scroll position away every time.
-  const draw = (on) => {
-    card.classList.toggle('is-open', on);
-    sub.classList.toggle('is-pw', on);
-    sub.textContent = on ? (r.password || 'No password saved') : subText;
-    eye.textContent = on ? '\ud83d\ude48' : '\ud83d\udc41';
-    eye.title = on ? 'Hide the password' : 'Show the password';
-    eye.setAttribute('aria-label', eye.title);
-  };
-  card._vaultDraw = draw;
-  eye.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const on = _vaultReveal !== r.id;
-    document.querySelectorAll('#vaultView .vault-card.is-open').forEach((c) => {
-      if (c !== card && c._vaultDraw) c._vaultDraw(false);
+  // No password on this entry - a Wi-Fi note, a customer ID, a document
+  // reference - so no eye and no copy. Both buttons would only ever have
+  // reported that there was nothing to show and nothing to copy, which is a
+  // worse answer than not offering them.
+  if (String(r.password || '')) {
+    const eye = el('button', { class: 'icon-btn vault-eye', type: 'button' });
+    acts.appendChild(eye);
+    acts.appendChild(_vaultCopyBtn('Password', () => r.password));
+    // Drawn rather than rebuilt. Re-rendering the whole list to show one
+    // password threw the scroll position away every time.
+    const draw = (on) => {
+      card.classList.toggle('is-open', on);
+      sub.classList.toggle('is-pw', on);
+      sub.textContent = on ? r.password : subText;
+      eye.textContent = on ? '\ud83d\ude48' : '\ud83d\udc41';
+      eye.title = on ? 'Hide the password' : 'Show the password';
+      eye.setAttribute('aria-label', eye.title);
+    };
+    card._vaultDraw = draw;
+    eye.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const on = _vaultReveal !== r.id;
+      document.querySelectorAll('#vaultView .vault-card.is-open').forEach((c) => {
+        if (c !== card && c._vaultDraw) c._vaultDraw(false);
+      });
+      _vaultReveal = on ? r.id : null;
+      draw(on);
     });
-    _vaultReveal = on ? r.id : null;
-    draw(on);
-  });
-  draw(_vaultReveal === r.id);
+    draw(_vaultReveal === r.id);
+  }
   return card;
+}
+
+// ---------- Looking at one, before changing it ----------
+//
+// Tapping a card used to drop straight into the edit form, which is the wrong
+// default: reading an entry is the common act and editing one is the rare
+// one, and a screen full of live inputs invites a stray keystroke into a
+// password you only came to read. This shows what is there, and nothing that
+// is not - an entry with no username has no Username line rather than an
+// empty box - with one pencil to get to the form when that is what you meant.
+function openVaultDetail(mod, r) {
+  if (!_vaultKey) return;
+  const rows = [];
+  const line = (label, value, extras) => {
+    rows.push(el('div', { class: 'vd-row' }, [
+      el('div', { class: 'vd-label', text: label }),
+      typeof value === 'string' ? el('div', { class: 'vd-value', text: value }) : value,
+      el('div', { class: 'vd-acts' }, extras || []),
+    ]));
+  };
+
+  if (r.account) line('Account', r.account, [_vaultCopyBtn('Account', () => r.account)]);
+  if (r.username) line('Username', r.username, [_vaultCopyBtn('Username', () => r.username)]);
+
+  if (String(r.password || '')) {
+    const dots = '\u2022'.repeat(Math.min(14, Math.max(6, r.password.length)));
+    const pwVal = el('div', { class: 'vd-value vd-pw', text: dots });
+    const eye = el('button', { class: 'icon-btn vault-eye', type: 'button',
+      text: '\ud83d\udc41', title: 'Show the password', 'aria-label': 'Show the password' });
+    let shown = false;
+    eye.addEventListener('click', () => {
+      shown = !shown;
+      pwVal.textContent = shown ? r.password : dots;
+      pwVal.classList.toggle('is-open', shown);
+      eye.textContent = shown ? '\ud83d\ude48' : '\ud83d\udc41';
+      eye.title = shown ? 'Hide the password' : 'Show the password';
+      eye.setAttribute('aria-label', eye.title);
+    });
+    line('Password', pwVal, [eye, _vaultCopyBtn('Password', () => r.password)]);
+  }
+
+  if (r.url) {
+    // Typed without a scheme more often than not, and a bare "netflix.com"
+    // in an href resolves against this app rather than the internet.
+    const href = /^[a-z][a-z0-9+.-]*:\/\//i.test(r.url) ? r.url : 'https://' + r.url;
+    line('Website', el('a', {
+      class: 'vd-value vd-link', href, target: '_blank', rel: 'noopener noreferrer', text: r.url,
+    }), [_vaultCopyBtn('Address', () => r.url)]);
+  }
+
+  // Notes gets one too. It is where recovery codes and security answers end
+  // up, which are exactly the things nobody should be retyping by eye.
+  if (r.notes) {
+    rows.push(el('div', { class: 'vd-row vd-notes-row' }, [
+      el('div', { class: 'vd-notes-head' }, [
+        el('div', { class: 'vd-label', text: 'Notes' }),
+        el('div', { class: 'vd-acts' }, [_vaultCopyBtn('Notes', () => r.notes)]),
+      ]),
+      el('div', { class: 'vd-value vd-notes', text: r.notes }),
+    ]));
+  }
+
+  const edit = el('button', {
+    class: 'icon-btn vd-edit', type: 'button', title: 'Edit this entry', 'aria-label': 'Edit this entry',
+    onclick: () => { closeModal(); openVaultForm(mod, r); },
+  }, [_editIcon()]);
+
+  openModal(el('div', { class: 'sheet' }, [
+    el('div', { class: 'sheet-scroll' }, [
+      el('div', { class: 'vd-head' }, [
+        _vaultIcon(r, mod, ' vd-ico'),
+        el('div', { class: 'vd-head-text' }, [
+          el('h2', { class: 'vd-title', text: r.title || 'Untitled' }),
+          r.category ? el('div', { class: 'vd-cat', text: r.category }) : document.createTextNode(''),
+        ]),
+        edit,
+      ]),
+      rows.length ? el('div', { class: 'vd-rows' }, rows)
+        : el('p', { class: 'hint', text: 'Nothing saved on this one yet but the title. Tap the pencil to fill it in.' }),
+      el('p', { class: 'hint vd-when', text: r.updatedAt
+        ? 'Last updated ' + new Date(r.updatedAt).toLocaleString() : '' }),
+      el('div', { class: 'btn-row' }, [
+        el('button', { class: 'btn primary', text: 'Edit', onclick: () => { closeModal(); openVaultForm(mod, r); } }),
+        el('button', { class: 'btn ghost', text: 'Close', onclick: closeModal }),
+      ]),
+    ]),
+  ]));
 }
 // ---------- The lock screen ----------
 function _vaultLockScreen(host, mod, meta) {
