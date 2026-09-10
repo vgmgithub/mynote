@@ -183,7 +183,106 @@ export function strength(pw) {
 // not field by field - so the store leaks nothing at all, not even which
 // entries have a note or how long a username is. Searching and sorting happen
 // in memory after unlock, on a few dozen rows.
-export const VAULT_FIELDS = ['title', 'account', 'username', 'password', 'url', 'notes'];
+export const VAULT_FIELDS = ['title', 'account', 'username', 'password', 'url', 'notes',
+  'category', 'icon'];
+
+// ---------- What kind of thing it is ----------
+//
+// A fixed list rather than free text. Categories are only worth having if two
+// entries that belong together actually land on the same one, and a typed
+// field guarantees they will not: "bank", "Bank", "Banking", "HDFC bank".
+// Each carries its own icon, which is what an entry falls back to when its
+// title says nothing recognisable.
+//
+// Optional throughout. Nothing here refuses to save without one.
+export const VAULT_CATEGORIES = [
+  { name: 'Logins', icon: '\u{1F511}' },
+  { name: 'App', icon: '\u{1F4F1}' },
+  { name: 'Email', icon: '\u2709\uFE0F' },
+  { name: 'Banks', icon: '\u{1F3E6}' },
+  { name: 'Card Details', icon: '\u{1F4B3}' },
+  { name: 'Investments', icon: '\u{1F4C8}' },
+  { name: 'Documents', icon: '\u{1F4C4}' },
+  { name: 'Government ID', icon: '\u{1F6C2}' },
+  { name: 'Insurance', icon: '\u{1F6E1}\uFE0F' },
+  { name: 'Shopping', icon: '\u{1F6D2}' },
+  { name: 'Social', icon: '\u{1F4AC}' },
+  { name: 'Entertainment', icon: '\u{1F3AC}' },
+  { name: 'Work', icon: '\u{1F4BC}' },
+  { name: 'Wi-Fi', icon: '\u{1F4F6}' },
+  { name: 'Other', icon: '\u{1F5C2}\uFE0F' },
+];
+
+// What a title tends to mean. Checked in order, first match wins, so the
+// narrow patterns come before the broad ones - "jiocinema" has to be caught by
+// the streaming line before "jio" is caught by the broadband one.
+//
+// This is a convenience, never a decision: it only ever fills in an icon
+// nobody chose, and choosing one overrides it permanently.
+const TITLE_ICONS = [
+  [/netflix|prime ?video|hotstar|jio ?cinema|sony ?liv|zee5|youtube|spotify|disney|apple ?tv/, '\u{1F3AC}'],
+  [/gmail|outlook|yahoo|proton ?mail|zoho ?mail|\bmail\b|e-?mail/, '\u2709\uFE0F'],
+  [/demat|zerodha|groww|upstox|angel ?one|kite|mutual ?fund|nsdl|cdsl|trading|smallcase/, '\u{1F4C8}'],
+  [/bank|hdfc|icici|\bsbi\b|axis|kotak|indusind|canara|\bpnb\b|\bidfc\b|\bboi\b|net ?banking/, '\u{1F3E6}'],
+  [/\bupi\b|g ?pay|google ?pay|phone ?pe|paytm|bhim|amazon ?pay/, '\u{1F4B8}'],
+  [/credit ?card|debit ?card|\bcard\b|visa|master ?card|rupay|amex/, '\u{1F4B3}'],
+  [/amazon|flipkart|myntra|ajio|big ?basket|blinkit|zepto|swiggy|zomato|shop|store/, '\u{1F6D2}'],
+  [/insta|facebook|twitter|linked ?in|whats ?app|telegram|reddit|snapchat|threads|pinterest/, '\u{1F4AC}'],
+  [/wi-?fi|router|broadband|airtel|\bjio\b|\bbsnl\b|fibernet|hathway|modem/, '\u{1F4F6}'],
+  [/aadhaar|aadhar|\bpan\b|passport|licen[cs]e|voter|income ?tax|\bepf\b|\buan\b|digilocker|\bgst\b/, '\u{1F6C2}'],
+  [/insur|policy|\blic\b|term ?plan|mediclaim|health ?cover/, '\u{1F6E1}\uFE0F'],
+  [/github|gitlab|jira|slack|confluence|office ?365|teams|zoom|\bvpn\b|sify|\bwork\b|payroll/, '\u{1F4BC}'],
+  [/steam|epic ?games|play ?station|xbox|nintendo|\bgame/, '\u{1F3AE}'],
+  [/crypto|binance|wazirx|coin ?dcx|bitcoin|wallet/, '\u{1FA99}'],
+  [/hospital|clinic|doctor|apollo|practo|pharma|medic/, '\u{1F3E5}'],
+  [/school|college|university|course|udemy|coursera|exam/, '\u{1F393}'],
+  [/electric|\bgas\b|water ?bill|\bbescom\b|utility|municipal|property ?tax/, '\u{1F4A1}'],
+  [/aws|azure|godaddy|hosting|domain|cloud|server|admin ?panel/, '\u2699\uFE0F'],
+];
+
+// The icon for an entry, in strict order of who decided it:
+//   1. an emoji picked by hand - always wins, and is why the picker exists
+//   2. what the title or the site name looks like
+//   3. the category it was filed under
+//   4. its own first letter, on a colour of its own
+// Never blank. A row of entries where some have an icon and some have a gap
+// is harder to read down than one where every line starts the same way.
+export function iconFor(rec) {
+  const r = rec || {};
+  if (r.icon) return { emoji: String(r.icon) };
+  const hay = (String(r.title || '') + ' ' + String(r.url || '')).toLowerCase();
+  if (hay.trim()) {
+    const hit = TITLE_ICONS.find((t) => t[0].test(hay));
+    if (hit) return { emoji: hit[1] };
+  }
+  const cat = VAULT_CATEGORIES.find((c) => c.name === r.category);
+  if (cat) return { emoji: cat.icon };
+  // Array.from, not charAt: a title starting with an emoji or a Devanagari
+  // letter would otherwise be cut in half and render as a broken box.
+  const first = Array.from(String(r.title || '').trim())[0] || '?';
+  return { letter: first.toUpperCase() };
+}
+
+// A colour for the letter tile, fixed by the title, so an entry keeps the same
+// one for life and the list can be found by colour before it is read.
+export function iconHue(text) {
+  const s = String(text || '');
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
+  return h;
+}
+
+// The palette the picker offers. Deliberately a couple of dozen rather than
+// every emoji there is: a picker you have to scroll and search is slower than
+// accepting the default, and the default is usually right.
+export const ICON_CHOICES = [
+  '\u{1F511}', '\u{1F510}', '\u{1F4F1}', '\u{1F4BB}', '\u2709\uFE0F', '\u{1F3E6}',
+  '\u{1F4B3}', '\u{1F4B0}', '\u{1F4B8}', '\u{1F4C8}', '\u{1F4C4}', '\u{1F5C2}\uFE0F',
+  '\u{1F6C2}', '\u{1F6E1}\uFE0F', '\u{1F3E5}', '\u{1F393}', '\u{1F6D2}', '\u{1F381}',
+  '\u{1F4AC}', '\u{1F4F7}', '\u{1F3AC}', '\u{1F3B5}', '\u{1F3AE}', '\u{1F4F6}',
+  '\u{1F4A1}', '\u{1F697}', '\u2708\uFE0F', '\u{1F3E0}', '\u{1F4BC}', '\u2699\uFE0F',
+  '\u{1F310}', '\u{1F4CE}', '\u{1F464}', '\u{1F465}', '\u2B50', '\u2764\uFE0F',
+];
 
 // ---------- CSV, in and out ----------
 //
@@ -198,8 +297,9 @@ export const VAULT_FIELDS = ['title', 'account', 'username', 'password', 'url', 
 // contain all three often enough that joining on commas loses data quietly,
 // which is the worst way for a password export to fail.
 export const CSV_COLUMNS = [
-  ['title', 'Title'], ['account', 'Account'], ['username', 'Username'],
-  ['password', 'Password'], ['url', 'Website/URL'], ['notes', 'Notes'],
+  ['title', 'Title'], ['category', 'Category'], ['account', 'Account'],
+  ['username', 'Username'], ['password', 'Password'], ['url', 'Website/URL'],
+  ['notes', 'Notes'], ['icon', 'Icon'],
 ];
 
 const csvCell = (v) => {
@@ -249,7 +349,11 @@ export function parseCsvRaw(text) {
 // password field without a word.
 const CSV_ALIASES = {
   title: ['title', 'name', 'item name', 'account name'],
-  account: ['account', 'folder', 'group'],
+  account: ['account'],
+  // Other managers call this a folder or a group; it is the same idea, and an
+  // imported name that matches none of ours is simply kept as it came.
+  category: ['category', 'folder', 'group'],
+  icon: ['icon', 'emoji'],
   username: ['username', 'user', 'user name', 'login', 'login_username', 'email', 'login name'],
   password: ['password', 'pass', 'login_password'],
   url: ['website/url', 'url', 'website', 'web site', 'site', 'login_uri', 'login uri', 'urls'],

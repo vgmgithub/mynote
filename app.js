@@ -5893,7 +5893,7 @@ async function renderVault() {
 
   // ---- Toolbar: search, and the two things you do to the vault itself ----
   const search = el('input', {
-    type: 'search', class: 'vault-search', placeholder: 'Search titles, accounts, sites',
+    type: 'search', class: 'vault-search', placeholder: 'Search titles, accounts, categories',
     value: _vaultQuery, autocomplete: 'off',
   });
   search.addEventListener('input', () => { _vaultQuery = search.value; drawList(); });
@@ -5917,7 +5917,7 @@ async function renderVault() {
   function drawList() {
     const q = _vaultQuery.trim().toLowerCase();
     const shown = !q ? _vaultRows : _vaultRows.filter((r) =>
-      [r.title, r.account, r.username, r.url].some((f) => String(f || '').toLowerCase().indexOf(q) >= 0));
+      [r.title, r.account, r.username, r.url, r.category].some((f) => String(f || '').toLowerCase().indexOf(q) >= 0));
     list.innerHTML = '';
     if (!_vaultRows.length) {
       list.appendChild(el('div', { class: 'empty' }, [
@@ -5954,37 +5954,73 @@ async function renderVault() {
 }
 
 // ---------- One entry ----------
-function _vaultCard(r, mod) {
-  const revealed = _vaultReveal === r.id;
-  const dots = '\u2022'.repeat(Math.min(12, Math.max(6, String(r.password || '').length)));
-  const meta = [r.account, r.username].filter(Boolean).join(' · ');
-  const copy = async (label, value) => {
-    if (!value) { toast('Nothing to copy'); return; }
-    try { await navigator.clipboard.writeText(value); toast(label + ' copied'); }
-    catch (_) { toast('Could not reach the clipboard'); }
-  };
-  return el('div', { class: 'vault-card' }, [
-    el('div', { class: 'vault-card-main is-tappable', onclick: () => openVaultForm(mod, r) }, [
-      el('div', { class: 'vault-title', text: r.title || 'Untitled' }),
-      meta ? el('div', { class: 'vault-meta', text: meta }) : document.createTextNode(''),
-      r.url ? el('div', { class: 'vault-url', text: r.url }) : document.createTextNode(''),
-    ]),
-    el('div', { class: 'vault-pw-row' }, [
-      el('code', { class: 'vault-pw' + (revealed ? ' is-open' : ''), text: revealed ? (r.password || '') : dots }),
-      el('button', {
-        class: 'icon-btn vault-eye', type: 'button',
-        title: revealed ? 'Hide' : 'Show', 'aria-label': revealed ? 'Hide password' : 'Show password',
-        text: revealed ? '\ud83d\ude48' : '\ud83d\udc41',
-        onclick: (e) => { e.stopPropagation(); _vaultReveal = revealed ? null : r.id; renderVault(); },
-      }),
-      el('button', {
-        class: 'icon-btn', type: 'button', title: 'Copy password', 'aria-label': 'Copy password',
-        text: '\ud83d\udccb', onclick: (e) => { e.stopPropagation(); copy('Password', r.password); },
-      }),
-    ]),
-  ]);
+//
+// Two lines and nothing else. The title, and under it whichever of account and
+// username exist - which is what tells two logins to the same site apart, and
+// is the only thing a list needs to be scanned by. The web address moved into
+// the form: it is long, it wraps, it pushed every card to three lines, and it
+// is never the thing being looked for.
+//
+// The eye swaps the second line for the password rather than adding a third,
+// so revealing one costs no height at any ordinary length - only a password
+// long enough to wrap makes the card grow, and being able to read all of it
+// matters more than the line staying put. Only one is open at a time: a
+// screen of cards all showing their passwords is what hiding them is for.
+function _vaultIcon(r, mod, cls) {
+  const ic = mod.iconFor(r);
+  if (ic.emoji) return el('div', { class: 'vault-ico' + (cls || ''), text: ic.emoji });
+  return el('div', { class: 'vault-ico is-letter' + (cls || ''), text: ic.letter,
+    style: '--ico-h:' + mod.iconHue(r.title || '') });
 }
 
+function _vaultCard(r, mod) {
+  const subText = [r.account, r.username].filter(Boolean).join(' · ')
+    || r.url || r.category || 'No account or username';
+  const sub = el('div', { class: 'vault-sub' });
+  const eye = el('button', { class: 'icon-btn vault-eye', type: 'button' });
+  const copy = el('button', {
+    class: 'icon-btn', type: 'button', title: 'Copy password', 'aria-label': 'Copy password',
+    text: '\ud83d\udccb',
+  });
+  copy.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (!r.password) { toast('Nothing to copy'); return; }
+    try { await navigator.clipboard.writeText(r.password); toast('Password copied'); }
+    catch (_) { toast('Could not reach the clipboard'); }
+  });
+
+  const card = el('div', { class: 'vault-card' }, [
+    _vaultIcon(r, mod),
+    el('div', { class: 'vault-card-main is-tappable', onclick: () => openVaultForm(mod, r) }, [
+      el('div', { class: 'vault-title', text: r.title || 'Untitled' }),
+      sub,
+    ]),
+    el('div', { class: 'vault-acts' }, [eye, copy]),
+  ]);
+
+  // Drawn rather than rebuilt. Re-rendering the whole list to show one
+  // password threw the scroll position away every time.
+  const draw = (on) => {
+    card.classList.toggle('is-open', on);
+    sub.classList.toggle('is-pw', on);
+    sub.textContent = on ? (r.password || 'No password saved') : subText;
+    eye.textContent = on ? '\ud83d\ude48' : '\ud83d\udc41';
+    eye.title = on ? 'Hide the password' : 'Show the password';
+    eye.setAttribute('aria-label', eye.title);
+  };
+  card._vaultDraw = draw;
+  eye.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const on = _vaultReveal !== r.id;
+    document.querySelectorAll('#vaultView .vault-card.is-open').forEach((c) => {
+      if (c !== card && c._vaultDraw) c._vaultDraw(false);
+    });
+    _vaultReveal = on ? r.id : null;
+    draw(on);
+  });
+  draw(_vaultReveal === r.id);
+  return card;
+}
 // ---------- The lock screen ----------
 function _vaultLockScreen(host, mod, meta) {
   const first = !meta.salt || !meta.verify;
@@ -6319,6 +6355,60 @@ async function openVaultForm(mod, existing) {
     placeholder: 'Security questions, recovery codes, anything else' });
   notes.value = (existing && existing.notes) || '';
 
+  // ---- Category, and the icon that follows from it ----
+  //
+  // Both optional, and both feed the same preview, so the effect of a choice
+  // is visible in the form before it is visible in the list.
+  let chosenCat = (existing && existing.category) || '';
+  let chosenIcon = (existing && existing.icon) || '';
+  const catBtns = [];
+  const catGrid = el('div', { class: 'spend-cat-grid' }, mod.VAULT_CATEGORIES.map((c) => {
+    const b = el('button', {
+      class: 'spend-cat-btn' + (c.name === chosenCat ? ' active' : ''),
+      type: 'button', text: c.icon + ' ' + c.name,
+    });
+    b.addEventListener('click', () => {
+      // Tapping the chosen one clears it. A category is optional, so there has
+      // to be a way back out of one picked by mistake.
+      chosenCat = chosenCat === c.name ? '' : c.name;
+      catBtns.forEach((x) => x.classList.toggle('active', x === b && !!chosenCat));
+      drawIcon();
+    });
+    catBtns.push(b);
+    return b;
+  }));
+
+  const icoPrev = el('div', { class: 'vault-ico vault-ico-prev' });
+  const icoNote = el('span', { class: 'hint vault-ico-note' });
+  const icoGrid = el('div', { class: 'vault-ico-grid hidden' });
+  mod.ICON_CHOICES.forEach((e) => {
+    const b = el('button', { class: 'vault-ico-pick', type: 'button', text: e });
+    b.dataset.ico = e;
+    b.addEventListener('click', () => { chosenIcon = chosenIcon === e ? '' : e; drawIcon(); });
+    icoGrid.appendChild(b);
+  });
+  const icoToggle = el('button', {
+    class: 'btn small ghost', type: 'button', text: 'Pick one',
+    onclick: () => icoGrid.classList.toggle('hidden'),
+  });
+  const icoClear = el('button', {
+    class: 'btn small ghost', type: 'button', text: 'Default',
+    onclick: () => { chosenIcon = ''; drawIcon(); },
+  });
+  const drawIcon = () => {
+    const rec = { title: title.value, url: url.value, category: chosenCat, icon: chosenIcon };
+    const ic = mod.iconFor(rec);
+    icoPrev.className = 'vault-ico vault-ico-prev' + (ic.emoji ? '' : ' is-letter');
+    icoPrev.style.setProperty('--ico-h', mod.iconHue(title.value || ''));
+    icoPrev.textContent = ic.emoji || ic.letter;
+    icoNote.textContent = chosenIcon ? 'Your pick'
+      : 'Chosen from the title' + (chosenCat ? ' and category' : '') + '. Pick one to override it.';
+    icoClear.classList.toggle('hidden', !chosenIcon);
+    [...icoGrid.children].forEach((b) => b.classList.toggle('active', b.dataset.ico === chosenIcon));
+  };
+  title.addEventListener('input', drawIcon);
+  url.addEventListener('input', drawIcon);
+
   const meter = el('div', { class: 'vault-meter' }, [
     el('span', { class: 'vault-meter-track' }, [el('span', { class: 'vault-meter-fill' })]),
     el('span', { class: 'vault-meter-lbl' }),
@@ -6346,6 +6436,7 @@ async function openVaultForm(mod, existing) {
       id: editing ? existing.id : undefined,
       title: title.value.trim(), account: account.value.trim(), username: username.value.trim(),
       password: pw.value, url: url.value.trim(), notes: notes.value,
+      category: chosenCat, icon: chosenIcon,
     });
     closeModal();
     toast(editing ? 'Updated' : 'Saved');
@@ -6361,6 +6452,7 @@ async function openVaultForm(mod, existing) {
   };
 
   drawMeter();
+  drawIcon();
   const btns = [el('button', { class: 'btn primary', text: editing ? 'Save' : 'Add', onclick: save })];
   if (editing) btns.push(el('button', { class: 'btn danger', text: 'Delete', onclick: del }));
   btns.push(el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }));
@@ -6369,6 +6461,15 @@ async function openVaultForm(mod, existing) {
     el('div', { class: 'sheet-scroll' }, [
       el('h2', { text: editing ? 'Edit entry' : 'New entry' }),
       field('Title', title),
+      el('div', { class: 'field' }, [
+        el('label', {}, [el('span', { text: 'Icon' })]),
+        el('div', { class: 'vault-ico-row' }, [icoPrev, icoToggle, icoClear, icoNote]),
+        icoGrid,
+      ]),
+      el('div', { class: 'field' }, [
+        el('label', {}, [el('span', { text: 'Category' })]),
+        catGrid,
+      ]),
       field('Account', account),
       field('Username', username),
       el('div', { class: 'field' }, [
