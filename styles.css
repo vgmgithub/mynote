@@ -2698,3 +2698,58 @@ input.milk-amt:focus { outline: none; }
 .trk-heat-swatch.h-hi1  { background: rgba(248,113,113,0.18); }
 .trk-heat-swatch.h-hi2  { background: rgba(248,113,113,0.4); }
 
+
+/* ---- My Passwords ---- */
+.fab.fab-vault { background: #1e293b; color: #e2e8f0; font-size: 1.8rem; }
+
+/* The gate. Deliberately plain: one field and one sentence, so nothing
+   competes with the thing being typed. */
+.vault-gate { max-width: 340px; margin: 8vh auto 0; text-align: center; }
+.vault-gate-ico { font-size: 2.6rem; }
+.vault-gate-h { margin: 10px 0 6px; font-size: 1.25rem; font-weight: 800; }
+input.vault-master {
+  width: 100%; margin-top: 12px; padding: 12px 14px;
+  border: 1px solid var(--line); border-radius: 11px;
+  background: var(--card); color: var(--text); font-family: inherit; font-size: 1rem;
+  letter-spacing: 1px;
+}
+input.vault-master:focus { outline: none; border-color: var(--accent); }
+.vault-note { margin: 10px 0 0; min-height: 1.1em; }
+.vault-go { width: 100%; margin-top: 14px; }
+.vault-warn { margin: 14px 0 0; line-height: 1.55; color: var(--warn); }
+
+/* Strength, on search space rather than a checklist - see vault.js. */
+.vault-meter { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.vault-meter-track { flex: 1; height: 5px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.vault-meter-fill { display: block; height: 100%; border-radius: 999px; width: 0; transition: width .15s ease; }
+.vault-meter-fill.is-weak { background: var(--bad); }
+.vault-meter-fill.is-fair { background: var(--warn); }
+.vault-meter-fill.is-good { background: #38bdf8; }
+.vault-meter-fill.is-strong { background: var(--good); }
+.vault-meter-lbl { flex: 0 0 auto; font-size: 0.6rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); }
+
+.vault-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+input.vault-search {
+  flex: 1; min-width: 0; padding: 10px 12px; border: 1px solid var(--line);
+  border-radius: 11px; background: var(--card); color: var(--text); font-family: inherit; font-size: 0.88rem;
+}
+input.vault-search:focus { outline: none; border-color: var(--accent); }
+
+.vault-list { display: flex; flex-direction: column; gap: 8px; }
+.vault-card { border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); padding: 12px 13px; }
+.vault-card-main { cursor: pointer; }
+.vault-title { font-size: 0.95rem; font-weight: 700; }
+.vault-meta { font-size: 0.7rem; color: var(--muted); margin-top: 2px; }
+.vault-url { font-size: 0.66rem; color: var(--accent); margin-top: 2px; word-break: break-all; }
+.vault-pw-row { display: flex; align-items: center; gap: 6px; margin-top: 9px; padding-top: 9px; border-top: 1px dashed var(--line); }
+/* Monospace so a revealed password can be read character by character, which
+   is the whole reason for revealing it. */
+.vault-pw { flex: 1; min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.82rem; letter-spacing: 1px; color: var(--muted); overflow-wrap: anywhere; }
+.vault-pw.is-open { color: var(--text); }
+.vault-eye { font-size: 0.9rem; }
+
+.vault-pw-field { display: flex; gap: 8px; align-items: center; }
+.vault-pw-field input { flex: 1; min-width: 0; }
+.vault-suggest { white-space: nowrap; }
+textarea.vault-notes { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 11px; background: var(--card); color: var(--text); font-family: inherit; font-size: 0.88rem; resize: vertical; }
+textarea.vault-notes:focus { outline: none; border-color: var(--accent); }

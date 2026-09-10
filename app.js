@@ -1712,12 +1712,13 @@ function applyAppMode(mode) {
   // Which screen is up, exposed for CSS. Home is the one screen with no bottom
   // nav, so the offset the FABs use to clear one is dead space there.
   document.body.setAttribute('data-mode', mode);
-  const isHome = mode === 'home', isStocks = mode === 'stocks', isMF = mode === 'mf', isFD = mode === 'fd', isDiv = mode === 'div', isMetal = mode === 'metal', isBond = mode === 'bond', isEF = mode === 'ef', isBankSav = mode === 'banksav', isInvestment = mode === 'investment', isSavings = mode === 'savings', isExpense = mode === 'expense', isPersonal = mode === 'personal';
+  const isHome = mode === 'home', isStocks = mode === 'stocks', isMF = mode === 'mf', isFD = mode === 'fd', isDiv = mode === 'div', isMetal = mode === 'metal', isBond = mode === 'bond', isEF = mode === 'ef', isBankSav = mode === 'banksav', isInvestment = mode === 'investment', isSavings = mode === 'savings', isExpense = mode === 'expense', isPersonal = mode === 'personal', isVault = mode === 'vault';
   $('#homeView').classList.toggle('hidden', !isHome);
   $('#investmentView').classList.toggle('hidden', !isInvestment);
   $('#savingsView').classList.toggle('hidden', !isSavings);
   $('#expenseView').classList.toggle('hidden', !isExpense);
   $('#pfView').classList.toggle('hidden', !isPersonal);
+  $('#vaultView').classList.toggle('hidden', !isVault);
   $('#mfView').classList.toggle('hidden', !isMF);
   $('#fdView').classList.toggle('hidden', !isFD);
   $('#divView').classList.toggle('hidden', !isDiv);
@@ -1756,9 +1757,12 @@ function applyAppMode(mode) {
   // most frequent thing done in the app, and burying it three taps deep is how
   // a tracker stops being kept up to date.
   $('#spendAddBtn').classList.toggle('hidden', !(isHome || (isExpense && _expTab === 'tracker')));
+  // Only once the vault is open. A + on a locked screen offers to add
+  // something to a list you cannot see.
+  $('#vaultAddBtn').classList.toggle('hidden', !(isVault && _vaultKey));
   if (!isMetal) $('#metalAddBtn').classList.add('hidden'); // renderMetal shows it on Gold/Silver only
   $('#backBtn').classList.toggle('hidden', isHome);
-  $('#appTitle').innerHTML = isHome ? '' : (isInvestment ? 'Investment' : isSavings ? 'Savings' : isExpense ? 'Expense' : isPersonal ? 'Personal&nbsp;Finance' : isMF ? 'Mutual&nbsp;Funds' : isFD ? 'Fixed&nbsp;Deposits' : isDiv ? 'Dividends' : isMetal ? 'Metals' : isBond ? 'Bonds' : isEF ? 'Emergency&nbsp;Fund' : isBankSav ? 'Bank&nbsp;Savings' : 'MyNotes');
+  $('#appTitle').innerHTML = isHome ? '' : (isInvestment ? 'Investment' : isSavings ? 'Savings' : isExpense ? 'Expense' : isPersonal ? 'Personal&nbsp;Finance' : isMF ? 'Mutual&nbsp;Funds' : isFD ? 'Fixed&nbsp;Deposits' : isDiv ? 'Dividends' : isMetal ? 'Metals' : isBond ? 'Bonds' : isEF ? 'Emergency&nbsp;Fund' : isBankSav ? 'Bank&nbsp;Savings' : isVault ? 'My&nbsp;Passwords' : 'MyNotes');
   if (isStocks) {
     render();
   } else {
@@ -1776,7 +1780,12 @@ function applyAppMode(mode) {
     if (isBond) { buildBondBottomNav(); renderBond(); }
     if (isEF) { buildEfBottomNav(); renderEmergency(); }
     if (isBankSav) renderBankSavings();
+    if (isVault) renderVault();
   }
+  // Leaving the section locks it. Holding a derived key alive behind an
+  // unrelated screen buys nothing but a longer window for someone who picks
+  // the phone up while it is unlocked.
+  if (!isVault && _vaultKey) lockVault(true);
 }
 
 // Bottom nav for the MF surface (Holdings | Overview) - built once, mirrors
@@ -4164,7 +4173,8 @@ async function renderHome() {
   const savingsCard = _homeCard('🏦', 'Savings', 'Emergency Fund · Goals', () => setAppMode('savings'));
   const expenseCard = _homeCard('💳', 'Expense', 'Credit Card · Allocation · Monthly sheet', () => setAppMode('expense'));
   const personalCard = _homeCard(_walletIcon(), 'Personal Finance', 'Own spends · card & UPI limits', () => setAppMode('personal'));
-  host.appendChild(el('div', { class: 'home-cards' }, [investmentCard, savingsCard, expenseCard, personalCard]));
+  const vaultCard = _homeCard('\ud83d\udd10', 'My Passwords', 'Locked · encrypted on this device', () => setAppMode('vault'));
+  host.appendChild(el('div', { class: 'home-cards' }, [investmentCard, savingsCard, expenseCard, personalCard, vaultCard]));
   host.appendChild(el('p', { class: 'hint home-foot', text: 'Backup covers everything - open the ⋮ menu → Backup & Restore.' }));
 
   // Per-day room on the two cards that have a budget behind them. Wrapped, and
@@ -5742,6 +5752,464 @@ function _trkHeatmapGrid(host, yms, byYm, allocs, efLoans, thisYm, mod, now) {
     'Kitty is what went in that month. Spent, Left and Per day are read against it. Days left and '
       + 'Per day only apply to the month in progress - a closed month has no days still to spend.',
   ], 'How the colours are worked out'));
+}
+
+// ---------- My Passwords ----------
+//
+// A local vault. Rows in the `vault` store hold nothing but an AES-GCM
+// envelope; the key is derived from the master password on unlock, lives in
+// this one variable, and is gone the moment the section is left or the page
+// reloads. See vault.js for what that does and does not protect against - the
+// unlock screen says the same thing in one line, because a lock that is
+// trusted for more than it does is worse than no lock.
+//
+// There is no recovery. Nothing on the device can turn a forgotten master
+// password back into the vault, which is the direct consequence of not storing
+// it - said at setup, where it can still change what the user chooses, rather
+// than at the moment it stops mattering.
+let _vaultKey = null;          // CryptoKey while open, null while locked
+let _vaultRows = [];           // decrypted, in memory only
+let _vaultQuery = '';
+let _vaultReveal = null;       // id of the row showing its password
+// Same guard the other async renderers carry. This one clears the host and
+// then awaits - an import, a store read, a decrypt per row - so two calls
+// landing together each cleared and each appended, and the list came out
+// twice. Ask for a token, and drop everything if a newer render has started.
+let _vaultRenderToken = 0;
+const vaultRenderStale = (t) => t !== _vaultRenderToken || state.appMode !== 'vault';
+const VAULT_SALT_KEY = 'vaultSalt';
+const VAULT_VERIFY_KEY = 'vaultVerify';
+const VAULT_MASTER_TITLE = 'MasterPassword';
+
+function lockVault(quiet) {
+  _vaultKey = null;
+  _vaultRows = [];
+  _vaultQuery = '';
+  _vaultReveal = null;
+  if (!quiet) { renderVault(); toast('Vault locked'); }
+}
+
+async function _vaultMeta() {
+  const [salt, verify] = await Promise.all([
+    DB.get('meta', VAULT_SALT_KEY).catch(() => null),
+    DB.get('meta', VAULT_VERIFY_KEY).catch(() => null),
+  ]);
+  return { salt: salt && salt.value, verify: verify && verify.value };
+}
+
+// Every row, decrypted. A row that will not open is reported rather than
+// dropped: silently showing 9 of 10 passwords is how someone concludes an
+// entry was never saved.
+async function _vaultLoad(mod) {
+  const raw = (await DB.all('vault').catch(() => [])) || [];
+  const out = [];
+  let failed = 0;
+  for (const r of raw) {
+    const v = await mod.decryptJson(_vaultKey, r);
+    if (!v) { failed++; continue; }
+    out.push(Object.assign({ id: r.id, updatedAt: r.updatedAt }, v));
+  }
+  out.sort((a, b) => String(a.title || '').toLowerCase().localeCompare(String(b.title || '').toLowerCase()));
+  return { rows: out, failed };
+}
+
+async function _vaultPut(mod, rec) {
+  const body = {};
+  mod.VAULT_FIELDS.forEach((f) => { body[f] = rec[f] == null ? '' : String(rec[f]); });
+  const env = await mod.encryptJson(_vaultKey, body);
+  const row = Object.assign({ updatedAt: new Date().toISOString() }, env);
+  if (rec.id != null) row.id = rec.id;
+  return DB.put('vault', row);
+}
+
+async function renderVault() {
+  if (state.appMode !== 'vault') return;
+  const token = ++_vaultRenderToken;
+  const host = $('#vaultView');
+  host.innerHTML = '';
+  const mod = await import('./vault.js');
+  const meta = await _vaultMeta();
+  if (vaultRenderStale(token)) return;
+
+  // The + only means something once the list behind it is open.
+  $('#vaultAddBtn').classList.toggle('hidden', !_vaultKey);
+
+  if (!_vaultKey) { _vaultLockScreen(host, mod, meta); return; }
+
+  const { rows, failed } = await _vaultLoad(mod);
+  if (vaultRenderStale(token)) return;
+  _vaultRows = rows;
+
+  // ---- Toolbar: search, and the two things you do to the vault itself ----
+  const search = el('input', {
+    type: 'search', class: 'vault-search', placeholder: 'Search titles, accounts, sites',
+    value: _vaultQuery, autocomplete: 'off',
+  });
+  search.addEventListener('input', () => { _vaultQuery = search.value; drawList(); });
+  host.appendChild(el('div', { class: 'vault-bar' }, [
+    search,
+    el('button', { class: 'icon-btn vault-lock', type: 'button', title: 'Lock the vault',
+      'aria-label': 'Lock the vault', text: '\ud83d\udd12', onclick: () => lockVault(false) }),
+    el('button', { class: 'icon-btn', type: 'button', title: 'Change master password',
+      'aria-label': 'Change master password', text: '\u2699', onclick: () => openMasterChange(mod, meta) }),
+  ]));
+
+  if (failed) {
+    host.appendChild(el('p', { class: 'hint warn', text: failed + (failed === 1 ? ' entry' : ' entries')
+      + ' could not be opened with this password. That happens when a backup was restored from a vault '
+      + 'with a different master password — those rows cannot be recovered without it.' }));
+  }
+
+  const list = el('div', { class: 'vault-list' });
+  host.appendChild(list);
+
+  function drawList() {
+    const q = _vaultQuery.trim().toLowerCase();
+    const shown = !q ? _vaultRows : _vaultRows.filter((r) =>
+      [r.title, r.account, r.username, r.url].some((f) => String(f || '').toLowerCase().indexOf(q) >= 0));
+    list.innerHTML = '';
+    if (!_vaultRows.length) {
+      list.appendChild(el('div', { class: 'empty' }, [
+        el('div', { class: 'e-icon', text: '\ud83d\udd11' }),
+        el('p', { text: 'Nothing saved yet.' }),
+        el('p', { class: 'hint', text: 'Tap + to add one. The form will suggest a strong password if you want it to.' }),
+      ]));
+      return;
+    }
+    if (!shown.length) {
+      list.appendChild(el('p', { class: 'hint', style: 'text-align:center;padding:16px 0',
+        text: 'Nothing matches ’' + _vaultQuery + '’.' }));
+      return;
+    }
+    shown.forEach((r) => list.appendChild(_vaultCard(r, mod)));
+  }
+  drawList();
+
+  host.appendChild(explainRow('About My Passwords', [
+    'Everything here is encrypted on this device with a key worked out from your master password. '
+      + 'The master password itself is never saved, so there is nothing stored that could give it away '
+      + '— and nothing that can recover it if you forget it.',
+    'The vault locks itself whenever you leave this screen, and again whenever the app reloads.',
+    'What this protects: someone picking up the phone, and anyone who gets hold of a backup file, '
+      + 'since the backup carries the encrypted rows and not the passwords. What it does not protect '
+      + 'against: anyone who knows the master password, or software already running on the phone. '
+      + 'Treat it as a locked drawer rather than a safe.',
+  ], 'How this is kept'));
+}
+
+// ---------- One entry ----------
+function _vaultCard(r, mod) {
+  const revealed = _vaultReveal === r.id;
+  const dots = '\u2022'.repeat(Math.min(12, Math.max(6, String(r.password || '').length)));
+  const meta = [r.account, r.username].filter(Boolean).join(' · ');
+  const copy = async (label, value) => {
+    if (!value) { toast('Nothing to copy'); return; }
+    try { await navigator.clipboard.writeText(value); toast(label + ' copied'); }
+    catch (_) { toast('Could not reach the clipboard'); }
+  };
+  return el('div', { class: 'vault-card' }, [
+    el('div', { class: 'vault-card-main is-tappable', onclick: () => openVaultForm(mod, r) }, [
+      el('div', { class: 'vault-title', text: r.title || 'Untitled' }),
+      meta ? el('div', { class: 'vault-meta', text: meta }) : document.createTextNode(''),
+      r.url ? el('div', { class: 'vault-url', text: r.url }) : document.createTextNode(''),
+    ]),
+    el('div', { class: 'vault-pw-row' }, [
+      el('code', { class: 'vault-pw' + (revealed ? ' is-open' : ''), text: revealed ? (r.password || '') : dots }),
+      el('button', {
+        class: 'icon-btn vault-eye', type: 'button',
+        title: revealed ? 'Hide' : 'Show', 'aria-label': revealed ? 'Hide password' : 'Show password',
+        text: revealed ? '\ud83d\ude48' : '\ud83d\udc41',
+        onclick: (e) => { e.stopPropagation(); _vaultReveal = revealed ? null : r.id; renderVault(); },
+      }),
+      el('button', {
+        class: 'icon-btn', type: 'button', title: 'Copy password', 'aria-label': 'Copy password',
+        text: '\ud83d\udccb', onclick: (e) => { e.stopPropagation(); copy('Password', r.password); },
+      }),
+    ]),
+  ]);
+}
+
+// ---------- The lock screen ----------
+function _vaultLockScreen(host, mod, meta) {
+  const first = !meta.salt || !meta.verify;
+  const pw = el('input', { type: 'password', class: 'vault-master', placeholder: 'Master password',
+    autocomplete: 'off', autocapitalize: 'none', spellcheck: 'false' });
+  const pw2 = el('input', { type: 'password', class: 'vault-master', placeholder: 'Type it again',
+    autocomplete: 'off', autocapitalize: 'none', spellcheck: 'false' });
+  const note = el('p', { class: 'hint vault-note' });
+  const meter = el('div', { class: 'vault-meter hidden' }, [
+    el('span', { class: 'vault-meter-track' }, [el('span', { class: 'vault-meter-fill' })]),
+    el('span', { class: 'vault-meter-lbl' }),
+  ]);
+
+  const setNote = (txt, bad) => { note.textContent = txt; note.classList.toggle('warn', !!bad); };
+
+  if (first) {
+    // ---- Setting one up ----
+    const drawMeter = () => {
+      const st = mod.strength(pw.value);
+      meter.classList.toggle('hidden', !pw.value);
+      meter.querySelector('.vault-meter-fill').style.width = st.pct + '%';
+      meter.querySelector('.vault-meter-fill').className = 'vault-meter-fill ' + st.cls;
+      meter.querySelector('.vault-meter-lbl').textContent = st.label + ' · ' + st.bits + ' bits';
+    };
+    pw.addEventListener('input', () => { drawMeter(); setNote(''); });
+    pw2.addEventListener('input', () => setNote(''));
+
+    const create = async () => {
+      const a = pw.value, b = pw2.value;
+      if (a.length < 8) { setNote('At least 8 characters.', true); return; }
+      if (a !== b) { setNote('The two do not match.', true); return; }
+      const st = mod.strength(a);
+      if (st.bits < 40 && !window.confirm('That password is rated ' + st.label
+        + '. It is the only thing standing in front of every password you store here.\n\nUse it anyway?')) return;
+      if (!window.confirm('Set this as your master password?\n\nIt is never stored, so if you forget it '
+        + 'the vault cannot be opened or recovered by anyone, including you.')) return;
+      // Rows already here were encrypted with a DIFFERENT key - a restored
+      // backup from another vault, or a setup that was interrupted. A new
+      // master password cannot open them and never will, so the choice is put
+      // plainly rather than leaving unreadable rows in a list that looks fine.
+      const leftover = (await DB.all('vault').catch(() => [])) || [];
+      if (leftover.length) {
+        const ok = window.confirm(leftover.length + ' encrypted '
+          + (leftover.length === 1 ? 'entry is' : 'entries are') + ' already stored here, from an earlier '
+          + 'master password.\n\nA new master password cannot open them - there is no way to recover them '
+          + 'without the old one.\n\nDelete them and start fresh?');
+        if (!ok) { setNote('Setup cancelled - the existing entries were left alone.', true); return; }
+        for (const r of leftover) await DB.del('vault', r.id).catch(() => {});
+      }
+      const salt = mod.randomSaltB64();
+      const key = await mod.deriveKey(a, salt);
+      const verify = await mod.makeVerifier(key);
+      _vaultKey = key;
+      try {
+        // The entry goes in BEFORE the salt and verifier are committed. Those
+        // two are what make the gate ask to unlock rather than to set up, so
+        // writing them first and then failing here leaves the user staring at
+        // an unlock screen for a vault that was never created - which is
+        // exactly what happened the first time this ran.
+        //
+        // Stored as an entry too, as asked, so the vault can show you your own
+        // master password once you are already inside it. It is not what
+        // unlock checks against - that is the verifier - so editing this row
+        // changes nothing but the note to self.
+        await _vaultPut(mod, { title: VAULT_MASTER_TITLE, account: 'My Passwords',
+          username: '', password: a, url: '', notes: 'The password that opens this vault.' });
+        await DB.put('meta', { key: VAULT_SALT_KEY, value: salt, updatedAt: new Date().toISOString() });
+        await DB.put('meta', { key: VAULT_VERIFY_KEY, value: verify, updatedAt: new Date().toISOString() });
+      } catch (e) {
+        _vaultKey = null;
+        setNote('Could not create the vault: ' + (e && e.message ? e.message : e), true);
+        return;
+      }
+      toast('Vault created');
+      renderVault();
+    };
+    pw2.addEventListener('keydown', (e) => { if (e.key === 'Enter') create(); });
+
+    host.appendChild(el('div', { class: 'vault-gate' }, [
+      el('div', { class: 'vault-gate-ico', text: '\ud83d\udd10' }),
+      el('h2', { class: 'vault-gate-h', text: 'Set a master password' }),
+      el('p', { class: 'hint', text: 'One password opens this page. Everything you save here is encrypted '
+        + 'with it, on this device.' }),
+      pw, meter, pw2, note,
+      el('button', { class: 'btn primary vault-go', text: 'Create vault', onclick: create }),
+      el('p', { class: 'hint vault-warn', text: '\u26a0 It is never stored anywhere. Forget it and the vault '
+        + 'is gone — there is no reset, no recovery, and no way back in.' }),
+    ]));
+    setTimeout(() => pw.focus(), 60);
+    return;
+  }
+
+  // ---- Unlocking ----
+  //
+  // No Submit. Deriving a key takes long enough that doing it on every
+  // keystroke would make the field lag, so it runs on a short pause instead -
+  // which is also what stops a typo being reported before the word is
+  // finished.
+  let timer = null;
+  let attempt = 0;
+  const tryUnlock = async () => {
+    const val = pw.value;
+    if (val.length < 4) { setNote(''); return; }
+    const mine = ++attempt;
+    setNote('Checking...');
+    const key = await mod.deriveKey(val, meta.salt);
+    if (mine !== attempt) return;         // a newer keystroke has overtaken this
+    if (!(await mod.checkVerifier(key, meta.verify))) { setNote('Not that one.', true); return; }
+    _vaultKey = key;
+    renderVault();
+  };
+  pw.addEventListener('input', () => {
+    setNote('');
+    clearTimeout(timer);
+    timer = setTimeout(tryUnlock, 320);
+  });
+  pw.addEventListener('keydown', (e) => { if (e.key === 'Enter') { clearTimeout(timer); tryUnlock(); } });
+
+  host.appendChild(el('div', { class: 'vault-gate' }, [
+    el('div', { class: 'vault-gate-ico', text: '\ud83d\udd12' }),
+    el('h2', { class: 'vault-gate-h', text: 'My Passwords' }),
+    el('p', { class: 'hint', text: 'Type your master password. It opens as soon as it is right — '
+      + 'there is nothing to press.' }),
+    pw, note,
+  ]));
+  setTimeout(() => pw.focus(), 60);
+}
+
+// ---------- Changing the master password ----------
+//
+// Re-derives and RE-ENCRYPTS every row. The old key cannot open anything
+// afterwards, which is the point of changing it - a new password that left the
+// rows readable by the old one would be theatre.
+function openMasterChange(mod, meta) {
+  const cur = el('input', { type: 'password', class: 'vault-master', placeholder: 'Current master password', autocomplete: 'off' });
+  const nw = el('input', { type: 'password', class: 'vault-master', placeholder: 'New master password', autocomplete: 'off' });
+  const nw2 = el('input', { type: 'password', class: 'vault-master', placeholder: 'Type the new one again', autocomplete: 'off' });
+  const note = el('p', { class: 'hint vault-note' });
+  const meter = el('div', { class: 'vault-meter hidden' }, [
+    el('span', { class: 'vault-meter-track' }, [el('span', { class: 'vault-meter-fill' })]),
+    el('span', { class: 'vault-meter-lbl' }),
+  ]);
+  nw.addEventListener('input', () => {
+    const st = mod.strength(nw.value);
+    meter.classList.toggle('hidden', !nw.value);
+    meter.querySelector('.vault-meter-fill').style.width = st.pct + '%';
+    meter.querySelector('.vault-meter-fill').className = 'vault-meter-fill ' + st.cls;
+    meter.querySelector('.vault-meter-lbl').textContent = st.label + ' · ' + st.bits + ' bits';
+  });
+
+  const save = async () => {
+    note.classList.remove('warn');
+    const oldKey = await mod.deriveKey(cur.value, meta.salt);
+    if (!(await mod.checkVerifier(oldKey, meta.verify))) {
+      note.textContent = 'That is not the current password.'; note.classList.add('warn'); return;
+    }
+    if (nw.value.length < 8) { note.textContent = 'At least 8 characters.'; note.classList.add('warn'); return; }
+    if (nw.value !== nw2.value) { note.textContent = 'The two new ones do not match.'; note.classList.add('warn'); return; }
+
+    note.textContent = 'Re-encrypting...';
+    const salt = mod.randomSaltB64();
+    const key = await mod.deriveKey(nw.value, salt);
+    // Read with the OLD key before anything is written, so a failure part way
+    // through leaves the vault exactly as it was rather than half converted.
+    const raw = (await DB.all('vault').catch(() => [])) || [];
+    const opened = [];
+    for (const r of raw) {
+      const v = await mod.decryptJson(oldKey, r);
+      if (v) opened.push({ id: r.id, body: v });
+    }
+    const rewritten = [];
+    for (const o of opened) {
+      const body = Object.assign({}, o.body);
+      // The stored copy of the master password is a copy, so it follows.
+      if (body.title === VAULT_MASTER_TITLE) body.password = nw.value;
+      rewritten.push(Object.assign({ id: o.id, updatedAt: new Date().toISOString() },
+        await mod.encryptJson(key, body)));
+    }
+    const verify = await mod.makeVerifier(key);
+    for (const row of rewritten) await DB.put('vault', row);
+    await DB.put('meta', { key: VAULT_SALT_KEY, value: salt, updatedAt: new Date().toISOString() });
+    await DB.put('meta', { key: VAULT_VERIFY_KEY, value: verify, updatedAt: new Date().toISOString() });
+    _vaultKey = key;
+    closeModal();
+    toast('Master password changed · ' + rewritten.length + ' re-encrypted');
+    renderVault();
+  };
+
+  openModal(el('div', { class: 'sheet' }, [
+    el('div', { class: 'sheet-scroll' }, [
+      el('h2', { text: 'Change master password' }),
+      el('p', { class: 'hint', text: 'Every entry is re-encrypted with the new one. The old password will '
+        + 'not open anything afterwards, and the new one is no more recoverable than the old.' }),
+      cur, nw, meter, nw2, note,
+      el('div', { class: 'btn-row' }, [
+        el('button', { class: 'btn primary', text: 'Change it', onclick: save }),
+        el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }),
+      ]),
+    ]),
+  ]));
+}
+
+// ---------- Add / edit an entry ----------
+async function openVaultForm(mod, existing) {
+  if (!_vaultKey) return;
+  const editing = !!(existing && existing.id != null);
+  const f = (ph, val, type) => el('input', {
+    type: type || 'text', placeholder: ph, value: val || '',
+    autocomplete: 'off', autocapitalize: type ? 'none' : 'sentences', spellcheck: 'false',
+  });
+  const title = f('Netflix, HDFC net banking, ...', existing && existing.title);
+  const account = f('Which account it belongs to', existing && existing.account);
+  const username = f('Username, email or customer ID', existing && existing.username, 'text');
+  const pw = f('Password', existing && existing.password, 'text');
+  const url = f('https://...', existing && existing.url, 'url');
+  const notes = el('textarea', { class: 'vault-notes', rows: '3',
+    placeholder: 'Security questions, recovery codes, anything else' });
+  notes.value = (existing && existing.notes) || '';
+
+  const meter = el('div', { class: 'vault-meter' }, [
+    el('span', { class: 'vault-meter-track' }, [el('span', { class: 'vault-meter-fill' })]),
+    el('span', { class: 'vault-meter-lbl' }),
+  ]);
+  const drawMeter = () => {
+    const st = mod.strength(pw.value);
+    meter.classList.toggle('hidden', !pw.value);
+    meter.querySelector('.vault-meter-fill').style.width = st.pct + '%';
+    meter.querySelector('.vault-meter-fill').className = 'vault-meter-fill ' + st.cls;
+    meter.querySelector('.vault-meter-lbl').textContent = st.label + ' · ' + st.bits + ' bits';
+  };
+  pw.addEventListener('input', drawMeter);
+
+  // Suggest, rather than impose: it fills the box and can be typed over. 18
+  // characters with everything on is comfortably past what any site rejects,
+  // and the generator leaves out characters that are hard to read back.
+  const suggest = el('button', {
+    class: 'btn small primary vault-suggest', type: 'button', text: '\u2728 Suggest strong',
+    onclick: () => { pw.value = mod.generatePassword({ length: 18 }); drawMeter(); },
+  });
+
+  const save = async () => {
+    if (!title.value.trim()) { toast('Give it a title'); return; }
+    await _vaultPut(mod, {
+      id: editing ? existing.id : undefined,
+      title: title.value.trim(), account: account.value.trim(), username: username.value.trim(),
+      password: pw.value, url: url.value.trim(), notes: notes.value,
+    });
+    closeModal();
+    toast(editing ? 'Updated' : 'Saved');
+    renderVault();
+  };
+  const del = async () => {
+    if (!editing) return;
+    if (!window.confirm('Delete "' + (existing.title || 'this entry') + '"?\n\nIt cannot be recovered.')) return;
+    await DB.del('vault', existing.id);
+    closeModal();
+    toast('Deleted');
+    renderVault();
+  };
+
+  drawMeter();
+  const btns = [el('button', { class: 'btn primary', text: editing ? 'Save' : 'Add', onclick: save })];
+  if (editing) btns.push(el('button', { class: 'btn danger', text: 'Delete', onclick: del }));
+  btns.push(el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }));
+
+  openModal(el('div', { class: 'sheet has-fixed-footer' }, [
+    el('div', { class: 'sheet-scroll' }, [
+      el('h2', { text: editing ? 'Edit entry' : 'New entry' }),
+      field('Title', title),
+      field('Account', account),
+      field('Username', username),
+      el('div', { class: 'field' }, [
+        el('label', {}, [el('span', { text: 'Password' })]),
+        el('div', { class: 'vault-pw-field' }, [pw, suggest]),
+        meter,
+      ]),
+      field('Website / URL', url),
+      field('Notes', notes),
+    ]),
+    el('div', { class: 'sheet-footer' }, [el('div', { class: 'btn-row' }, btns)]),
+  ]));
 }
 
 // ---------- Daily spend tracker (Expense → Tracker tab) ----------
@@ -15014,6 +15482,10 @@ function bind() {
   $('#bankSavAddBtn').addEventListener('click', () => openBankSavForm(null));
   $('#ccAddBtn').addEventListener('click', () => openCreditCardForm(null));
   $('#spendAddBtn').addEventListener('click', openSpendQuick);
+  $('#vaultAddBtn').addEventListener('click', async () => {
+    if (!_vaultKey) return;
+    openVaultForm(await import('./vault.js'), null);
+  });
   $('#pfAddBtn').addEventListener('click', () => openPfSpendForm(null));
   $('#backBtn').addEventListener('click', goHome);
   $('#menuBtn').addEventListener('click', openMenu);

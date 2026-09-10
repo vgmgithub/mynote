@@ -1,7 +1,7 @@
 // IndexedDB data layer. All data lives on this device only.
 export const DB = (function () {
   const NAME = 'mynote-stocks';
-  const VERSION = 16;
+  const VERSION = 17;
   let dbp = null;
 
   function open() {
@@ -146,6 +146,13 @@ export const DB = (function () {
           const s = db.createObjectStore('personalSpends', { keyPath: 'id', autoIncrement: true });
           s.createIndex('ym', 'ym', { unique: false });
         }
+        // Password vault. Rows here hold CIPHERTEXT and nothing else readable:
+        // every secret field is encrypted with a key derived from the master
+        // password, which is never stored. Only `id`, `updatedAt` and the
+        // envelope (iv + payload) sit in the clear. Added in v17.
+        if (!db.objectStoreNames.contains('vault')) {
+          db.createObjectStore('vault', { keyPath: 'id', autoIncrement: true });
+        }
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
@@ -203,7 +210,7 @@ export const DB = (function () {
       // `feed` is best-effort: very old backups (v2 export) won't have it, and
       // the store may not exist if the user is mid-upgrade. Don't fail the
       // whole export over a missing store.
-      const [stocks, snapshots, monthly, meta, feed, funds, fds, dividends, metals, bonds, emergency, bankSavings, creditCards, allocations, ccReimbursements, monthlySheet, spends, personalSpends] = await Promise.all([
+      const [stocks, snapshots, monthly, meta, feed, funds, fds, dividends, metals, bonds, emergency, bankSavings, creditCards, allocations, ccReimbursements, monthlySheet, spends, personalSpends, vault] = await Promise.all([
         this.all('stocks'),
         this.all('snapshots'),
         this.all('monthly'),
@@ -222,6 +229,7 @@ export const DB = (function () {
         this.all('monthlySheet').catch(() => []),
         this.all('spends').catch(() => []),
         this.all('personalSpends').catch(() => []),
+        this.all('vault').catch(() => []),
       ]);
       return {
         app: 'mynote-stocks',
@@ -245,6 +253,9 @@ export const DB = (function () {
         monthlySheet,
         spends,
         personalSpends,
+        // Encrypted. A backup carries the vault without carrying the
+        // passwords: without the master password these rows are noise.
+        vault,
       };
     },
     // Replace all data with the contents of a previously exported object.
@@ -271,6 +282,7 @@ export const DB = (function () {
         this.clear('monthlySheet').catch(() => {}),
         this.clear('spends').catch(() => {}),
         this.clear('personalSpends').catch(() => {}),
+        this.clear('vault').catch(() => {}),
       ]);
       const tasks = [];
       (data.stocks || []).forEach((s) => tasks.push(this.put('stocks', s)));
@@ -292,6 +304,7 @@ export const DB = (function () {
       (data.monthlySheet || []).forEach((r) => tasks.push(this.put('monthlySheet', r).catch(() => {})));
       (data.spends || []).forEach((r) => tasks.push(this.put('spends', r).catch(() => {})));
       (data.personalSpends || []).forEach((r) => tasks.push(this.put('personalSpends', r).catch(() => {})));
+      (data.vault || []).forEach((r) => tasks.push(this.put('vault', r).catch(() => {})));
       await Promise.all(tasks);
     },
   };
