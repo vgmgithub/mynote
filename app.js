@@ -193,13 +193,19 @@ function missingCurrentMonthCapture(months) {
 }
 
 let toastTimer = null;
-function toast(msg) {
+// A toast is normally just a receipt for something already done. Pass onTap
+// and it becomes the way to do the next thing instead: telling someone where a
+// button is, in a message that vanishes in two seconds, is how a reminder gets
+// read and then not acted on. One that acts gets a longer life, because it is
+// asking for a decision rather than reporting a fact.
+function toast(msg, onTap) {
   const existing = $('.toast');
   if (existing) existing.remove();
-  const t = el('div', { class: 'toast', text: msg });
+  const t = el('div', { class: 'toast' + (onTap ? ' is-tappable' : ''), text: msg });
+  if (onTap) t.addEventListener('click', () => { clearTimeout(toastTimer); t.remove(); onTap(); });
   document.body.appendChild(t);
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.remove(), 2200);
+  toastTimer = setTimeout(() => t.remove(), onTap ? 7000 : 2200);
 }
 
 // ---------- data ----------
@@ -5777,6 +5783,11 @@ let _vaultReveal = null;       // id of the row showing its password
 // twice. Ask for a token, and drop everything if a newer render has started.
 let _vaultRenderToken = 0;
 const vaultRenderStale = (t) => t !== _vaultRenderToken || state.appMode !== 'vault';
+// Flat A-Z, or broken up by category. Remembered, because it is a way of
+// reading the list rather than a one-off action, and having to set it again
+// on every reload is how a preference becomes an annoyance.
+let _vaultGroup = false;
+const VAULT_GROUP_KEY = 'vaultGroup';
 const VAULT_SALT_KEY = 'vaultSalt';
 const VAULT_VERIFY_KEY = 'vaultVerify';
 const VAULT_MASTER_TITLE = 'MasterPassword';
@@ -5841,11 +5852,28 @@ function watchVaultSession() {
 }
 
 async function _vaultMeta() {
-  const [salt, verify] = await Promise.all([
+  const [salt, verify, group] = await Promise.all([
     DB.get('meta', VAULT_SALT_KEY).catch(() => null),
     DB.get('meta', VAULT_VERIFY_KEY).catch(() => null),
+    DB.get('meta', VAULT_GROUP_KEY).catch(() => null),
   ]);
-  return { salt: salt && salt.value, verify: verify && verify.value };
+  return { salt: salt && salt.value, verify: verify && verify.value, group: !!(group && group.value) };
+}
+
+// Short on purpose - it sits in a corner of a card, not in a report. Today
+// gives the time, this year drops the year, anything older keeps it. The full
+// stamp is on the tooltip for whoever actually wants it.
+function _fmtVaultTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) {
+    return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  }
+  return d.toLocaleDateString(undefined, d.getFullYear() === now.getFullYear()
+    ? { day: 'numeric', month: 'short' }
+    : { day: 'numeric', month: 'short', year: '2-digit' });
 }
 
 // Every row, decrypted. A row that will not open is reported rather than
@@ -5889,7 +5917,12 @@ async function renderVault() {
 
   const { rows, failed } = await _vaultLoad(mod);
   if (vaultRenderStale(token)) return;
-  _vaultRows = rows;
+  // The master password is kept, but not as a card. It is not an account you
+  // log into anywhere - it is this app's own key, it can never be edited into
+  // something meaningful, and sitting in the list it was one more row to
+  // scroll past every time. It lives on invisibly, and surfaces in the one
+  // place it is any use: already filled in when you go to change it.
+  _vaultRows = rows.filter((r) => r.title !== VAULT_MASTER_TITLE);
 
   // ---- Toolbar: search, and the two things you do to the vault itself ----
   const search = el('input', {
@@ -5911,7 +5944,25 @@ async function renderVault() {
       + 'with a different master password — those rows cannot be recovered without it.' }));
   }
 
+  _vaultGroup = meta.group;
   const list = el('div', { class: 'vault-list' });
+  const modeBtn = (label, on, fn) => el('button', {
+    class: 'vault-mode-btn' + (on ? ' active' : ''), type: 'button', text: label, onclick: fn });
+  const modes = el('div', { class: 'vault-modes' }, [
+    modeBtn('A–Z', !_vaultGroup, () => setGroup(false)),
+    modeBtn('By category', _vaultGroup, () => setGroup(true)),
+  ]);
+  const setGroup = (on) => {
+    if (_vaultGroup === on) return;
+    _vaultGroup = on;
+    DB.put('meta', { key: VAULT_GROUP_KEY, value: on }).catch(() => {});
+    [...modes.children].forEach((b, i) => b.classList.toggle('active', (i === 1) === on));
+    drawList();
+  };
+  // Only worth offering once there is enough to sort. One entry looks the same
+  // either way, and a control that changes nothing invites a tap that does
+  // nothing.
+  if (_vaultRows.length > 1) host.appendChild(modes);
   host.appendChild(list);
 
   function drawList() {
@@ -5932,7 +5983,32 @@ async function renderVault() {
         text: 'Nothing matches ’' + _vaultQuery + '’.' }));
       return;
     }
-    shown.forEach((r) => list.appendChild(_vaultCard(r, mod)));
+    if (!_vaultGroup) { shown.forEach((r) => list.appendChild(_vaultCard(r, mod))); return; }
+
+    const buckets = new Map();
+    shown.forEach((r) => {
+      const k = r.category || '';
+      if (!buckets.has(k)) buckets.set(k, []);
+      buckets.get(k).push(r);
+    });
+    // In the order the categories are defined, not alphabetically: the list
+    // reads Logins, App, Email, Banks the same way every time, which is what
+    // makes a grouped list faster to scan than a flat one.
+    const order = mod.VAULT_CATEGORIES.map((c) => c.name).filter((n) => buckets.has(n));
+    // A category this build does not know - a folder name off an import, say -
+    // keeps its own heading instead of being swept into Uncategorised, which
+    // would throw away the only label it had.
+    [...buckets.keys()].forEach((k) => { if (k && order.indexOf(k) < 0) order.push(k); });
+    if (buckets.has('')) order.push('');
+    order.forEach((name) => {
+      const rows = buckets.get(name);
+      const cat = mod.VAULT_CATEGORIES.find((c) => c.name === name);
+      list.appendChild(el('div', { class: 'vault-group' }, [
+        el('span', { text: (cat ? cat.icon + ' ' : '') + (name || 'Uncategorised') }),
+        el('span', { class: 'vault-group-n', text: String(rows.length) }),
+      ]));
+      rows.forEach((r) => list.appendChild(_vaultCard(r, mod)));
+    });
   }
   drawList();
 
@@ -5989,13 +6065,23 @@ function _vaultCard(r, mod) {
     catch (_) { toast('Could not reach the clipboard'); }
   });
 
+  // When it last changed, under the buttons. A password you cannot remember
+  // rotating is one you have not, and the date is the only thing on the card
+  // that says so.
+  const when = el('div', {
+    class: 'vault-when', text: _fmtVaultTime(r.updatedAt),
+    title: r.updatedAt ? 'Last updated ' + new Date(r.updatedAt).toLocaleString() : '',
+  });
   const card = el('div', { class: 'vault-card' }, [
     _vaultIcon(r, mod),
     el('div', { class: 'vault-card-main is-tappable', onclick: () => openVaultForm(mod, r) }, [
       el('div', { class: 'vault-title', text: r.title || 'Untitled' }),
       sub,
     ]),
-    el('div', { class: 'vault-acts' }, [eye, copy]),
+    el('div', { class: 'vault-acts' }, [
+      el('div', { class: 'vault-act-row' }, [eye, copy]),
+      when,
+    ]),
   ]);
 
   // Drawn rather than rebuilt. Re-rendering the whole list to show one
@@ -6085,10 +6171,11 @@ function _vaultLockScreen(host, mod, meta) {
         // an unlock screen for a vault that was never created - which is
         // exactly what happened the first time this ran.
         //
-        // Stored as an entry too, as asked, so the vault can show you your own
-        // master password once you are already inside it. It is not what
-        // unlock checks against - that is the verifier - so editing this row
-        // changes nothing but the note to self.
+        // Kept as an entry too, though never shown as one. It is what fills in
+        // the current password when you go to change it, so knowing the vault
+        // is open is enough and nobody has to remember it twice. It is not
+        // what unlock checks against - that is the verifier - so this copy can
+        // only ever be a convenience, never the lock itself.
         await _vaultPut(mod, { title: VAULT_MASTER_TITLE, account: 'My Passwords',
           username: '', password: a, url: '', notes: 'The password that opens this vault.' });
         await DB.put('meta', { key: VAULT_SALT_KEY, value: salt, updatedAt: new Date().toISOString() });
@@ -6191,26 +6278,24 @@ function openVaultOptions(mod, meta) {
 async function vaultExportCsv(mod) {
   if (!_vaultKey) { toast('Unlock the vault first'); return; }
   const { rows, failed } = await _vaultLoad(mod);
-  if (!rows.length) { toast('Nothing to export'); return; }
-  // Named in the warning rather than quietly left out. Leaving it out would be
-  // a surprise the first time an import came back missing it, and this is the
-  // one row whose presence in a plain file most deserves saying out loud.
-  const hasMaster = rows.some((r) => r.title === VAULT_MASTER_TITLE);
-  if (!window.confirm('Export ' + rows.length + (rows.length === 1 ? ' entry' : ' entries')
+  // Exactly what the list shows, and nothing it does not. Writing a hidden
+  // row into a plain file the user never saw on screen is the kind of
+  // surprise that belongs in nobody's password manager.
+  const out = rows.filter((r) => r.title !== VAULT_MASTER_TITLE);
+  if (!out.length) { toast('Nothing to export'); return; }
+  if (!window.confirm('Export ' + out.length + (out.length === 1 ? ' entry' : ' entries')
     + ' as a plain CSV file?\n\nThe file is NOT encrypted. Every password in it can be read by anyone '
-    + 'who opens the file'
-    + (hasMaster ? ', including your master password' : '')
-    + '.\n\nSend it where you meant to, then delete it.')) return;
+    + 'who opens the file.\n\nSend it where you meant to, then delete it.')) return;
   // A byte order mark so Excel reads it as UTF-8 instead of mangling anything
   // outside ASCII; the parser on the way back in strips it again.
-  const blob = new Blob(['\ufeff' + mod.toCsv(rows)], { type: 'text/csv;charset=utf-8' });
+  const blob = new Blob(['\ufeff' + mod.toCsv(out)], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = el('a', { href: url, download: 'mynote-passwords-' + todayISO() + '.csv' });
   document.body.appendChild(a);
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
-  toast(rows.length + ' exported to CSV' + (failed ? ' · ' + failed + ' could not be opened' : ''));
+  toast(out.length + ' exported to CSV' + (failed ? ' · ' + failed + ' could not be opened' : ''));
 }
 
 // Matched on title AND username, never on title alone: two logins to the same
@@ -6238,10 +6323,15 @@ function vaultImportCsv(mod) {
     }
     const { rows } = await _vaultLoad(mod);
     const have = new Map(rows.map((r) => [_vaultCsvKey(r), r.id]));
+    // A row named after the app's own key is refused rather than imported. The
+    // stored copy has to keep matching the password that actually opens this
+    // vault, and a file cannot change that - only Change master password can.
+    const claimed = parsed.entries.filter((e) => e.title === VAULT_MASTER_TITLE).length;
+    const incoming = parsed.entries.filter((e) => e.title !== VAULT_MASTER_TITLE);
+    if (!incoming.length) { alert('That file has nothing in it to import.'); return; }
     let upd = 0;
-    parsed.entries.forEach((e) => { if (have.has(_vaultCsvKey(e))) upd++; });
-    const add = parsed.entries.length - upd;
-    const master = parsed.entries.some((e) => e.title === VAULT_MASTER_TITLE);
+    incoming.forEach((e) => { if (have.has(_vaultCsvKey(e))) upd++; });
+    const add = incoming.length - upd;
     // Counted and shown BEFORE anything is written. An import that turns out
     // to have updated forty rows you meant to add is not undoable.
     if (!window.confirm('Import from ' + file.name + '?\n\n'
@@ -6249,11 +6339,12 @@ function vaultImportCsv(mod) {
       + (parsed.skipped ? ', ' + parsed.skipped + ' empty ' + (parsed.skipped === 1 ? 'row' : 'rows')
         + ' ignored' : '')
       + '.\n\nEverything imported is encrypted with your current master password.'
-      + (master ? '\n\nOne row is titled ' + VAULT_MASTER_TITLE + '. That changes only the note kept '
-        + 'inside the vault — the password that opens this page stays exactly as it is.' : ''))) return;
+      + (claimed ? '\n\n' + claimed + (claimed === 1 ? ' row is' : ' rows are') + ' named '
+        + VAULT_MASTER_TITLE + ' and will be skipped — the password that opens this page is only '
+        + 'ever changed from Vault options.' : ''))) return;
     let done = 0;
     let bad = 0;
-    for (const e of parsed.entries) {
+    for (const e of incoming) {
       const id = have.get(_vaultCsvKey(e));
       try { await _vaultPut(mod, id != null ? Object.assign({ id }, e) : e); done++; }
       catch (_) { bad++; }
@@ -6269,8 +6360,18 @@ function vaultImportCsv(mod) {
 // Re-derives and RE-ENCRYPTS every row. The old key cannot open anything
 // afterwards, which is the point of changing it - a new password that left the
 // rows readable by the old one would be theatre.
-function openMasterChange(mod, meta) {
-  const cur = el('input', { type: 'password', class: 'vault-master', placeholder: 'Current master password', autocomplete: 'off' });
+//
+// The current password arrives already filled in and readable. You are inside
+// an unlocked vault, which you could only have opened by knowing it, so making
+// you type it again proves nothing and only invites the typo that produces
+// "that is not the current password" from someone who typed it correctly.
+// It is still checked against the verifier before anything is re-encrypted -
+// the copy could be stale, and the message says so plainly if it is.
+async function openMasterChange(mod, meta) {
+  const { rows } = await _vaultLoad(mod);
+  const stored = rows.find((r) => r.title === VAULT_MASTER_TITLE);
+  const cur = el('input', { type: 'text', class: 'vault-master', placeholder: 'Current master password',
+    value: (stored && stored.password) || '', autocomplete: 'off', autocapitalize: 'none', spellcheck: 'false' });
   const nw = el('input', { type: 'password', class: 'vault-master', placeholder: 'New master password', autocomplete: 'off' });
   const nw2 = el('input', { type: 'password', class: 'vault-master', placeholder: 'Type the new one again', autocomplete: 'off' });
   const note = el('p', { class: 'hint vault-note' });
@@ -6290,8 +6391,13 @@ function openMasterChange(mod, meta) {
     note.classList.remove('warn');
     const oldKey = await mod.deriveKey(cur.value, meta.salt);
     if (!(await mod.checkVerifier(oldKey, meta.verify))) {
-      note.textContent = 'That is not the current password.'; note.classList.add('warn'); return;
+      note.textContent = stored && cur.value === stored.password
+        ? 'The copy saved in this vault no longer opens it. Type the master password you actually use.'
+        : 'That is not the current password.';
+      note.classList.add('warn'); return;
     }
+    // No rule about what the new one may be - same as when it was first set.
+    // The only thing refused is nothing at all, which would mean no lock.
     if (!nw.value) { note.textContent = 'Type something.'; note.classList.add('warn'); return; }
     if (nw.value !== nw2.value) { note.textContent = 'The two new ones do not match.'; note.classList.add('warn'); return; }
 
@@ -6307,10 +6413,11 @@ function openMasterChange(mod, meta) {
       if (v) opened.push({ id: r.id, body: v });
     }
     const rewritten = [];
+    let sawMaster = false;
     for (const o of opened) {
       const body = Object.assign({}, o.body);
       // The stored copy of the master password is a copy, so it follows.
-      if (body.title === VAULT_MASTER_TITLE) body.password = nw.value;
+      if (body.title === VAULT_MASTER_TITLE) { body.password = nw.value; sawMaster = true; }
       rewritten.push(Object.assign({ id: o.id, updatedAt: new Date().toISOString() },
         await mod.encryptJson(key, body)));
     }
@@ -6319,6 +6426,12 @@ function openMasterChange(mod, meta) {
     await DB.put('meta', { key: VAULT_SALT_KEY, value: salt, updatedAt: new Date().toISOString() });
     await DB.put('meta', { key: VAULT_VERIFY_KEY, value: verify, updatedAt: new Date().toISOString() });
     _vaultKey = key;
+    // A vault restored from an old backup, or one that lost the row somehow,
+    // gets it back here rather than staying without it forever.
+    if (!sawMaster) {
+      await _vaultPut(mod, { title: VAULT_MASTER_TITLE, account: 'My Passwords', username: '',
+        password: nw.value, url: '', notes: 'The password that opens this vault.' });
+    }
     closeModal();
     toast('Master password changed · ' + rewritten.length + ' re-encrypted');
     renderVault();
@@ -6329,7 +6442,10 @@ function openMasterChange(mod, meta) {
       el('h2', { text: 'Change master password' }),
       el('p', { class: 'hint', text: 'Every entry is re-encrypted with the new one. The old password will '
         + 'not open anything afterwards, and the new one is no more recoverable than the old.' }),
-      cur, nw, meter, nw2, note,
+      el('label', { class: 'vault-lbl', text: stored ? 'Current — filled in from your vault' : 'Current' }),
+      cur,
+      el('label', { class: 'vault-lbl', text: 'New — anything at all, no rules about length or characters' }),
+      nw, meter, nw2, note,
       el('div', { class: 'btn-row' }, [
         el('button', { class: 'btn primary', text: 'Change it', onclick: save }),
         el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }),
@@ -6387,13 +6503,53 @@ async function openVaultForm(mod, existing) {
     b.addEventListener('click', () => { chosenIcon = chosenIcon === e ? '' : e; drawIcon(); });
     icoGrid.appendChild(b);
   });
+
+  // The way out of a fixed palette. There is no web API that opens a phone's
+  // emoji keyboard on demand, and no picker worth writing here would match the
+  // one already on the device - so this gives the keyboard somewhere to type
+  // into instead, and takes the first emoji that arrives. Whatever the phone
+  // can produce works, including the ones the palette leaves out.
+  const icoCustom = el('input', {
+    type: 'text', class: 'vault-ico-custom', placeholder: 'Tap here, then the emoji key',
+    autocomplete: 'off', autocapitalize: 'none', spellcheck: 'false',
+    value: mod.ICON_CHOICES.indexOf(chosenIcon) < 0 ? chosenIcon : '',
+  });
+  const icoCustomWrap = el('div', { class: 'vault-ico-custom-wrap hidden' }, [
+    icoCustom,
+    el('p', { class: 'hint', text: 'Any emoji your keyboard can type. The first one is the one used.' }),
+  ]);
+  const icoCustomNote = icoCustomWrap.querySelector('.hint');
+  const ICO_HINT = 'Any emoji your keyboard can type. The first one is the one used.';
+  icoCustom.addEventListener('input', () => {
+    const g = mod.firstGlyph(icoCustom.value);
+    if (g && !mod.isEmoji(g)) {
+      // Left in the box rather than deleted from under the typing finger -
+      // the note says why nothing happened, and fixing it is one backspace.
+      icoCustomNote.textContent = 'That is not an emoji. Use your keyboard\u2019s emoji key.';
+      icoCustomNote.classList.add('warn');
+      return;
+    }
+    icoCustomNote.textContent = ICO_HINT;
+    icoCustomNote.classList.remove('warn');
+    chosenIcon = g;
+    drawIcon();
+  });
+  const icoMore = el('button', {
+    class: 'vault-ico-pick is-more', type: 'button', text: '+',
+    title: 'Use an emoji from your keyboard', 'aria-label': 'Use an emoji from your keyboard',
+  });
+  icoMore.addEventListener('click', () => {
+    const open = icoCustomWrap.classList.toggle('hidden');
+    if (!open) setTimeout(() => icoCustom.focus(), 50);
+  });
+  icoGrid.appendChild(icoMore);
   const icoToggle = el('button', {
     class: 'btn small ghost', type: 'button', text: 'Pick one',
     onclick: () => icoGrid.classList.toggle('hidden'),
   });
   const icoClear = el('button', {
     class: 'btn small ghost', type: 'button', text: 'Default',
-    onclick: () => { chosenIcon = ''; drawIcon(); },
+    onclick: () => { chosenIcon = ''; icoCustom.value = ''; drawIcon(); },
   });
   const drawIcon = () => {
     const rec = { title: title.value, url: url.value, category: chosenCat, icon: chosenIcon };
@@ -6404,7 +6560,10 @@ async function openVaultForm(mod, existing) {
     icoNote.textContent = chosenIcon ? 'Your pick'
       : 'Chosen from the title' + (chosenCat ? ' and category' : '') + '. Pick one to override it.';
     icoClear.classList.toggle('hidden', !chosenIcon);
-    [...icoGrid.children].forEach((b) => b.classList.toggle('active', b.dataset.ico === chosenIcon));
+    [...icoGrid.children].forEach((b) => b.classList.toggle('active', !!b.dataset.ico && b.dataset.ico === chosenIcon));
+    // Lit when the icon in use came from the keyboard rather than the palette,
+    // so a chosen icon is never shown with nothing on the grid selected.
+    icoMore.classList.toggle('active', !!chosenIcon && mod.ICON_CHOICES.indexOf(chosenIcon) < 0);
   };
   title.addEventListener('input', drawIcon);
   url.addEventListener('input', drawIcon);
@@ -6465,6 +6624,7 @@ async function openVaultForm(mod, existing) {
         el('label', {}, [el('span', { text: 'Icon' })]),
         el('div', { class: 'vault-ico-row' }, [icoPrev, icoToggle, icoClear, icoNote]),
         icoGrid,
+        icoCustomWrap,
       ]),
       el('div', { class: 'field' }, [
         el('label', {}, [el('span', { text: 'Category' })]),
@@ -14734,6 +14894,30 @@ async function openMenu() {
 }
 
 // ---------- backup ----------
+//
+// Everything on the device that the user put there. Not `meta`, which is
+// settings rather than records, and not `feed`, which is cached news that
+// re-fetches itself. Counted rather than sized, because a count is the thing
+// worth saying out loud: "43 new entries" means something, "812 KB" does not.
+const BACKED_UP_STORES = ['stocks', 'snapshots', 'monthly', 'funds', 'fds', 'dividends',
+  'metals', 'bonds', 'emergency', 'bankSavings', 'creditCards', 'allocations',
+  'ccReimbursements', 'monthlySheet', 'spends', 'personalSpends', 'vault'];
+
+async function dataCount() {
+  const counts = await Promise.all(BACKED_UP_STORES.map(
+    (name) => DB.all(name).then((r) => r.length).catch(() => 0)));
+  return counts.reduce((a, b) => a + b, 0);
+}
+
+// The count goes down WITH the timestamp, every time, from one function - so
+// the reminder can ask "how much has changed since" rather than only "how long
+// ago", and stay quiet for someone who has genuinely not touched anything.
+async function markBackedUp() {
+  const count = await dataCount();
+  await DB.put('meta', { key: 'lastBackup', value: Date.now() });
+  await DB.put('meta', { key: 'lastBackupCount', value: count });
+}
+
 async function exportData() {
   const data = await DB.exportAll();
   const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
@@ -14743,7 +14927,7 @@ async function exportData() {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
-  await DB.put('meta', { key: 'lastBackup', value: Date.now() });
+  await markBackedUp();
   toast('Backup downloaded');
 }
 
@@ -14755,7 +14939,7 @@ function importData() {
     if (!confirm('Importing will REPLACE all current data on this device. Continue?')) return;
     try {
       await DB.importAll(JSON.parse(await file.text()));
-      await DB.put('meta', { key: 'lastBackup', value: Date.now() });
+      await markBackedUp();
       toast('Backup imported');
       refresh();
     } catch (e) {
@@ -14821,7 +15005,7 @@ async function openBackupMainSheet(handle) {
       const data = await DB.exportAll();
       const result = await writeBackup(handle, data);
       await rotateBackups(handle);
-      await DB.put('meta', { key: 'lastBackup', value: Date.now() });
+      await markBackedUp();
       toast('Backup saved · ' + _fmtBackupDate(result.date));
       closeModal(); openBackupMainSheet(handle);
     } catch (e) { alert('Backup failed: ' + (e.message || e)); }
@@ -14840,6 +15024,7 @@ async function openBackupMainSheet(handle) {
       await writePreRestoreSnapshot(handle, current);
       const data = await readBackupByName(handle, item.name);
       await DB.importAll(data);
+      await markBackedUp();
       toast('Restored · ' + _fmtBackupDate(item.date) + ' · reloading…');
       setTimeout(() => location.reload(), 900);
     } catch (e) { alert('Restore failed: ' + (e.message || e)); }
@@ -15779,22 +15964,58 @@ async function requestPersistentStorage() {
   }
 }
 
-// One-time-per-session nudge if it's been more than 30 days since the last
-// Export, so 10-year durability doesn't hinge on memory alone.
+// One nudge a session, when there is something to lose and it has been either
+// too long or too much since it was last saved.
+//
+// This began `const stocks = await DB.all('stocks'); if (!stocks.length) return;`
+// which meant it never once fired for anyone whose data is spends, cards and
+// passwords rather than shares - the people with the most to lose, since none
+// of that exists anywhere else. A share can be re-entered from a statement; a
+// password in the vault cannot be recovered from anything.
+//
+// Two triggers rather than one. Time alone nags people who have changed
+// nothing, and a count alone never reaches someone who edits rarely but has
+// years of history sitting on one phone.
+const BACKUP_NUDGE_DAYS = 30;
+const BACKUP_NUDGE_CHANGES = 25;
+
 async function checkBackupReminder() {
   try {
-    const stocks = await DB.all('stocks');
-    if (!stocks.length) return;
-    const m = await DB.get('meta', 'lastBackup');
-    const last = m ? m.value : 0;
-    const days = last ? Math.floor((Date.now() - last) / 86400000) : null;
-    if (days != null && days <= 30) return;
     if (sessionStorage.getItem('backupNudgeShown')) return;
+    const now = await dataCount();
+    if (!now) return;                    // nothing on the device to lose yet
+    const m = await DB.get('meta', 'lastBackup').catch(() => null);
+    const c = await DB.get('meta', 'lastBackupCount').catch(() => null);
+    const last = m && m.value ? m.value : 0;
+    const then = c && typeof c.value === 'number' ? c.value : null;
+    const days = last ? Math.floor((Date.now() - last) / 86400000) : null;
+    // Unknown for a backup taken before the count was recorded. An unknown is
+    // not treated as a reason to nag - the date on its own still is.
+    const added = then == null ? null : Math.max(0, now - then);
+    const stale = days == null || days > BACKUP_NUDGE_DAYS;
+    const drifted = added != null && added >= BACKUP_NUDGE_CHANGES;
+    if (!stale && !drifted) return;
+
+    const ago = days + (days === 1 ? ' day' : ' days') + ' ago';
+    let msg;
+    if (days == null) {
+      // The one case worth naming what is at stake rather than counting it.
+      // More than one row, because a vault that exists always holds the
+      // hidden copy of its own master password. The rows are ciphertext, so
+      // nothing out here can tell which one that is - the count is all there
+      // is to go on, and one row means nothing has been saved yet.
+      const vault = await DB.all('vault').catch(() => []);
+      msg = 'No backup yet · ' + now + (now === 1 ? ' entry' : ' entries')
+        + (vault.length > 1 ? ', passwords included, exist' : ' exist') + ' only on this phone';
+    } else if (drifted) {
+      msg = added + ' new since your last backup, ' + ago;
+    } else {
+      msg = 'Last backup ' + ago;
+    }
     sessionStorage.setItem('backupNudgeShown', '1');
-    setTimeout(() => toast(last ? 'Backup reminder · last backup ' + days + ' days ago' : 'Tip · export a backup soon (menu → Export)'), 1500);
+    setTimeout(() => toast(msg + ' · tap to back up', () => openBackupSheet()), 1500);
   } catch (_) {}
 }
-
 function checkMonthEndSnapshotReminder() {
   if (!isMonthEndReminderWindow() || !missingCurrentMonthCapture(state.months)) return;
   const key = 'snapshotReminderShown_' + state.portfolio + '_' + thisYm();

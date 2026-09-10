@@ -223,9 +223,14 @@ const TITLE_ICONS = [
   [/netflix|prime ?video|hotstar|jio ?cinema|sony ?liv|zee5|youtube|spotify|disney|apple ?tv/, '\u{1F3AC}'],
   [/gmail|outlook|yahoo|proton ?mail|zoho ?mail|\bmail\b|e-?mail/, '\u2709\uFE0F'],
   [/demat|zerodha|groww|upstox|angel ?one|kite|mutual ?fund|nsdl|cdsl|trading|smallcase/, '\u{1F4C8}'],
+  // Ahead of the banks: "ICICI Credit Card" is a card that a bank happens to
+  // have issued, and the half of the title saying what it IS should win over
+  // the half saying who it is with. The looser card words stay below, where
+  // "HDFC card" still reads as the bank.
+  [/credit ?card|debit ?card|master ?card|\bvisa\b|rupay|\bamex\b/, '\u{1F4B3}'],
   [/bank|hdfc|icici|\bsbi\b|axis|kotak|indusind|canara|\bpnb\b|\bidfc\b|\bboi\b|net ?banking/, '\u{1F3E6}'],
   [/\bupi\b|g ?pay|google ?pay|phone ?pe|paytm|bhim|amazon ?pay/, '\u{1F4B8}'],
-  [/credit ?card|debit ?card|\bcard\b|visa|master ?card|rupay|amex/, '\u{1F4B3}'],
+  [/\bcard\b/, '\u{1F4B3}'],
   [/amazon|flipkart|myntra|ajio|big ?basket|blinkit|zepto|swiggy|zomato|shop|store/, '\u{1F6D2}'],
   [/insta|facebook|twitter|linked ?in|whats ?app|telegram|reddit|snapchat|threads|pinterest/, '\u{1F4AC}'],
   [/wi-?fi|router|broadband|airtel|\bjio\b|\bbsnl\b|fibernet|hathway|modem/, '\u{1F4F6}'],
@@ -270,6 +275,44 @@ export function iconHue(text) {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
   return h;
+}
+
+// The first character of a string, where "character" means what a person
+// would call one. Array.from would do for most of the palette, but not for
+// what a phone keyboard can produce: a flag is two regional indicators, a
+// thumbs-up with a skin tone is a base plus a modifier, and a family is four
+// people joined by zero-width joiners. Splitting any of those in half yields
+// a stray box. Intl.Segmenter knows where the boundaries are; the fallback is
+// only reached on a browser old enough not to have it.
+export function firstGlyph(str) {
+  const t = String(str || '').trim();
+  if (!t) return '';
+  try {
+    const seg = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+    for (const g of seg.segment(t)) return g.segment;
+  } catch (_) { /* no Segmenter here */ }
+  return Array.from(t)[0] || '';
+}
+
+// Is that actually an emoji? The box the user types into is a plain text
+// input - there is no way to ask a phone for "emoji only" - so a word typed
+// into it by mistake would otherwise become an icon reading "P", which looks
+// like the automatic first-letter tile but is not one, and cannot be told
+// apart from it later.
+//
+// Extended_Pictographic covers the pictures, including the older ones like
+// U+2764 that predate the emoji blocks; Regional_Indicator covers flags,
+// which are pairs of letters and match nothing else.
+export function isEmoji(glyph) {
+  const g = String(glyph || '');
+  if (!g) return false;
+  try {
+    return /\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(g);
+  } catch (_) {
+    // No Unicode property escapes: fall back to "not plain ASCII", which is
+    // wrong at the edges and right for everything a keyboard emoji key emits.
+    return /[^\u0000-\u00FF]/.test(g);
+  }
 }
 
 // The palette the picker offers. Deliberately a couple of dozen rather than

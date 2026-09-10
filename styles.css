@@ -697,7 +697,15 @@ table.heatmap { border-collapse: collapse; font-size: 0.72rem; }
   background: var(--card-2); color: var(--text);
   border: 1px solid var(--line); border-radius: 10px;
   padding: 10px 16px; font-size: 0.85rem; box-shadow: 0 6px 18px rgba(0,0,0,0.4);
+  max-width: min(92vw, 420px); text-align: center;
 }
+/* A toast that does something has to look like it does something, or it reads
+   as one more message that went past. */
+.toast.is-tappable {
+  cursor: pointer; border-color: var(--accent);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.45), inset 0 0 0 1px var(--accent);
+}
+.toast.is-tappable:active { transform: translateX(-50%) scale(0.98); }
 
 /* Loader overlay (used during OCR) */
 .loader-overlay {
@@ -2786,8 +2794,29 @@ html[data-theme="light"] .vault-ico.is-letter {
   font-size: 0.76rem; letter-spacing: 0.6px; color: var(--text);
   white-space: normal; overflow-wrap: anywhere;
 }
-.vault-acts { display: flex; align-items: center; gap: 1px; flex: 0 0 auto; }
-.vault-acts .icon-btn { padding: 5px 6px; }
+.vault-acts { display: flex; flex-direction: column; align-items: flex-end; gap: 0; flex: 0 0 auto; }
+.vault-act-row { display: flex; align-items: center; gap: 1px; }
+.vault-acts .icon-btn { padding: 4px 6px; }
+.vault-when { font-size: 0.58rem; color: var(--muted); white-space: nowrap; padding-right: 5px; line-height: 1.2; }
+
+/* How the list is read, not what it contains - so a segmented control rather
+   than another icon in the toolbar. */
+.vault-modes {
+  display: flex; width: fit-content; margin-bottom: 10px; overflow: hidden;
+  border: 1px solid var(--line); border-radius: 999px; background: var(--card);
+}
+.vault-mode-btn {
+  font-size: 0.7rem; font-weight: 600; padding: 6px 15px; cursor: pointer;
+  border: 0; background: transparent; color: var(--muted); font-family: inherit;
+}
+.vault-mode-btn.active { background: var(--accent); color: #04222e; font-weight: 700; }
+.vault-group {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--muted); margin: 13px 3px 1px;
+}
+.vault-list > .vault-group:first-child { margin-top: 1px; }
+.vault-group-n { font-weight: 600; opacity: 0.7; letter-spacing: 0; }
 .vault-eye { font-size: 0.9rem; }
 
 /* ---- Icon picker in the form ---- */
@@ -2804,6 +2833,19 @@ html[data-theme="light"] .vault-ico.is-letter {
   background: var(--card-2); color: var(--text);
 }
 .vault-ico-pick.active { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+/* The way out of the palette, marked as an opening rather than a choice. */
+.vault-ico-pick.is-more { font-size: 1.25rem; font-weight: 700; color: var(--muted); border-style: dashed; }
+.vault-ico-custom-wrap { display: flex; flex-direction: column; gap: 3px; margin-top: 9px; }
+.vault-ico-custom-wrap .hint { margin: 0; font-size: 0.66rem; }
+input.vault-ico-custom {
+  width: 100%; padding: 9px 12px; font-size: 1.15rem; line-height: 1.2;
+  border: 1px solid var(--accent); border-radius: 10px;
+  background: var(--card); color: var(--text); font-family: inherit;
+}
+input.vault-ico-custom:focus { outline: none; }
+
+/* Labels inside the master-password sheet, where the inputs carry no field() */
+.vault-lbl { display: block; font-size: 0.7rem; color: var(--muted); margin: 12px 2px 5px; }
 
 .vault-pw-field { display: flex; gap: 8px; align-items: center; }
 .vault-pw-field input { flex: 1; min-width: 0; }
