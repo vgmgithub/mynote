@@ -4747,7 +4747,31 @@ const _tagOpen = {};
 // Which tags are being looked FOR, as opposed to read about. Empty means the
 // tab is in its usual analysing mode.
 let _tagPicked = new Set();
+// Four ways to read the same list, because "which costs most" and "which have
+// I stopped using" are different questions and only one of them is answered by
+// a total.
+const TAG_SORTS = [['total', 'Spend'], ['count', 'Entries'], ['recent', 'Recent'], ['az', 'A-Z']];
+let _tagSort = 'total';
 let _tagMatchAll = false;   // false = any of them, true = all of them at once
+
+// Twelve months of a tag in eighteen pixels, so the shape of it is on the
+// closed row. Reading whether something is growing used to cost a tap and a
+// full bar chart, which meant it was never read while scanning.
+//
+// Heights are absolute against the tag's own peak, not against its neighbours':
+// this answers "is this one going up", and a shared scale would flatten every
+// small tag into a straight line and say nothing about any of them.
+function _tagSpark(yms, byYm, thisYm) {
+  const peak = yms.reduce((m, y) => Math.max(m, Math.abs(byYm.get(y) || 0)), 1);
+  return el('span', { class: 'tag-spark' }, yms.map((y) => {
+    const v = Math.abs(byYm.get(y) || 0);
+    return el('span', {
+      class: 'tag-spark-bar' + (v > 0 ? '' : ' is-zero') + (y === thisYm ? ' is-now' : ''),
+      style: 'height:' + Math.max(7, (v / peak) * 100).toFixed(1) + '%',
+      title: _spendMonthLabel(y) + ' · ' + (v > 0 ? fmtIntCur(v) : 'nothing'),
+    });
+  }));
+}
 
 // One logged spend, as it appears under a tag. Shared by the per-tag list and
 // by the find results, so the two never drift into showing different things
@@ -4896,15 +4920,26 @@ async function renderTagAnalysis(host, token, o) {
   const inScope = new Set(tags.map((t) => t.tag));
   _tagPicked = new Set([..._tagPicked].filter((t) => inScope.has(t)));
 
+  const modeBtn = (label, on, fn) => el('button', {
+    type: 'button', class: on ? 'active' : '', text: label,
+    onclick: () => { if (on) return; fn(); rerender(); },
+  });
+
   if (tags.length) {
-    const modeBtn = (label, on, fn) => el('button', {
-      type: 'button', class: on ? 'active' : '', text: label,
-      onclick: () => { if (on) return; fn(); rerender(); },
-    });
+    // A cloud, not a row of identical pills. Every chip was the same size and
+    // said the same thing, so the picture of a month's tagging - one habit
+    // dwarfing four others, or five running level - was nowhere on the page
+    // until you read every total in the list below.
+    //
+    // Size and tint both track the tag's share of tagged spend, so weight is
+    // legible at a glance and again on a second look. Tint uses color-mix with
+    // a plain background declared first, so a browser without it gets flat
+    // chips rather than invisible ones.
+    const heaviest = tags.reduce((m, t) => Math.max(m, Math.abs(t.total)), 1);
     host.appendChild(el('div', { class: 'tag-find' }, [
       el('div', { class: 'tag-find-head' }, [
         el('span', { class: 'tag-find-label', text: _tagPicked.size
-          ? _tagPicked.size + ' of ' + tags.length + ' tags' : 'Find spends by tag' }),
+          ? _tagPicked.size + ' of ' + tags.length + ' picked' : 'Tap a tag to find its spends' }),
         // Only when the choice exists. With one tag picked, any and all are
         // the same thing, and a toggle that changes nothing is a puzzle.
         _tagPicked.size >= 2 ? el('div', { class: 'tag-find-mode' }, [
@@ -4914,14 +4949,23 @@ async function renderTagAnalysis(host, token, o) {
         _tagPicked.size ? el('button', { class: 'tag-find-clear', type: 'button', text: 'Clear',
           onclick: () => { _tagPicked = new Set(); rerender(); } }) : document.createTextNode(''),
       ]),
-      el('div', { class: 'tag-find-chips' }, tags.map((t) => el('button', {
-        type: 'button', class: 'tag-find-chip' + (_tagPicked.has(t.tag) ? ' active' : ''),
-        text: t.tag + ' · ' + t.count,
-        onclick: () => {
-          if (_tagPicked.has(t.tag)) _tagPicked.delete(t.tag); else _tagPicked.add(t.tag);
-          rerender();
-        },
-      }))),
+      el('div', { class: 'tag-cloud' }, tags.map((t) => {
+        const w = Math.abs(t.total) / heaviest;                  // 0..1
+        return el('button', {
+          type: 'button',
+          class: 'tag-cloud-chip' + (_tagPicked.has(t.tag) ? ' active' : ''),
+          style: '--w:' + (w * 100).toFixed(1) + ';--fs:' + (0.72 + w * 0.34).toFixed(3) + 'rem',
+          title: t.tag + ' · ' + fmtSheetCur(t.total) + ' across ' + t.count
+            + (t.count === 1 ? ' entry' : ' entries'),
+          onclick: () => {
+            if (_tagPicked.has(t.tag)) _tagPicked.delete(t.tag); else _tagPicked.add(t.tag);
+            rerender();
+          },
+        }, [
+          el('span', { class: 'tag-cloud-name', text: t.tag }),
+          el('span', { class: 'tag-cloud-amt', text: fmtIntCur(Math.abs(t.total)) }),
+        ]);
+      })),
     ]));
   }
 
@@ -5049,8 +5093,23 @@ async function renderTagAnalysis(host, token, o) {
   const barYms = scopeYms.slice(-12);
   const sumTagTotals = round2(tags.reduce((a, t) => a + t.total, 0));
 
+  // Sorted here rather than in the rollup: the rollup answers what each tag
+  // costs, and how that gets ordered is a question for whoever is looking.
+  const ordered = tags.slice().sort((a, b) => {
+    if (_tagSort === 'count') return b.count - a.count || b.total - a.total;
+    if (_tagSort === 'az') return a.tag.localeCompare(b.tag);
+    if (_tagSort === 'recent') return String(b.lastYm || '').localeCompare(String(a.lastYm || '')) || b.total - a.total;
+    return b.total - a.total || b.count - a.count;
+  });
+
+  host.appendChild(el('div', { class: 'tag-sortbar' }, [
+    el('span', { class: 'tag-find-label', text: tags.length + (tags.length === 1 ? ' tag' : ' tags') }),
+    el('div', { class: 'tag-find-mode' }, TAG_SORTS.map(([v, label]) =>
+      modeBtn(label, _tagSort === v, () => { _tagSort = v; }))),
+  ]));
+
   const list = el('div', { class: 'tag-an-list' });
-  tags.forEach((t) => {
+  ordered.forEach((t) => {
     const share = taggedTotal > 0 ? (t.total / taggedTotal) * 100 : 0;
     const netBack = t.total < 0;
     // A handle used across most of the months in scope is a standing cost; one
@@ -5083,9 +5142,15 @@ async function renderTagAnalysis(host, token, o) {
         trend ? el('span', { class: 'tag-an-trend' + (trend.up ? ' is-up' : ' is-down'), text: trend.text }) : document.createTextNode(''),
         el('span', { class: 'tag-an-total', text: fmtSigned(t.total) }),
       ]),
-      el('span', { class: 'tag-an-track' }, [
-        el('span', { class: 'tag-an-fill', style: 'width:' + Math.max(1.5, share).toFixed(1) + '%' }),
-      ]),
+      // One bar, not two. This row used to carry a share track as well, and
+      // the two stacked read as a pair when they measure unrelated things -
+      // where the tag is going, and how big it is next to the others. The
+      // cloud above answers the second now, by size and by tint, so the row
+      // keeps only the one the cloud cannot show.
+      barYms.length > 1 ? _tagSpark(barYms, t.yms, thisYm)
+        : el('span', { class: 'tag-an-track' }, [
+          el('span', { class: 'tag-an-fill', style: 'width:' + Math.max(1.5, share).toFixed(1) + '%' }),
+        ]),
       el('span', { class: 'tag-an-meta', text: (netBack ? 'came back' : share.toFixed(0) + '% of tagged') + ' · '
         + t.count + (t.count === 1 ? ' entry' : ' entries') + ' · ' + fmtIntCur(t.avg) + ' each · '
         + t.months + (t.months === 1 ? ' month' : ' months')
