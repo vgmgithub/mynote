@@ -2038,7 +2038,11 @@ async function openPfSpendForm(existing, defaultDate) {
       createdAt: editing ? (existing.createdAt || nowIso) : nowIso, updatedAt: nowIso,
     };
     if (editing) rec.id = existing.id;
-    await DB.put('personalSpends', rec);
+    const savedId = await DB.put('personalSpends', rec);
+    // A UPI spend somebody owes you back gets a Virtual Bal row. The previous
+    // state decides whether a missing row means "never had one" or "you took
+    // it off" - see syncOwedRow.
+    await syncOwedRow(rec, editing ? existing.id : savedId, editing && isOwedRow(existing));
     closeModal();
     // The strip moves to the month the entry is FILED under, so a back-dated
     // spend is visible instead of appearing to have done nothing. For a card
@@ -2062,6 +2066,7 @@ async function openPfSpendForm(existing, defaultDate) {
   const del = async () => {
     if (!editing) return;
     if (!window.confirm('Delete this spend?')) return;
+    await dropOwedRow(existing);
     await DB.del('personalSpends', existing.id);
     closeModal();
     toast('Deleted');
@@ -2853,6 +2858,7 @@ async function renderPfSpends(host, token) {
             onclick: async (e) => {
               e.stopPropagation();   // the row opens the editor; the delete must not
               if (!window.confirm('Delete ' + fmtSigned(r.amount) + ' on ' + (r.category || 'Misc') + '?')) return;
+              await dropOwedRow(r);
               await DB.del('personalSpends', r.id);
               toast('Deleted');
               renderPersonal();
@@ -5391,7 +5397,14 @@ function sheetItemsOf(sheet, cfg) {
   const raw = sheet && sheet[cfg.key];
   if (Array.isArray(raw)) {
     return raw
-      .map((it) => ({ label: String((it && it.label) || '').trim(), amount: round2(Number(it && it.amount) || 0) }))
+      .map((it) => ({
+        label: String((it && it.label) || '').trim(),
+        amount: round2(Number(it && it.amount) || 0),
+        // Which spend put this row here, when one did. Carried through every
+        // read and write of the list so that editing that spend can move its
+        // own row and leave every hand-written one alone.
+        srcId: it && it.srcId != null ? it.srcId : null,
+      }))
       .filter((it) => it.label || it.amount);
   }
   // A month written while this was a single figure keeps that figure, as one
@@ -5406,7 +5419,7 @@ const sheetItemsTotal = (items) => round2((items || []).reduce((a, it) => a + (N
 // One row per person or reason: what it is, and how much. Rows are added as
 // things happen and removed when they stop being true.
 function openSheetListForm(ym, sheet, cfg, monthLabel, onSaved) {
-  const rows = sheetItemsOf(sheet, cfg).map((it) => ({ label: it.label, amount: it.amount }));
+  const rows = sheetItemsOf(sheet, cfg).map((it) => ({ label: it.label, amount: it.amount, srcId: it.srcId }));
   const wrap = el('div', { class: 'vb-rows' });
   // Green reads as money coming in, and only one of these two is. A running
   // total that colours a repair bill like income is worse than uncoloured.
@@ -5465,7 +5478,8 @@ function openSheetListForm(ym, sheet, cfg, monthLabel, onSaved) {
     syncRows();
     // A row with neither a name nor an amount is a blank line, not an entry.
     const items = rows.filter(Boolean)
-      .map((r) => ({ label: String(r.label || '').trim(), amount: round2(Number(r.amount) || 0) }))
+      .map((r) => ({ label: String(r.label || '').trim(), amount: round2(Number(r.amount) || 0),
+        srcId: r.srcId != null ? r.srcId : null }))
       .filter((r) => r.label || r.amount > 0);
     if (items.some((r) => !r.label)) { toast('Every entry needs a name'); return; }
     if (items.some((r) => r.amount <= 0)) { toast('Every entry needs an amount'); return; }
@@ -5501,6 +5515,57 @@ function openSheetListForm(ym, sheet, cfg, monthLabel, onSaved) {
       el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }),
     ])]),
   ]));
+}
+
+// ---------- A personal spend for somebody else, paid by UPI ----------
+//
+// On a card this is already handled: every "for others" card spend counts into
+// that cycle's reimbursement, because a bill is coming and somebody else is
+// going to settle their share of it.
+//
+// Paid by UPI there is no bill for it to land on. The money simply left, and
+// what is left behind is a person owing you — which is precisely what Virtual
+// Bal is a list of. So the spend writes itself a row there, labelled with its
+// category and whatever tags it carries, rather than being typed twice.
+//
+// Linked by srcId, and that link is what keeps this from fighting the user:
+// editing the spend moves its own row, deleting the spend takes it away, and
+// a row removed by hand — the way this list is meant to be used the day
+// somebody pays you back — is never put back by a later edit.
+const owedLabel = (rec) => [String(rec.category || 'Misc')].concat(tagsOf(rec)).join(' - ');
+const isOwedRow = (rec) => !!(rec && rec.forOthers) && rec.method !== 'Card' && Number(rec.amount) > 0;
+
+async function syncOwedRow(rec, id, wasOwed) {
+  const cfg = SHEET_LISTS.virtual;
+  const ym = String((rec && rec.ym) || '').slice(0, 7);
+  if (!/^\d{4}-\d{2}$/.test(ym) || id == null) return;
+  const owed = isOwedRow(rec);
+  if (!owed && !wasOwed) return;                 // never was one, still is not
+
+  const sheet = (await DB.get('monthlySheet', ym).catch(() => null)) || { ym };
+  const items = sheetItemsOf(sheet, cfg);
+  const at = items.findIndex((it) => it.srcId === id);
+
+  if (owed) {
+    const row = { label: owedLabel(rec), amount: round2(Number(rec.amount) || 0), srcId: id };
+    if (at >= 0) items[at] = row;
+    else if (!wasOwed) items.push(row);          // newly owed: a row is due
+    else return;                                 // it had one and it was removed
+  } else if (at >= 0) {
+    items.splice(at, 1);
+  } else return;
+
+  const patch = { ym, updatedAt: new Date().toISOString() };
+  patch[cfg.key] = items;
+  patch[cfg.legacy] = null;
+  patch[cfg.legacy + 'Src'] = null;
+  await DB.put('monthlySheet', Object.assign({}, sheet, patch)).catch(() => {});
+}
+
+// A spend being deleted takes its row with it, if it still has one.
+async function dropOwedRow(rec) {
+  if (!isOwedRow(rec) || rec.id == null) return;
+  await syncOwedRow(Object.assign({}, rec, { forOthers: false }), rec.id, true);
 }
 
 // The row on the sheet: a read-only total, who or what is behind it, and the +
