@@ -2817,24 +2817,6 @@ async function renderPfSpends(host, token) {
       const card = cards.find((c) => c.id === r.cardId);
       const meta = [_spendDayLabel(r.date), r.method === 'Card' ? (card ? card.name : 'Card') : r.method];
       if (r.note) meta.push(r.note);
-      // Flipped straight from the row, no form to open: this is a fact about
-      // the spend the user knows at a glance down the list, and making them
-      // open each one to set it is how a list stops being marked up at all.
-      const othersChk = el('input', { type: 'checkbox' });
-      othersChk.checked = isForOthers(r);
-      const othersSwitch = el('label', { class: 'switch switch-sm pf-others-switch' }, [
-        othersChk, el('span', { class: 'switch-track' }, [el('span', { class: 'switch-thumb' })]),
-      ]);
-      const flip = async (e) => {
-        e.stopPropagation();     // the row opens the editor; this must not
-        const on = othersChk.checked;
-        await DB.put('personalSpends', Object.assign({}, r, {
-          forOthers: on, updatedAt: new Date().toISOString(),
-        })).catch(() => {});
-        renderPersonal();
-      };
-      othersChk.addEventListener('change', flip);
-      othersSwitch.addEventListener('click', (e) => e.stopPropagation());
       const refunded = isRefund(r);
       wrap.appendChild(el('div', { class: 'msheet-row trk-entry is-tappable'
         + (isForOthers(r) ? ' is-others' : '') + (refunded ? ' is-refund' : ''), onclick: () => openPfSpendForm(r) }, [
@@ -2842,14 +2824,20 @@ async function renderPfSpends(host, token) {
           el('span', { text: r.category || 'Misc' }),
           el('span', { class: 'msheet-note', text: meta.join(' · ') }),
           tagRow(r) || document.createTextNode(''),
-          // A refund cannot also be a spend somebody will pay back, so the
-          // switch is not offered on one.
+          // Said, not asked. Every row used to carry a live switch, so a list of
+          // twenty spends was twenty controls, nineteen of them off and none
+          // of them being used - a question repeated down the page where a
+          // statement belonged. Setting it is an edit, and edits happen in the
+          // form; the list only has to say which ones are somebody else's.
+          //
+          // That switch also wrote straight to the store, which meant flipping
+          // it on never made the Virtual Bal row that saving the same change
+          // through the form does. One way in, one behaviour.
           refunded
             ? el('span', { class: 'pf-refund-tag', text: 'Money back — off the total' })
-            : el('div', { class: 'pf-others-row' }, [
-                othersSwitch,
-                el('span', { class: 'pf-others-label', text: isForOthers(r) ? 'For others — off the limits' : 'For others' }),
-              ]),
+            : isForOthers(r)
+              ? el('span', { class: 'pf-others-tag', text: 'For others — off the limits' })
+              : document.createTextNode(''),
         ]),
         el('div', { class: 'trk-entry-right' }, [
           el('span', { class: 'msheet-val', text: fmtSigned(r.amount) }),
