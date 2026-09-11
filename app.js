@@ -5826,6 +5826,12 @@ const VAULT_GROUP_KEY = 'vaultGroup';
 // names to anyone reading the database is not a store that leaks nothing.
 let _vaultPeople = [];
 let _vaultPerson = '';        // '' means everyone; not remembered, it is a look
+// The third state the filter can be in, alongside "everyone" and one name.
+// A NUL is used rather than a word because a person could perfectly well be
+// called Unassigned, and a filter that collides with a real name would quietly
+// show the wrong entries - names are trimmed non-empty text, so this can never
+// be one of them.
+const VAULT_NO_PERSON = '\u0000none';
 const VAULT_PEOPLE_KEY = 'vaultPeople';
 const VAULT_SALT_KEY = 'vaultSalt';
 const VAULT_VERIFY_KEY = 'vaultVerify';
@@ -5981,7 +5987,8 @@ async function renderVault() {
   if (vaultRenderStale(token)) return;
   // A filter pointing at somebody who has since been removed would hide
   // everything and look like an empty vault.
-  if (_vaultPerson && _vaultPeople.indexOf(_vaultPerson) < 0) _vaultPerson = '';
+  if (_vaultPerson && _vaultPerson !== VAULT_NO_PERSON
+    && _vaultPeople.indexOf(_vaultPerson) < 0) _vaultPerson = '';
 
   // ---- Toolbar: search, and the two things you do to the vault itself ----
   const search = el('input', {
@@ -6036,7 +6043,14 @@ async function renderVault() {
       });
       return b;
     };
+    // Sits next to All rather than after the names: both are states of the
+    // list rather than people, they belong together, and on a narrow phone the
+    // strip scrolls - putting it last would hide the one chip whose whole job
+    // is to be noticed and emptied.
+    const loose = _vaultRows.filter((r) => !r.person).length;
+    if (!loose && _vaultPerson === VAULT_NO_PERSON) _vaultPerson = '';
     peopleStrip.appendChild(chip('All', ''));
+    if (loose) peopleStrip.appendChild(chip('Unassigned', VAULT_NO_PERSON));
     _vaultPeople.forEach((n) => peopleStrip.appendChild(chip(n, n)));
   };
   drawPeople();
@@ -6055,7 +6069,9 @@ async function renderVault() {
 
   function drawList() {
     const q = _vaultQuery.trim().toLowerCase();
-    const mine = _vaultPerson ? _vaultRows.filter((r) => r.person === _vaultPerson) : _vaultRows;
+    const mine = !_vaultPerson ? _vaultRows
+      : _vaultPerson === VAULT_NO_PERSON ? _vaultRows.filter((r) => !r.person)
+        : _vaultRows.filter((r) => r.person === _vaultPerson);
     const shown = !q ? mine : mine.filter((r) =>
       [r.title, r.account, r.username, r.url, r.category, r.person]
         .some((f) => String(f || '').toLowerCase().indexOf(q) >= 0));
@@ -6069,10 +6085,13 @@ async function renderVault() {
       return;
     }
     if (!shown.length) {
+      const none = _vaultPerson === VAULT_NO_PERSON;
       const why = q && _vaultPerson
-        ? 'Nothing of ' + _vaultPerson + '’s matches ’' + _vaultQuery + '’.'
+        ? (none ? 'Nothing unassigned' : 'Nothing of ' + _vaultPerson + '’s')
+          + ' matches ’' + _vaultQuery + '’.'
         : q ? 'Nothing matches ’' + _vaultQuery + '’.'
-          : 'Nothing saved under ' + _vaultPerson + ' yet.';
+          : none ? 'Everything here belongs to somebody.'
+            : 'Nothing saved under ' + _vaultPerson + ' yet.';
       list.appendChild(el('p', { class: 'hint', style: 'text-align:center;padding:16px 0', text: why }));
       return;
     }
