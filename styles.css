@@ -2561,7 +2561,12 @@ input.vb-amt { flex: 0 0 96px; width: 96px; padding: 9px 11px; border: 1px solid
 }
 /* Capped and scrollable: forty tags would otherwise push the results
    themselves off the screen. */
-.tag-cloud { display: flex; flex-wrap: wrap; gap: 6px; max-height: 168px; overflow-y: auto; align-items: center; }
+/* Two and a half rows. The half row peeking at the bottom is what says there
+   is more below; a whole row would read as the end of the list. */
+.tag-cloud {
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  max-height: 98px; overflow-y: auto; scrollbar-width: thin;
+}
 /* --w is the tag's share of the heaviest, 0-100; --fs its font size. The flat
    background is declared first so a browser without color-mix gets a plain
    chip rather than none. */
@@ -2583,6 +2588,14 @@ input.vb-amt { flex: 0 0 96px; width: 96px; padding: 9px 11px; border: 1px solid
 .tag-cloud-chip.active .tag-cloud-amt { color: #04222e; opacity: 0.72; }
 
 /* Sort, over the list it sorts. */
+input.tag-search {
+  flex: 1; min-width: 0; padding: 8px 12px; font-size: 0.8rem; font-family: inherit;
+  border: 1px solid var(--line); border-radius: 999px;
+  background: var(--card); color: var(--text);
+}
+input.tag-search:focus { outline: none; border-color: var(--accent); }
+.tag-find-note { margin: 7px 3px 0; font-size: 0.64rem; color: var(--muted); }
+
 .tag-sortbar { display: flex; align-items: center; gap: 8px; margin: 0 0 9px; }
 
 /* Twelve months of a tag, on its closed row. */
@@ -2598,13 +2611,6 @@ input.vb-amt { flex: 0 0 96px; width: 96px; padding: 9px 11px; border: 1px solid
 .tag-find-fig-n { font-size: 1.1rem; font-weight: 800; line-height: 1.2; }
 .tag-find-fig-l { font-size: 0.64rem; color: var(--muted); margin-top: 1px; }
 .tag-find-sum h3 { overflow-wrap: anywhere; }
-
-.tag-find-cats { display: flex; flex-direction: column; gap: 11px; }
-.tag-find-cat-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
-.tag-find-cat-name { font-size: 0.82rem; font-weight: 600; overflow-wrap: anywhere; }
-.tag-find-cat-val { font-size: 0.82rem; font-weight: 700; white-space: nowrap; }
-.tag-find-cat-meta { display: block; font-size: 0.64rem; color: var(--muted); margin-top: 3px; }
-.tag-find-cat .tag-an-track { margin-top: 5px; }
 
 .tag-find-tags { margin-top: 4px; }
 .tag-pill.is-hit { border-color: var(--accent); color: var(--accent); font-weight: 700; }

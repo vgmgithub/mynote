@@ -4752,6 +4752,8 @@ let _tagPicked = new Set();
 // a total.
 const TAG_SORTS = [['total', 'Spend'], ['count', 'Entries'], ['recent', 'Recent'], ['az', 'A-Z']];
 let _tagSort = 'total';
+let _tagSearch = '';        // narrows the cloud, not the results
+const _tagCatOpen = {};     // which categories are open in a find result
 let _tagMatchAll = false;   // false = any of them, true = all of them at once
 
 // Twelve months of a tag in eighteen pixels, so the shape of it is on the
@@ -4776,13 +4778,19 @@ function _tagSpark(yms, byYm, thisYm) {
 // One logged spend, as it appears under a tag. Shared by the per-tag list and
 // by the find results, so the two never drift into showing different things
 // about the same entry.
-function _tagEntryRow(x, cardName, withTags) {
+function _tagEntryRow(x, cardName, withTags, labelAs) {
   const meta = [_spendDayLabel(x.r.date), x.r.method || 'UPI'];
   if (x.r.cardId != null && cardName.has(x.r.cardId)) meta.push(cardName.get(x.r.cardId));
+  // Inside a category, naming the category on every row says nothing - you
+  // opened it. The dot is already colouring household against personal, so
+  // the word that earns the space there is the one the dot stands for.
+  const lead = labelAs === 'source'
+    ? (x.src === 'house' ? 'Household' : 'Personal')
+    : (x.r.category || 'Misc');
   const label = el('div', { class: 'msheet-label' }, [
     el('span', {}, [
       el('i', { class: 'rvw-dot ' + (x.src === 'house' ? 'is-house' : 'is-personal') }),
-      x.r.category || 'Misc',
+      lead,
     ]),
     el('span', { class: 'msheet-note', text: meta.join(' · ') }),
   ]);
@@ -4936,22 +4944,23 @@ async function renderTagAnalysis(host, token, o) {
     // a plain background declared first, so a browser without it gets flat
     // chips rather than invisible ones.
     const heaviest = tags.reduce((m, t) => Math.max(m, Math.abs(t.total)), 1);
-    host.appendChild(el('div', { class: 'tag-find' }, [
-      el('div', { class: 'tag-find-head' }, [
-        el('span', { class: 'tag-find-label', text: _tagPicked.size
-          ? _tagPicked.size + ' of ' + tags.length + ' picked' : 'Tap a tag to find its spends' }),
-        // Only when the choice exists. With one tag picked, any and all are
-        // the same thing, and a toggle that changes nothing is a puzzle.
-        _tagPicked.size >= 2 ? el('div', { class: 'tag-find-mode' }, [
-          modeBtn('Any', !_tagMatchAll, () => { _tagMatchAll = false; }),
-          modeBtn('All', _tagMatchAll, () => { _tagMatchAll = true; }),
-        ]) : document.createTextNode(''),
-        _tagPicked.size ? el('button', { class: 'tag-find-clear', type: 'button', text: 'Clear',
-          onclick: () => { _tagPicked = new Set(); rerender(); } }) : document.createTextNode(''),
-      ]),
-      el('div', { class: 'tag-cloud' }, tags.map((t) => {
+    const cloud = el('div', { class: 'tag-cloud' });
+    const note = el('p', { class: 'tag-find-note' });
+
+    // The cloud is capped at two and a half rows on purpose: the half row
+    // showing at the bottom is what says there is more to scroll to. A full
+    // row would look like the end of the list.
+    //
+    // Searching redraws ONLY the cloud, never the whole tab. Re-rendering on
+    // every keystroke would take the focus out of the box being typed in,
+    // which is the classic way to make a search field unusable on a phone.
+    const drawCloud = () => {
+      const q = _tagSearch.trim().toLowerCase();
+      const shown = q ? tags.filter((t) => t.tag.toLowerCase().indexOf(q) >= 0) : tags;
+      cloud.innerHTML = '';
+      shown.forEach((t) => {
         const w = Math.abs(t.total) / heaviest;                  // 0..1
-        return el('button', {
+        cloud.appendChild(el('button', {
           type: 'button',
           class: 'tag-cloud-chip' + (_tagPicked.has(t.tag) ? ' active' : ''),
           style: '--w:' + (w * 100).toFixed(1) + ';--fs:' + (0.72 + w * 0.34).toFixed(3) + 'rem',
@@ -4964,8 +4973,49 @@ async function renderTagAnalysis(host, token, o) {
         }, [
           el('span', { class: 'tag-cloud-name', text: t.tag }),
           el('span', { class: 'tag-cloud-amt', text: fmtIntCur(Math.abs(t.total)) }),
-        ]);
-      })),
+        ]));
+      });
+      if (!shown.length) {
+        cloud.appendChild(el('p', { class: 'hint', style: 'margin:6px 2px',
+          text: 'No tag matches “' + _tagSearch.trim() + '”.' }));
+      }
+      // A tag picked and then searched past is still filtering the results
+      // below. Saying so is the difference between a stale-looking page and
+      // an explained one.
+      const hiddenPicks = q ? [..._tagPicked].filter((t) => t.toLowerCase().indexOf(q) < 0).length : 0;
+      note.textContent = _tagPicked.size
+        ? _tagPicked.size + ' of ' + tags.length + ' picked'
+          + (hiddenPicks ? ' · ' + hiddenPicks + ' hidden by the search' : '')
+        : (q ? shown.length + ' of ' + tags.length + ' tags' : '');
+      note.classList.toggle('hidden', !note.textContent);
+    };
+
+    // Only worth a search box once the cloud is long enough to hunt through.
+    const searchInp = el('input', {
+      type: 'search', class: 'tag-search', placeholder: 'Search tags',
+      value: _tagSearch, autocomplete: 'off',
+    });
+    searchInp.addEventListener('input', () => { _tagSearch = searchInp.value; drawCloud(); });
+    const wantSearch = tags.length > 6;
+    if (!wantSearch) _tagSearch = '';
+
+    drawCloud();
+    host.appendChild(el('div', { class: 'tag-find' }, [
+      el('div', { class: 'tag-find-head' }, [
+        wantSearch ? searchInp
+          : el('span', { class: 'tag-find-label', text: _tagPicked.size
+            ? _tagPicked.size + ' of ' + tags.length + ' picked' : 'Tap a tag to find its spends' }),
+        // Only when the choice exists. With one tag picked, any and all are
+        // the same thing, and a toggle that changes nothing is a puzzle.
+        _tagPicked.size >= 2 ? el('div', { class: 'tag-find-mode' }, [
+          modeBtn('Any', !_tagMatchAll, () => { _tagMatchAll = false; }),
+          modeBtn('All', _tagMatchAll, () => { _tagMatchAll = true; }),
+        ]) : document.createTextNode(''),
+        _tagPicked.size ? el('button', { class: 'tag-find-clear', type: 'button', text: 'Clear',
+          onclick: () => { _tagPicked = new Set(); rerender(); } }) : document.createTextNode(''),
+      ]),
+      cloud,
+      note,
     ]));
   }
 
@@ -5009,47 +5059,69 @@ async function renderTagAnalysis(host, token, o) {
         : document.createTextNode(''),
     ]));
 
-    // Which categories this tag actually lands in - the thing a tag cannot say
-    // about itself, and the reason for looking a tag up rather than reading
-    // its total.
+    // Where it went, in the shape the rest of the page already uses: one
+    // collapsed row per category, opening onto its own spends. It was two
+    // cards before - a bar chart of categories, then a flat list of every
+    // entry underneath - which meant seeing the four spends behind "Food"
+    // required reading the whole list and picking them out by eye. A tag list
+    // and a category list answer the same kind of question, so they are the
+    // same control, and one thing to learn covers both.
     const byCat = new Map();
     hits.forEach((x) => {
       const k = x.r.category || 'Misc';
-      const e = byCat.get(k) || { cat: k, total: 0, count: 0 };
+      const e = byCat.get(k) || { cat: k, total: 0, count: 0, yms: new Set(), rows: [] };
       e.total = round2(e.total + x.amount);
       e.count += 1;
+      e.yms.add(x.ym);
+      e.rows.push(x);
       byCat.set(k, e);
     });
-    const cats = [...byCat.values()].sort((a, b) => b.total - a.total);
-    if (cats.length > 1) {
-      const top = Math.max(...cats.map((c) => Math.abs(c.total)), 1);
-      host.appendChild(el('div', { class: 'chart-card' }, [
-        el('h3', { text: 'Where it went' }),
-        el('div', { class: 'tag-find-cats' }, cats.map((c) => el('div', { class: 'tag-find-cat' }, [
-          el('div', { class: 'tag-find-cat-top' }, [
-            el('span', { class: 'tag-find-cat-name', text: c.cat }),
-            el('span', { class: 'tag-find-cat-val', text: fmtSigned(c.total) }),
-          ]),
-          el('span', { class: 'tag-an-track' }, [
-            el('span', { class: 'tag-an-fill', style: 'width:'
-              + Math.max(1.5, (Math.abs(c.total) / top) * 100).toFixed(1) + '%' }),
-          ]),
-          el('span', { class: 'tag-find-cat-meta', text: c.count + (c.count === 1 ? ' spend' : ' spends') }),
-        ]))),
-      ]));
-    }
+    const cats = [...byCat.values()].sort((a, b) => b.total - a.total || b.count - a.count);
+    const topCat = cats.reduce((m, c) => Math.max(m, Math.abs(c.total)), 1);
+    const grossHits = round2(hits.reduce((a, x) => a + Math.max(0, x.amount), 0)) || 1;
 
-    const found = hits.slice().sort((a, b) => String(b.r.date || '').localeCompare(String(a.r.date || '')));
-    const foundList = el('div', { class: 'msheet tag-an-entries' });
-    found.slice(0, 200).forEach((x) => foundList.appendChild(_tagEntryRow(x, cardName, true)));
-    if (found.length > 200) {
-      foundList.appendChild(el('p', { class: 'hint', style: 'text-align:center;padding:10px 0;margin:0',
-        text: '+' + (found.length - 200) + ' older entries not listed · narrow the range above' }));
-    }
-    host.appendChild(el('div', { class: 'chart-card' }, [
-      el('h3', { text: found.length + (found.length === 1 ? ' spend' : ' spends') }),
-      foundList,
-    ]));
+    const catList = el('div', { class: 'tag-an-list' });
+    cats.forEach((c) => {
+      const gross = round2(c.rows.reduce((a, x) => a + Math.max(0, x.amount), 0));
+      const share = (gross / grossHits) * 100;
+      const open = !!_tagCatOpen[c.cat];
+      const body = el('div', { class: 'tag-an-body' + (open ? '' : ' hidden') });
+      const head = el('button', { class: 'tag-an-head' + (open ? ' is-open' : ''), type: 'button' }, [
+        el('div', { class: 'tag-an-top' + (c.total < 0 ? ' is-refund' : '') }, [
+          el('span', { class: 'tag-pill', text: c.cat }),
+          el('span', { class: 'tag-an-total', text: fmtSigned(c.total) }),
+        ]),
+        el('span', { class: 'tag-an-track' }, [
+          el('span', { class: 'tag-an-fill', style: 'width:'
+            + Math.max(1.5, (Math.abs(c.total) / topCat) * 100).toFixed(1) + '%' }),
+        ]),
+        // A category holding nothing but a refund has no share and no average -
+        // it is money coming back, and "0% of these · 1 spend · 0 each" is three
+        // ways of saying nothing. It gets the same wording the tag list uses.
+        el('span', { class: 'tag-an-meta', text: (gross > 0
+          ? share.toFixed(0) + '% of these · ' + c.count + (c.count === 1 ? ' spend' : ' spends')
+            + ' · ' + fmtIntCur(round2(gross / c.count)) + ' each'
+          : 'came back · ' + c.count + (c.count === 1 ? ' entry' : ' entries'))
+          + ' · ' + c.yms.size + (c.yms.size === 1 ? ' month' : ' months') }),
+        el('span', { class: 'rvw-sec-chev tag-an-chev' }),
+      ]);
+      head.addEventListener('click', () => {
+        const closed = body.classList.toggle('hidden');
+        _tagCatOpen[c.cat] = !closed;
+        head.classList.toggle('is-open', !closed);
+      });
+
+      const rows = c.rows.slice().sort((a, b) => String(b.r.date || '').localeCompare(String(a.r.date || '')));
+      const entries = el('div', { class: 'msheet tag-an-entries' });
+      rows.slice(0, 60).forEach((x) => entries.appendChild(_tagEntryRow(x, cardName, true, 'source')));
+      if (rows.length > 60) {
+        entries.appendChild(el('p', { class: 'hint', style: 'text-align:center;padding:10px 0;margin:0',
+          text: '+' + (rows.length - 60) + ' older entries not listed · narrow the range above' }));
+      }
+      body.appendChild(entries);
+      catList.appendChild(el('section', { class: 'tag-an-sec' }, [head, body]));
+    });
+    host.appendChild(catList);
     return;
   }
 
