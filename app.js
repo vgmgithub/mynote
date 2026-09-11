@@ -5818,6 +5818,15 @@ const vaultRenderStale = (t) => t !== _vaultRenderToken || state.appMode !== 'va
 // on every reload is how a preference becomes an annoyance.
 let _vaultGroup = false;
 const VAULT_GROUP_KEY = 'vaultGroup';
+// Who each entry belongs to. A household vault holds more than one person's
+// logins, and "whose is this" is a different question from "what kind of thing
+// is this" - so it is its own field and its own filter rather than more
+// categories. Names are kept ENCRYPTED, like everything else here: they are
+// not secrets on the level of a password, but a store that gives up a family's
+// names to anyone reading the database is not a store that leaks nothing.
+let _vaultPeople = [];
+let _vaultPerson = '';        // '' means everyone; not remembered, it is a look
+const VAULT_PEOPLE_KEY = 'vaultPeople';
 const VAULT_SALT_KEY = 'vaultSalt';
 const VAULT_VERIFY_KEY = 'vaultVerify';
 const VAULT_MASTER_TITLE = 'MasterPassword';
@@ -5890,6 +5899,21 @@ async function _vaultMeta() {
   return { salt: salt && salt.value, verify: verify && verify.value, group: !!(group && group.value) };
 }
 
+async function _vaultLoadPeople(mod) {
+  if (!_vaultKey) return [];
+  const row = await DB.get('meta', VAULT_PEOPLE_KEY).catch(() => null);
+  if (!row || !row.value) return [];
+  const list = await mod.decryptJson(_vaultKey, row.value);
+  return Array.isArray(list) ? list.filter((n) => typeof n === 'string' && n.trim()) : [];
+}
+
+async function _vaultSavePeople(mod, list) {
+  const clean = list.map((n) => String(n).trim()).filter(Boolean);
+  const env = await mod.encryptJson(_vaultKey, clean);
+  await DB.put('meta', { key: VAULT_PEOPLE_KEY, value: env, updatedAt: new Date().toISOString() });
+  _vaultPeople = clean;
+}
+
 // Short on purpose - it sits in a corner of a card, not in a report. Today
 // gives the time, this year drops the year, anything older keeps it. The full
 // stamp is on the tooltip for whoever actually wants it.
@@ -5953,6 +5977,11 @@ async function renderVault() {
   // scroll past every time. It lives on invisibly, and surfaces in the one
   // place it is any use: already filled in when you go to change it.
   _vaultRows = rows.filter((r) => r.title !== VAULT_MASTER_TITLE);
+  _vaultPeople = await _vaultLoadPeople(mod).catch(() => []);
+  if (vaultRenderStale(token)) return;
+  // A filter pointing at somebody who has since been removed would hide
+  // everything and look like an empty vault.
+  if (_vaultPerson && _vaultPeople.indexOf(_vaultPerson) < 0) _vaultPerson = '';
 
   // ---- Toolbar: search, and the two things you do to the vault itself ----
   const search = el('input', {
@@ -5989,16 +6018,47 @@ async function renderVault() {
     [...modes.children].forEach((b, i) => b.classList.toggle('active', (i === 1) === on));
     drawList();
   };
+  // Whose, on the same line as how. All first, then everyone in the order they
+  // were added - the strip scrolls sideways rather than wrapping, so the two
+  // controls stay on one line however many people there are.
+  const peopleStrip = el('div', { class: 'vault-people' });
+  const drawPeople = () => {
+    peopleStrip.innerHTML = '';
+    if (!_vaultPeople.length) return;
+    const chip = (label, value) => {
+      const b = el('button', {
+        class: 'vault-who' + (value === _vaultPerson ? ' active' : ''), type: 'button', text: label,
+      });
+      b.addEventListener('click', () => {
+        _vaultPerson = _vaultPerson === value ? '' : value;
+        drawPeople();
+        drawList();
+      });
+      return b;
+    };
+    peopleStrip.appendChild(chip('All', ''));
+    _vaultPeople.forEach((n) => peopleStrip.appendChild(chip(n, n)));
+  };
+  drawPeople();
+
   // Only worth offering once there is enough to sort. One entry looks the same
   // either way, and a control that changes nothing invites a tap that does
   // nothing.
-  if (_vaultRows.length > 1) host.appendChild(modes);
+  const showModes = _vaultRows.length > 1;
+  if (showModes || _vaultPeople.length) {
+    host.appendChild(el('div', { class: 'vault-filters' }, [
+      showModes ? modes : document.createTextNode(''),
+      peopleStrip,
+    ]));
+  }
   host.appendChild(list);
 
   function drawList() {
     const q = _vaultQuery.trim().toLowerCase();
-    const shown = !q ? _vaultRows : _vaultRows.filter((r) =>
-      [r.title, r.account, r.username, r.url, r.category].some((f) => String(f || '').toLowerCase().indexOf(q) >= 0));
+    const mine = _vaultPerson ? _vaultRows.filter((r) => r.person === _vaultPerson) : _vaultRows;
+    const shown = !q ? mine : mine.filter((r) =>
+      [r.title, r.account, r.username, r.url, r.category, r.person]
+        .some((f) => String(f || '').toLowerCase().indexOf(q) >= 0));
     list.innerHTML = '';
     if (!_vaultRows.length) {
       list.appendChild(el('div', { class: 'empty' }, [
@@ -6009,8 +6069,11 @@ async function renderVault() {
       return;
     }
     if (!shown.length) {
-      list.appendChild(el('p', { class: 'hint', style: 'text-align:center;padding:16px 0',
-        text: 'Nothing matches ’' + _vaultQuery + '’.' }));
+      const why = q && _vaultPerson
+        ? 'Nothing of ' + _vaultPerson + '’s matches ’' + _vaultQuery + '’.'
+        : q ? 'Nothing matches ’' + _vaultQuery + '’.'
+          : 'Nothing saved under ' + _vaultPerson + ' yet.';
+      list.appendChild(el('p', { class: 'hint', style: 'text-align:center;padding:16px 0', text: why }));
       return;
     }
     if (!_vaultGroup) { shown.forEach((r) => list.appendChild(_vaultCard(r, mod))); return; }
@@ -6165,6 +6228,7 @@ function openVaultDetail(mod, r) {
     ]));
   };
 
+  if (r.person) line('Whose', r.person);
   if (r.account) line('Account', r.account, [_vaultCopyBtn('Account', () => r.account)]);
   if (r.username) line('Username', r.username, [_vaultCopyBtn('Username', () => r.username)]);
 
@@ -6386,6 +6450,12 @@ function openVaultOptions(mod, meta) {
     el('div', { class: 'sheet-scroll' }, [
       el('h2', { text: 'Vault options' }),
       el('div', { class: 'menu-list' }, [
+        menuItem('\ud83d\udc65', 'People',
+          _vaultPeople.length
+            ? _vaultPeople.length + (_vaultPeople.length === 1 ? ' person' : ' people') + ' · '
+              + _vaultPeople.join(', ')
+            : 'Add the people whose logins live in here',
+          () => { closeModal(); openVaultPeople(mod); }),
         menuItem('\ud83d\udd11', 'Change master password',
           'Re-encrypts every entry. The old one stops opening anything',
           () => { closeModal(); openMasterChange(mod, meta); }),
@@ -6401,6 +6471,120 @@ function openVaultOptions(mod, meta) {
         + 'use Backup & Restore in the menu: it already includes this vault, encrypted.' }),
       el('div', { class: 'btn-row' }, [
         el('button', { class: 'btn ghost', text: 'Close', onclick: closeModal }),
+      ]),
+    ]),
+  ]));
+}
+
+// ---------- Who the logins belong to ----------
+//
+// One editable list rather than add/rename/delete as three separate actions:
+// the whole point of a rename is that the entries filed under the old name
+// follow it, and a delete has to decide what happens to them too. Doing it in
+// one pass means the entries are re-encrypted once, after a single confirm
+// that says exactly what is about to happen to them.
+async function openVaultPeople(mod) {
+  if (!_vaultKey) { toast('Unlock the vault first'); return; }
+  const { rows } = await _vaultLoad(mod);
+  const entries = rows.filter((r) => r.title !== VAULT_MASTER_TITLE);
+  const countFor = (name) => entries.filter((r) => r.person === name).length;
+
+  const listEl = el('div', { class: 'vp-list' });
+  // Each row remembers the name it started with, so a rename can be told from
+  // a delete-and-add and the entries can be moved rather than orphaned.
+  let draft = _vaultPeople.map((n) => ({ was: n, now: n }));
+
+  const draw = () => {
+    listEl.innerHTML = '';
+    if (!draft.length) {
+      listEl.appendChild(el('p', { class: 'hint', text: 'Nobody yet. Add a name below.' }));
+      return;
+    }
+    draft.forEach((d, i) => {
+      const inp = el('input', { type: 'text', value: d.now, class: 'vp-name',
+        autocomplete: 'off', 'aria-label': 'Name' });
+      inp.addEventListener('input', () => { d.now = inp.value; });
+      const n = d.was ? countFor(d.was) : 0;
+      listEl.appendChild(el('div', { class: 'vp-row' }, [
+        inp,
+        el('span', { class: 'vp-count', text: n ? n + (n === 1 ? ' entry' : ' entries') : 'none yet' }),
+        el('button', { class: 'icon-btn vp-del', type: 'button', text: '\u00d7',
+          title: 'Remove ' + (d.now || 'this one'), 'aria-label': 'Remove',
+          onclick: () => { draft.splice(i, 1); draw(); } }),
+      ]));
+    });
+  };
+  draw();
+
+  const addInp = el('input', { type: 'text', class: 'vp-name', placeholder: 'Add a name',
+    autocomplete: 'off', 'aria-label': 'Add a name' });
+  const addOne = () => {
+    const name = addInp.value.trim();
+    if (!name) return;
+    if (draft.some((d) => d.now.trim().toLowerCase() === name.toLowerCase())) {
+      toast('That name is already on the list'); return;
+    }
+    draft.push({ was: '', now: name });
+    addInp.value = '';
+    draw();
+    addInp.focus();
+  };
+  addInp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addOne(); } });
+
+  const save = async () => {
+    const kept = draft.filter((d) => d.now.trim());
+    const names = kept.map((d) => d.now.trim());
+    const lower = names.map((n) => n.toLowerCase());
+    if (lower.some((n, i) => lower.indexOf(n) !== i)) { toast('Two people have the same name'); return; }
+
+    // What this does to the entries, worked out before anything is written.
+    const renames = new Map();
+    kept.forEach((d) => { if (d.was && d.was !== d.now.trim()) renames.set(d.was, d.now.trim()); });
+    const gone = _vaultPeople.filter((n) => !kept.some((d) => d.was === n));
+    const orphaned = gone.reduce((a, n) => a + countFor(n), 0);
+    const moved = [...renames.keys()].reduce((a, n) => a + countFor(n), 0);
+
+    if (orphaned || moved) {
+      const bits = [];
+      if (moved) bits.push(moved + (moved === 1 ? ' entry moves' : ' entries move') + ' to the new name');
+      if (orphaned) {
+        bits.push(orphaned + (orphaned === 1
+          ? ' entry loses its owner and goes back to nobody\u2019s'
+          : ' entries lose their owner and go back to nobody\u2019s'));
+      }
+      if (!window.confirm('Save these people?\n\n' + bits.join('\n')
+        + '\n\nThe entries themselves are untouched otherwise.')) return;
+    }
+
+    // The entries first: a failure here must not leave the list pointing at
+    // names the entries no longer carry.
+    for (const r of entries) {
+      if (!r.person) continue;
+      const to = renames.has(r.person) ? renames.get(r.person)
+        : (gone.indexOf(r.person) >= 0 ? '' : null);
+      if (to === null) continue;
+      await _vaultPut(mod, Object.assign({}, r, { person: to }));
+    }
+    await _vaultSavePeople(mod, names);
+    closeModal();
+    toast(names.length ? names.length + (names.length === 1 ? ' person saved' : ' people saved') : 'People cleared');
+    renderVault();
+  };
+
+  openModal(el('div', { class: 'sheet' }, [
+    el('div', { class: 'sheet-scroll' }, [
+      el('h2', { text: 'People' }),
+      el('p', { class: 'hint', text: 'Who the logins in here belong to. Every entry can be filed under '
+        + 'one of them, and the list can then be filtered to one person at a time. Names are encrypted '
+        + 'with everything else.' }),
+      listEl,
+      el('div', { class: 'vp-add' }, [
+        addInp,
+        el('button', { class: 'btn small primary', type: 'button', text: 'Add', onclick: addOne }),
+      ]),
+      el('div', { class: 'btn-row' }, [
+        el('button', { class: 'btn primary', text: 'Save', onclick: save }),
+        el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }),
       ]),
     ]),
   ]));
@@ -6553,7 +6737,14 @@ async function openMasterChange(mod, meta) {
         await mod.encryptJson(key, body)));
     }
     const verify = await mod.makeVerifier(key);
+    // The people list is encrypted with the same key, so it has to be rewritten
+    // with the rest or it becomes unreadable the moment the password changes.
+    const people = await _vaultLoadPeople(mod).catch(() => []);
+    const peopleEnv = people.length ? await mod.encryptJson(key, people) : null;
     for (const row of rewritten) await DB.put('vault', row);
+    if (peopleEnv) {
+      await DB.put('meta', { key: VAULT_PEOPLE_KEY, value: peopleEnv, updatedAt: new Date().toISOString() });
+    }
     await DB.put('meta', { key: VAULT_SALT_KEY, value: salt, updatedAt: new Date().toISOString() });
     await DB.put('meta', { key: VAULT_VERIFY_KEY, value: verify, updatedAt: new Date().toISOString() });
     _vaultKey = key;
@@ -6622,6 +6813,22 @@ async function openVaultForm(mod, existing) {
       drawIcon();
     });
     catBtns.push(b);
+    return b;
+  }));
+
+  // Whose it is. Only offered once there is somebody to pick - the list is
+  // made under the gear, and an empty row of chips would just be a puzzle.
+  let chosenPerson = (existing && existing.person) || '';
+  const personBtns = [];
+  const personGrid = el('div', { class: 'spend-cat-grid' }, _vaultPeople.map((name) => {
+    const b = el('button', {
+      class: 'spend-cat-btn' + (name === chosenPerson ? ' active' : ''), type: 'button', text: name,
+    });
+    b.addEventListener('click', () => {
+      chosenPerson = chosenPerson === name ? '' : name;
+      personBtns.forEach((x) => x.classList.toggle('active', x === b && !!chosenPerson));
+    });
+    personBtns.push(b);
     return b;
   }));
 
@@ -6726,7 +6933,7 @@ async function openVaultForm(mod, existing) {
       id: editing ? existing.id : undefined,
       title: title.value.trim(), account: account.value.trim(), username: username.value.trim(),
       password: pw.value, url: url.value.trim(), notes: notes.value,
-      category: chosenCat, icon: chosenIcon,
+      category: chosenCat, icon: chosenIcon, person: chosenPerson,
     });
     closeModal();
     toast(editing ? 'Updated' : 'Saved');
@@ -6761,6 +6968,10 @@ async function openVaultForm(mod, existing) {
         el('label', {}, [el('span', { text: 'Category' })]),
         catGrid,
       ]),
+      _vaultPeople.length ? el('div', { class: 'field' }, [
+        el('label', {}, [el('span', { text: 'Whose' })]),
+        personGrid,
+      ]) : document.createTextNode(''),
       field('Account', account),
       field('Username', username),
       el('div', { class: 'field' }, [

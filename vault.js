@@ -184,7 +184,7 @@ export function strength(pw) {
 // entries have a note or how long a username is. Searching and sorting happen
 // in memory after unlock, on a few dozen rows.
 export const VAULT_FIELDS = ['title', 'account', 'username', 'password', 'url', 'notes',
-  'category', 'icon'];
+  'category', 'icon', 'person'];
 
 // ---------- What kind of thing it is ----------
 //
@@ -340,7 +340,7 @@ export const ICON_CHOICES = [
 // contain all three often enough that joining on commas loses data quietly,
 // which is the worst way for a password export to fail.
 export const CSV_COLUMNS = [
-  ['title', 'Title'], ['category', 'Category'], ['account', 'Account'],
+  ['title', 'Title'], ['person', 'Person'], ['category', 'Category'], ['account', 'Account'],
   ['username', 'Username'], ['password', 'Password'], ['url', 'Website/URL'],
   ['notes', 'Notes'], ['icon', 'Icon'],
 ];
@@ -397,6 +397,7 @@ const CSV_ALIASES = {
   // imported name that matches none of ours is simply kept as it came.
   category: ['category', 'folder', 'group'],
   icon: ['icon', 'emoji'],
+  person: ['person', 'owner', 'whose', 'belongs to'],
   username: ['username', 'user', 'user name', 'login', 'login_username', 'email', 'login name'],
   password: ['password', 'pass', 'login_password'],
   url: ['website/url', 'url', 'website', 'web site', 'site', 'login_uri', 'login uri', 'urls'],

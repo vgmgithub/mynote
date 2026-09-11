@@ -2799,10 +2799,40 @@ html[data-theme="light"] .vault-ico.is-letter {
 
 /* How the list is read, not what it contains - so a segmented control rather
    than another icon in the toolbar. */
+/* How the list is read on the left, whose it is on the right, one line. The
+   people strip scrolls sideways rather than wrapping, so adding a fifth name
+   never pushes the A-Z control onto a line of its own. */
+.vault-filters { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; min-width: 0; }
 .vault-modes {
-  display: flex; width: fit-content; margin-bottom: 10px; overflow: hidden;
+  display: flex; width: fit-content; flex: 0 0 auto; overflow: hidden;
   border: 1px solid var(--line); border-radius: 999px; background: var(--card);
 }
+.vault-people {
+  display: flex; align-items: center; gap: 5px; flex: 1 1 auto; min-width: 0;
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+}
+.vault-people::-webkit-scrollbar { display: none; }
+.vault-who {
+  flex: 0 0 auto; font-size: 0.7rem; font-weight: 600; padding: 6px 12px; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 999px;
+  background: var(--card); color: var(--muted); font-family: inherit; white-space: nowrap;
+}
+.vault-who.active { border-color: var(--accent); color: var(--accent); font-weight: 700; box-shadow: inset 0 0 0 1px var(--accent); }
+
+/* ---- The people sheet ---- */
+.vp-list { margin: 14px 0 4px; }
+.vp-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; }
+input.vp-name {
+  flex: 1; min-width: 0; padding: 9px 12px; border: 1px solid var(--line);
+  border-radius: 10px; background: var(--card); color: var(--text);
+  font-family: inherit; font-size: 0.88rem;
+}
+input.vp-name:focus { outline: none; border-color: var(--accent); }
+.vp-count { flex: 0 0 auto; font-size: 0.64rem; color: var(--muted); white-space: nowrap; }
+.vp-del { flex: 0 0 auto; font-size: 1.1rem; line-height: 1; color: var(--muted); padding: 4px 8px; }
+.vp-del:hover, .vp-del:active { color: var(--bad); }
+.vp-add { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.vp-add .btn { flex: 0 0 auto; }
 .vault-mode-btn {
   font-size: 0.7rem; font-weight: 600; padding: 6px 15px; cursor: pointer;
   border: 0; background: transparent; color: var(--muted); font-family: inherit;
