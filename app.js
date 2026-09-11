@@ -4744,6 +4744,35 @@ const TAG_SOURCES = [['all', 'Both'], ['house', 'Household'], ['personal', 'Pers
 let _tagRange = 0;          // months back from this one; 0 means everything
 let _tagSource = 'all';
 const _tagOpen = {};
+// Which tags are being looked FOR, as opposed to read about. Empty means the
+// tab is in its usual analysing mode.
+let _tagPicked = new Set();
+let _tagMatchAll = false;   // false = any of them, true = all of them at once
+
+// One logged spend, as it appears under a tag. Shared by the per-tag list and
+// by the find results, so the two never drift into showing different things
+// about the same entry.
+function _tagEntryRow(x, cardName, withTags) {
+  const meta = [_spendDayLabel(x.r.date), x.r.method || 'UPI'];
+  if (x.r.cardId != null && cardName.has(x.r.cardId)) meta.push(cardName.get(x.r.cardId));
+  const label = el('div', { class: 'msheet-label' }, [
+    el('span', {}, [
+      el('i', { class: 'rvw-dot ' + (x.src === 'house' ? 'is-house' : 'is-personal') }),
+      x.r.category || 'Misc',
+    ]),
+    el('span', { class: 'msheet-note', text: meta.join(' · ') }),
+  ]);
+  // On a find, every entry says which of its tags it came back for - with two
+  // tags matched on "any", the row is otherwise silent about why it is there.
+  if (withTags && x.tags.length) {
+    label.appendChild(el('span', { class: 'tag-row tag-find-tags' },
+      x.tags.map((t) => el('span', { class: 'tag-pill' + (_tagPicked.has(t) ? ' is-hit' : ''), text: t }))));
+  }
+  return el('div', { class: 'msheet-row trk-entry' }, [
+    label,
+    el('span', { class: 'msheet-val', text: fmtSheetCur(x.amount) }),
+  ]);
+}
 
 // One row per tag per entry it is on, rolled up. Kept separate from the
 // rendering so the arithmetic can be read in one piece.
@@ -4853,6 +4882,133 @@ async function renderTagAnalysis(host, token, o) {
   const srcLabel = (TAG_SOURCES.find(([v]) => v === source) || [null, 'Both'])[1].toLowerCase();
 
   const tags = _tagRollup(tagged);
+
+  // ---- Finding spends, as opposed to reading about tags ----
+  //
+  // Two different jobs on one tab. The list below answers "what is my eat-out
+  // habit costing"; this answers "show me the eat-out spends". The list could
+  // only ever do the second one tag at a time, forty rows at a time, through
+  // an accordion - and never for two tags at once, which is exactly the
+  // question worth asking of tags that travel together.
+  //
+  // Picks that fall outside the current scope are dropped rather than kept
+  // invisibly: a chip you cannot see is not a filter you can turn off.
+  const inScope = new Set(tags.map((t) => t.tag));
+  _tagPicked = new Set([..._tagPicked].filter((t) => inScope.has(t)));
+
+  if (tags.length) {
+    const modeBtn = (label, on, fn) => el('button', {
+      type: 'button', class: on ? 'active' : '', text: label,
+      onclick: () => { if (on) return; fn(); rerender(); },
+    });
+    host.appendChild(el('div', { class: 'tag-find' }, [
+      el('div', { class: 'tag-find-head' }, [
+        el('span', { class: 'tag-find-label', text: _tagPicked.size
+          ? _tagPicked.size + ' of ' + tags.length + ' tags' : 'Find spends by tag' }),
+        // Only when the choice exists. With one tag picked, any and all are
+        // the same thing, and a toggle that changes nothing is a puzzle.
+        _tagPicked.size >= 2 ? el('div', { class: 'tag-find-mode' }, [
+          modeBtn('Any', !_tagMatchAll, () => { _tagMatchAll = false; }),
+          modeBtn('All', _tagMatchAll, () => { _tagMatchAll = true; }),
+        ]) : document.createTextNode(''),
+        _tagPicked.size ? el('button', { class: 'tag-find-clear', type: 'button', text: 'Clear',
+          onclick: () => { _tagPicked = new Set(); rerender(); } }) : document.createTextNode(''),
+      ]),
+      el('div', { class: 'tag-find-chips' }, tags.map((t) => el('button', {
+        type: 'button', class: 'tag-find-chip' + (_tagPicked.has(t.tag) ? ' active' : ''),
+        text: t.tag + ' · ' + t.count,
+        onclick: () => {
+          if (_tagPicked.has(t.tag)) _tagPicked.delete(t.tag); else _tagPicked.add(t.tag);
+          rerender();
+        },
+      }))),
+    ]));
+  }
+
+  if (_tagPicked.size) {
+    const picked = [..._tagPicked];
+    const hits = tagged.filter((x) => (_tagMatchAll
+      ? picked.every((t) => x.tags.indexOf(t) >= 0)
+      : picked.some((t) => x.tags.indexOf(t) >= 0)));
+    const joiner = _tagMatchAll ? ' + ' : ' or ';
+
+    if (!hits.length) {
+      host.appendChild(el('p', { class: 'hint', style: 'text-align:center;padding:18px 0',
+        text: _tagMatchAll
+          ? 'Nothing carries all of those tags at once in ' + rangeLabel + '. Try Any.'
+          : 'Nothing under those tags in ' + rangeLabel + '.' }));
+      return;
+    }
+
+    const net = round2(hits.reduce((a, x) => a + x.amount, 0));
+    const out = round2(hits.reduce((a, x) => a + Math.max(0, x.amount), 0));
+    const back = round2(out - net);
+    const yms = [...new Set(hits.map((x) => x.ym))].sort();
+
+    const fig = (n, label) => el('div', { class: 'tag-find-fig' }, [
+      el('div', { class: 'tag-find-fig-n', text: n }),
+      el('div', { class: 'tag-find-fig-l', text: label }),
+    ]);
+    host.appendChild(el('div', { class: 'chart-card tag-find-sum' }, [
+      el('h3', { text: picked.join(joiner) }),
+      el('p', { class: 'hint', style: 'margin:0 0 12px', text: rangeLabel + ' · '
+        + (source === 'all' ? 'household and personal' : srcLabel + ' only') + ' · '
+        + (_tagMatchAll ? 'entries carrying every one of these' : 'entries carrying any of these') }),
+      el('div', { class: 'tag-find-figs' }, [
+        fig(fmtSheetCur(net), hits.length + (hits.length === 1 ? ' spend' : ' spends')),
+        fig(fmtIntCur(round2(out / hits.length)), 'each, on average'),
+        yms.length > 1 ? fig(fmtIntCur(round2(out / yms.length)), 'a month across ' + yms.length)
+          : fig(String(yms.length ? 1 : 0), 'month'),
+      ]),
+      back > 0 ? el('p', { class: 'hint pf-refund-line', style: 'margin:10px 0 0',
+        text: fmtSheetCur(back) + ' of that came back · ' + fmtSheetCur(out) + ' went out' })
+        : document.createTextNode(''),
+    ]));
+
+    // Which categories this tag actually lands in - the thing a tag cannot say
+    // about itself, and the reason for looking a tag up rather than reading
+    // its total.
+    const byCat = new Map();
+    hits.forEach((x) => {
+      const k = x.r.category || 'Misc';
+      const e = byCat.get(k) || { cat: k, total: 0, count: 0 };
+      e.total = round2(e.total + x.amount);
+      e.count += 1;
+      byCat.set(k, e);
+    });
+    const cats = [...byCat.values()].sort((a, b) => b.total - a.total);
+    if (cats.length > 1) {
+      const top = Math.max(...cats.map((c) => Math.abs(c.total)), 1);
+      host.appendChild(el('div', { class: 'chart-card' }, [
+        el('h3', { text: 'Where it went' }),
+        el('div', { class: 'tag-find-cats' }, cats.map((c) => el('div', { class: 'tag-find-cat' }, [
+          el('div', { class: 'tag-find-cat-top' }, [
+            el('span', { class: 'tag-find-cat-name', text: c.cat }),
+            el('span', { class: 'tag-find-cat-val', text: fmtSigned(c.total) }),
+          ]),
+          el('span', { class: 'tag-an-track' }, [
+            el('span', { class: 'tag-an-fill', style: 'width:'
+              + Math.max(1.5, (Math.abs(c.total) / top) * 100).toFixed(1) + '%' }),
+          ]),
+          el('span', { class: 'tag-find-cat-meta', text: c.count + (c.count === 1 ? ' spend' : ' spends') }),
+        ]))),
+      ]));
+    }
+
+    const found = hits.slice().sort((a, b) => String(b.r.date || '').localeCompare(String(a.r.date || '')));
+    const foundList = el('div', { class: 'msheet tag-an-entries' });
+    found.slice(0, 200).forEach((x) => foundList.appendChild(_tagEntryRow(x, cardName, true)));
+    if (found.length > 200) {
+      foundList.appendChild(el('p', { class: 'hint', style: 'text-align:center;padding:10px 0;margin:0',
+        text: '+' + (found.length - 200) + ' older entries not listed · narrow the range above' }));
+    }
+    host.appendChild(el('div', { class: 'chart-card' }, [
+      el('h3', { text: found.length + (found.length === 1 ? ' spend' : ' spends') }),
+      foundList,
+    ]));
+    return;
+  }
+
   host.appendChild(el('div', { class: 'chart-card tag-cover' }, [
     el('h3', { text: 'Tagged spending' }),
     el('p', { class: 'hint', style: 'margin:0 0 10px',
@@ -4958,25 +5114,18 @@ async function renderTagAnalysis(host, token, o) {
     if (pairs.length) {
       body.appendChild(el('div', { class: 'tag-an-with' }, [
         el('span', { class: 'tag-an-with-label', text: 'Usually with' }),
-        el('span', { class: 'tag-row' }, pairs.map(([o, n]) => el('span', { class: 'tag-pill', text: o + ' · ' + n }))),
+        // Tappable: seeing that "weekly" turns up on half of these is the
+        // moment you want to look at the two together, and this is that tap.
+        el('span', { class: 'tag-row' }, pairs.map(([o, n]) => el('button', {
+          type: 'button', class: 'tag-pill is-tappable', text: o + ' · ' + n,
+          title: 'Find spends tagged ' + t.tag + ' and ' + o,
+          onclick: () => { _tagPicked = new Set([t.tag, o]); _tagMatchAll = true; rerender(); },
+        }))),
       ]));
     }
     const rows = t.rows.slice().sort((a, b) => String(b.r.date || '').localeCompare(String(a.r.date || '')));
     const entries = el('div', { class: 'msheet tag-an-entries' });
-    rows.slice(0, 40).forEach((x) => {
-      const meta = [_spendDayLabel(x.r.date), x.r.method || 'UPI'];
-      if (x.r.cardId != null && cardName.has(x.r.cardId)) meta.push(cardName.get(x.r.cardId));
-      entries.appendChild(el('div', { class: 'msheet-row trk-entry' }, [
-        el('div', { class: 'msheet-label' }, [
-          el('span', {}, [
-            el('i', { class: 'rvw-dot ' + (x.src === 'house' ? 'is-house' : 'is-personal') }),
-            x.r.category || 'Misc',
-          ]),
-          el('span', { class: 'msheet-note', text: meta.join(' · ') }),
-        ]),
-        el('span', { class: 'msheet-val', text: fmtSheetCur(x.amount) }),
-      ]));
-    });
+    rows.slice(0, 40).forEach((x) => entries.appendChild(_tagEntryRow(x, cardName, false)));
     if (rows.length > 40) {
       entries.appendChild(el('p', { class: 'hint', style: 'text-align:center;padding:10px 0;margin:0',
         text: '+' + (rows.length - 40) + ' older entries not listed' }));

@@ -2542,6 +2542,49 @@ input.vb-amt { flex: 0 0 96px; width: 96px; padding: 9px 11px; border: 1px solid
 .tag-cover-legend { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px; font-size: 0.72rem; color: var(--muted); }
 .tag-cover-legend b { margin-left: auto; color: var(--text); font-weight: 800; }
 
+/* ---- Finding spends by tag ---- */
+.tag-find { margin: 0 0 14px; }
+.tag-find-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.tag-find-label {
+  flex: 1; min-width: 0; font-size: 0.66rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted);
+}
+.tag-find-mode { display: flex; flex: 0 0 auto; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+.tag-find-mode button {
+  font-size: 0.64rem; font-weight: 600; padding: 4px 12px; cursor: pointer;
+  border: 0; background: transparent; color: var(--muted); font-family: inherit;
+}
+.tag-find-mode button.active { background: var(--accent); color: #04222e; font-weight: 700; }
+.tag-find-clear {
+  flex: 0 0 auto; font-size: 0.68rem; font-weight: 600; color: var(--accent);
+  background: none; border: 0; cursor: pointer; padding: 4px 2px; font-family: inherit;
+}
+/* Capped and scrollable: a vault of forty tags would otherwise push the
+   results themselves off the screen. */
+.tag-find-chips { display: flex; flex-wrap: wrap; gap: 5px; max-height: 126px; overflow-y: auto; }
+.tag-find-chip {
+  font-size: 0.7rem; font-weight: 600; padding: 5px 10px; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 999px;
+  background: var(--card); color: var(--text); font-family: inherit;
+}
+.tag-find-chip.active { border-color: var(--accent); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+
+.tag-find-figs { display: flex; gap: 18px; flex-wrap: wrap; align-items: flex-start; }
+.tag-find-fig-n { font-size: 1.1rem; font-weight: 800; line-height: 1.2; }
+.tag-find-fig-l { font-size: 0.64rem; color: var(--muted); margin-top: 1px; }
+.tag-find-sum h3 { overflow-wrap: anywhere; }
+
+.tag-find-cats { display: flex; flex-direction: column; gap: 11px; }
+.tag-find-cat-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.tag-find-cat-name { font-size: 0.82rem; font-weight: 600; overflow-wrap: anywhere; }
+.tag-find-cat-val { font-size: 0.82rem; font-weight: 700; white-space: nowrap; }
+.tag-find-cat-meta { display: block; font-size: 0.64rem; color: var(--muted); margin-top: 3px; }
+.tag-find-cat .tag-an-track { margin-top: 5px; }
+
+.tag-find-tags { margin-top: 4px; }
+.tag-pill.is-hit { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+button.tag-pill.is-tappable { cursor: pointer; font-family: inherit; }
+
 .tag-an-list { display: flex; flex-direction: column; gap: 8px; }
 .tag-an-sec { border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); overflow: hidden; }
 .tag-an-head {
