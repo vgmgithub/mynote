@@ -2655,6 +2655,7 @@ button.tag-pill.is-tappable { cursor: pointer; font-family: inherit; }
 .pf-refund-line { margin: 6px 0 0; color: var(--good); line-height: 1.5; }
 
 .trk-cat.is-refund .trk-cat-amt { color: var(--good); }
+.trk-group-head.is-refund .trk-group-total, .trk-group-head.is-refund .trk-group-pct { color: var(--good); }
 .trk-cat.is-refund .trk-cat-dot { background: var(--good); }
 .trk-cat.is-refund .trk-cat-fill { background: var(--good); }
 .tag-an-top.is-refund .tag-an-total { color: var(--good); }
