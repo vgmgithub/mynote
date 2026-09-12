@@ -2818,37 +2818,33 @@ async function renderPfSpends(host, token) {
       const meta = [_spendDayLabel(r.date), r.method === 'Card' ? (card ? card.name : 'Card') : r.method];
       if (r.note) meta.push(r.note);
       const refunded = isRefund(r);
+      const mark = refunded
+        ? el('span', { class: 'pf-refund-tag', text: 'Money back' })
+        : isForOthers(r) ? el('span', { class: 'pf-others-tag', text: 'Others' })
+          : null;
       wrap.appendChild(el('div', { class: 'msheet-row trk-entry is-tappable'
         + (isForOthers(r) ? ' is-others' : '') + (refunded ? ' is-refund' : ''), onclick: () => openPfSpendForm(r) }, [
         el('div', { class: 'msheet-label' }, [
-          // Said, not asked. Every row used to carry a live switch, so a list of
-          // twenty spends was twenty controls, nineteen of them off and none
-          // of them being used - a question repeated down the page where a
-          // statement belonged. Setting it is an edit, and edits happen in the
-          // form; the list only has to say which ones are somebody else's.
-          //
-          // That switch also wrote straight to the store, which meant flipping
-          // it on never made the Virtual Bal row that saving the same change
-          // through the form does. One way in, one behaviour.
-          //
-          // Up on the category line, hard right, and down to one word. It read
-          // "For others — off the limits" on a line of its own, which spent a
-          // whole row restating what the tab already explains, on the entries
-          // it applies to and nowhere else. In the corner it is a mark you
-          // scan a column for rather than a sentence you read each time.
-          el('div', { class: 'trk-entry-head' }, [
-            el('span', { text: r.category || 'Misc' }),
-            !refunded && isForOthers(r)
-              ? el('span', { class: 'pf-others-tag', text: 'Others' })
-              : document.createTextNode(''),
-          ]),
+          el('span', { text: r.category || 'Misc' }),
           el('span', { class: 'msheet-note', text: meta.join(' · ') }),
           tagRow(r) || document.createTextNode(''),
-          refunded
-            ? el('span', { class: 'pf-refund-tag', text: 'Money back — off the total' })
-            : document.createTextNode(''),
         ]),
-        el('div', { class: 'trk-entry-right' }, [
+        // What a row IS goes in the corner, above the figure, in one or two
+        // words. Both marks live here and nowhere else:
+        //
+        // They were sentences on lines of their own - "For others — off the
+        // limits", "Money back — off the total" - each spending a whole row
+        // restating what the tab already explains, on the entries it applies
+        // to and nowhere else. And they sat in the left column, which ends
+        // wherever the text does, so "in the corner" landed in the middle of
+        // the row. In the right column they are flush with its edge and the
+        // eye can run down them.
+        //
+        // They are mutually exclusive by nature: money already back cannot
+        // also be money somebody owes you.
+        el('div', { class: 'trk-entry-right' + (mark ? ' is-stacked' : '') }, [
+          mark || document.createTextNode(''),
+          el('div', { class: 'trk-entry-money' }, [
           el('span', { class: 'msheet-val', text: fmtSigned(r.amount) }),
           el('button', {
             class: 'icon-btn trk-del', type: 'button', text: '×', 'aria-label': 'Delete this spend',
@@ -2861,6 +2857,7 @@ async function renderPfSpends(host, token) {
               renderPersonal();
             },
           }),
+        ]),
         ]),
       ]));
     });
