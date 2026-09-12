@@ -2791,14 +2791,14 @@ input.milk-amt:focus { outline: none; }
      a transparent band would let the scrolling columns show through it. The
      doubled gradient is how you get exactly the cells' tint, opaquely. */
   background: linear-gradient(rgba(148,163,184,0.22), rgba(148,163,184,0.22)), var(--bg-2);
-  box-shadow: inset 4px 0 0 var(--accent);
+  
 }
 /* `.trk-heat .cc-sum td`, not `.trk-heat tr.cc-sum td`: dropping the `tr`
    leaves this at exactly the weight of the `.trk-heat td.h-low2` rules below,
    so a summary cell with no band of its own still gets this one. With the
    `tr` in, this outranked them and painted the whole block flat. */
 .trk-heat .cc-sum td { background: rgba(148,163,184,0.22); }
-.trk-heat tr.trk-sum-top th, .trk-heat tr.trk-sum-top td { border-top: 2px solid var(--accent); }
+.trk-heat tr.trk-sum-top th, .trk-heat tr.trk-sum-top td { border-top: 2px solid var(--line); }
 
 /* The same five bands, deepened, for the four rows that matter most.
    They sit on a grey band, so the lighter mixes the categories use would come
