@@ -3007,20 +3007,36 @@ async function renderPfLimits(host, token) {
   ]));
   months.forEach((k, i) => {
     const r = rows[i];
-    const over = round2(Math.max(0, r.cardSpent - r.cardLimit) + Math.max(0, r.upiSpent - r.upiLimit));
+    // Over the two limits TOGETHER, not the two overspends added up.
+    //
+    // It used to be max(0, card - cardLimit) + max(0, upi - upiLimit), which
+    // charged for going over one of them while the other sat unused: 10,000
+    // on a 15,000 card and 1,200 on a 1,000 UPI read as 200 over, when 11,200
+    // of a 16,000 allowance had gone and nothing was over at all. The money is
+    // one pot spent through two taps, so what is over is what the pot is over.
+    //
+    // Only answerable when the card limit is on record. A year with no
+    // Allocation set has no card limit, and judging the pair against the UPI
+    // figure alone would report an overspend that was never measured.
+    const known = r.cardLimit > 0 && r.limit > 0;
+    const over = known ? round2(Math.max(0, r.spent - r.limit)) : 0;
     table.appendChild(el('div', { class: 'pf-hist-row' + (over > 0 ? ' is-over' : '') }, [
       el('span', { text: _spendMonthLabel(k) }),
       el('span', { class: r.cardLimit > 0 && r.cardSpent > r.cardLimit ? 'is-bad' : '', text: fmtIntCur(r.cardSpent) }),
       el('span', { class: r.upiLimit > 0 && r.upiSpent > r.upiLimit ? 'is-bad' : '', text: fmtIntCur(r.upiSpent) }),
-      el('span', { class: over > 0 ? 'is-bad' : 'is-good', text: over > 0 ? fmtIntCur(over) : '✓' }),
+      el('span', { class: !known ? '' : over > 0 ? 'is-bad' : 'is-good',
+        title: known ? fmtIntCur(r.spent) + ' of ' + fmtIntCur(r.limit) + ' together' : 'No card limit on record for this year',
+        text: !known ? '—' : over > 0 ? fmtIntCur(over) : '✓' }),
     ]));
   });
   host.appendChild(table);
   host.appendChild(el('p', { class: 'hint mf-foot', text: 'Card went over in ' + overCard + ' of these ' + rows.length
-    + ' months, UPI in ' + overUpi + '. Each month counts UPI over the calendar month and card spends over the bill '
-    + 'they land on, so a card row here matches the statement you actually pay rather than a 1st-to-31st slice of it. '
-    + 'The card limit is read from the year\u2019s Allocation, so a month before that year was set shows no limit '
-    + 'rather than a false pass.' }));
+    + ' months, UPI in ' + overUpi + '. Those two columns are each measured against their own limit; Over by is '
+    + 'measured against the two added together, so a column can be red while Over by is clear — which is just '
+    + 'one tap being used more than the other with the total still inside. Each month counts UPI over the calendar '
+    + 'month and card spends over the bill they land on, so a card row here matches the statement you actually pay '
+    + 'rather than a 1st-to-31st slice of it. The card limit is read from the year\u2019s Allocation, so a month '
+    + 'before that year was set shows no limit rather than a false pass.' }));
 }
 
 // ---------- Review tab ----------
