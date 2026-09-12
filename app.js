@@ -6089,19 +6089,27 @@ function _openHeatmapMonthModal(ym, byCat, mod) {
   ]));
 }
 
-// One category's own entries for that month, same row shape the main
-// Entries list uses.
+// One category's own entries for that month - displays date/time, tags, and
+// payment method as a badge. No category repeat (all entries are the same).
 function _openHeatmapCatModal(cat, monthLabel, recs, ym, byCat, mod) {
   const sorted = recs.slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
   const list = el('div', { class: 'msheet' });
   sorted.forEach((r) => {
-    list.appendChild(el('div', { class: 'msheet-row trk-entry' }, [
-      el('div', { class: 'msheet-label' }, [
-        el('span', { text: cat }),
-        el('span', { class: 'msheet-note', text: _spendDayLabel(r.date) + (r.method ? ' · ' + r.method : '') }),
+    const meta = [_spendDayLabel(r.date)];
+    const label = el('div', { class: 'msheet-label' }, [
+      el('div', {}, [
+        el('div', { style: 'font-weight: 500; margin-bottom: 4px;', text: _spendDayLabel(r.date) + (r.time ? ' · ' + r.time : '') }),
+        el('div', { style: 'display: flex; gap: 4px; flex-wrap: wrap;' }, [
+          r.method ? el('span', { class: 'tag-pill', style: 'font-size: 0.75rem;', text: r.method }) : document.createTextNode(''),
+          ...(r.tags || []).map(t => el('span', { class: 'tag-pill', style: 'font-size: 0.75rem;', text: t })),
+        ]),
       ]),
+    ]);
+    const row = el('div', { class: 'msheet-row trk-entry' }, [
+      label,
       el('span', { class: 'msheet-val', text: fmtSigned(r.amount) }),
-    ]));
+    ]);
+    list.appendChild(row);
   });
   openModal(el('div', { class: 'sheet has-fixed-footer' }, [
     el('div', { class: 'sheet-scroll' }, [
@@ -6109,7 +6117,6 @@ function _openHeatmapCatModal(cat, monthLabel, recs, ym, byCat, mod) {
       list,
     ]),
     el('div', { class: 'sheet-footer' }, [
-      el('button', { class: 'btn ghost', text: 'Back', onclick: () => _openHeatmapMonthModal(ym, byCat, mod) }),
       el('button', { class: 'btn primary', text: 'Close', onclick: closeModal }),
     ]),
   ]));
