@@ -4856,7 +4856,21 @@ async function renderTagAnalysis(host, token, o) {
     // `!== 0` rather than `> 0`: a refund is a real, tagged movement, and it
     // belongs against the tag it is giving money back to.
   })).filter((x) => /^\d{4}-\d{2}$/.test(x.ym) && x.amount !== 0);
-  const all = shape(houseRows, 'house').concat(shape(pfRows, 'personal'));
+
+  // Spends made for somebody else are LEFT OUT of every figure on this page.
+  //
+  // This whole tab is about habits - what a handle costs, whether it is
+  // growing, what it usually runs to in a month. Money fronted for somebody
+  // who is paying it back is not a habit; it passed through. It is already
+  // kept out of the two limits and out of Review for exactly that reason, and
+  // a tab that counted it would have "eat out" jump every time a dinner got
+  // paid for and settled up afterwards.
+  //
+  // Left out, not hidden: the count and the total are said on the coverage
+  // card below, because a figure that silently disagrees with the entries list
+  // is worse than a bigger one.
+  const allRaw = shape(houseRows, 'house').concat(shape(pfRows, 'personal'));
+  const all = allRaw.filter((x) => !isForOthers(x.r));
 
   // ---- Scope: how far back, and whose spending ----
   const thisYm = todayISO().slice(0, 7);
@@ -4866,9 +4880,10 @@ async function renderTagAnalysis(host, token, o) {
     fromYm = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
   }
   const source = _tagSource;
-  const scoped = all
-    .filter((x) => (fromYm ? x.ym >= fromYm : true))
-    .filter((x) => source === 'all' || x.src === source);
+  const withinScope = (x) => (fromYm ? x.ym >= fromYm : true) && (source === 'all' || x.src === source);
+  const scoped = all.filter(withinScope);
+  const forOthers = allRaw.filter((x) => isForOthers(x.r) && withinScope(x));
+  const forOthersTotal = round2(forOthers.reduce((a, x) => a + Math.max(0, x.amount), 0));
 
   const chipRow = (opts, cur, pick) => el('div', { class: 'pf-filter' }, opts.map(([v, label]) => el('button', {
     type: 'button', class: 'pf-filter-chip' + (String(v) === String(cur) ? ' active' : ''), text: label,
@@ -5139,6 +5154,15 @@ async function renderTagAnalysis(host, token, o) {
           : pct < 60 ? 'Under ' + Math.round(pct) + '% of this spending carries a tag, so read the figures below as being about that share of it, not all of it.'
           : 'Everything below is about that ' + Math.round(pct) + '%, not the whole ' + fmtSheetCur(total) + '.')
       : 'Nothing in this scope carries a tag yet.' }),
+    forOthers.length
+      ? el('p', { class: 'hint', style: 'margin:8px 0 0',
+          // The subject of the sentence is the amount, not the count, so it
+          // stays singular however many spends it came from.
+          text: fmtSheetCur(forOthersTotal) + ' across ' + forOthers.length
+            + (forOthers.length === 1 ? ' spend' : ' spends') + ' made for somebody else is left '
+            + 'out of this page entirely. That money passed through rather than being spent, so '
+            + 'counting it would make a tag look like a habit it is not.' })
+      : document.createTextNode(''),
     backTotal > 0
       ? el('p', { class: 'hint pf-refund-line', style: 'margin:8px 0 0',
           text: fmtSheetCur(backTotal) + ' came back in this scope'
