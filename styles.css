@@ -2485,10 +2485,24 @@ input.cat-name { flex: 1; min-width: 0; padding: 9px 11px; border: 1px solid var
 .switch.switch-sm { width: 34px; height: 19px; }
 .switch.switch-sm .switch-thumb { top: 2px; left: 2px; width: 15px; height: 15px; }
 .switch.switch-sm input:checked + .switch-track .switch-thumb { transform: translateX(15px); }
+/* Category on the left, its mark on the right, one line. The category keeps
+   the weight `.msheet-label > span:first-child` used to give it - it is no
+   longer a direct child - and ellipses rather than pushing the mark off the
+   edge. */
+/* The label column is shrink-to-fit everywhere else, which left the mark
+   sitting against the category instead of out at the edge. Grown only on
+   these entry rows: the value column is already pushed right by the row's own
+   space-between, so nothing else moves. */
+.trk-entry > .msheet-label { flex: 1 1 auto; }
+.trk-entry-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.trk-entry-head > span:first-child {
+  font-weight: 600; font-size: 0.86rem; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 /* The same badge shape a refund gets, in the accent colour rather than green:
    both say what a row IS, and the eye should read them as one kind of thing. */
 .pf-others-tag {
-  display: inline-block; margin-top: 6px; padding: 1px 7px; border-radius: 999px;
+  flex: 0 0 auto; display: inline-block; padding: 1px 7px; border-radius: 999px;
   font-size: 0.5rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.4px;
   background: rgba(56,189,248,0.14); color: var(--accent); border: 1px solid rgba(56,189,248,0.38);
 }

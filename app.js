@@ -2821,9 +2821,6 @@ async function renderPfSpends(host, token) {
       wrap.appendChild(el('div', { class: 'msheet-row trk-entry is-tappable'
         + (isForOthers(r) ? ' is-others' : '') + (refunded ? ' is-refund' : ''), onclick: () => openPfSpendForm(r) }, [
         el('div', { class: 'msheet-label' }, [
-          el('span', { text: r.category || 'Misc' }),
-          el('span', { class: 'msheet-note', text: meta.join(' · ') }),
-          tagRow(r) || document.createTextNode(''),
           // Said, not asked. Every row used to carry a live switch, so a list of
           // twenty spends was twenty controls, nineteen of them off and none
           // of them being used - a question repeated down the page where a
@@ -2833,11 +2830,23 @@ async function renderPfSpends(host, token) {
           // That switch also wrote straight to the store, which meant flipping
           // it on never made the Virtual Bal row that saving the same change
           // through the form does. One way in, one behaviour.
+          //
+          // Up on the category line, hard right, and down to one word. It read
+          // "For others — off the limits" on a line of its own, which spent a
+          // whole row restating what the tab already explains, on the entries
+          // it applies to and nowhere else. In the corner it is a mark you
+          // scan a column for rather than a sentence you read each time.
+          el('div', { class: 'trk-entry-head' }, [
+            el('span', { text: r.category || 'Misc' }),
+            !refunded && isForOthers(r)
+              ? el('span', { class: 'pf-others-tag', text: 'Others' })
+              : document.createTextNode(''),
+          ]),
+          el('span', { class: 'msheet-note', text: meta.join(' · ') }),
+          tagRow(r) || document.createTextNode(''),
           refunded
             ? el('span', { class: 'pf-refund-tag', text: 'Money back — off the total' })
-            : isForOthers(r)
-              ? el('span', { class: 'pf-others-tag', text: 'For others — off the limits' })
-              : document.createTextNode(''),
+            : document.createTextNode(''),
         ]),
         el('div', { class: 'trk-entry-right' }, [
           el('span', { class: 'msheet-val', text: fmtSigned(r.amount) }),
