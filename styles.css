@@ -2773,6 +2773,19 @@ input.milk-amt:focus { outline: none; }
 
 .trk-heat td { text-align: right; font-variant-numeric: tabular-nums; }
 .trk-heat th.is-now { color: var(--accent); }
+.trk-heat th.is-clickable { cursor: pointer; text-decoration: underline; }
+.hm-cat-list { display: flex; flex-direction: column; gap: 8px; }
+.hm-cat-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px;
+              background: var(--card); border-radius: 8px; cursor: pointer; }
+.hm-cat-row:hover { background: var(--card-2); }
+.hm-cat-name { font-weight: 600; }
+.hm-cat-total { font-weight: 700; color: var(--text); }
+.entry-list { display: flex; flex-direction: column; gap: 6px; }
+.entry-row { display: flex; justify-content: space-between; padding: 8px 10px; background: var(--card-2);
+             border-radius: 6px; font-size: 0.9rem; }
+.entry-label { font-weight: 500; }
+.entry-date { color: var(--muted); font-size: 0.8rem; }
+.entry-amt { font-weight: 700; }
 .trk-heat-kitty td { background: rgba(59,130,246,0.16); font-weight: 700; }
 .trk-heat-quiet td { color: var(--muted); }
 
