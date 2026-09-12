@@ -2787,15 +2787,29 @@ input.milk-amt:focus { outline: none; }
    only the frame around it. */
 .trk-heat tr.cc-sum th.rowhead {
   color: var(--text); font-weight: 800;
-  background: var(--card-2);
-  box-shadow: inset 3px 0 0 var(--accent);
+  /* The tint over an opaque base, not instead of it: this cell is sticky, so
+     a transparent band would let the scrolling columns show through it. The
+     doubled gradient is how you get exactly the cells' tint, opaquely. */
+  background: linear-gradient(rgba(148,163,184,0.22), rgba(148,163,184,0.22)), var(--bg-2);
+  box-shadow: inset 4px 0 0 var(--accent);
 }
 /* `.trk-heat .cc-sum td`, not `.trk-heat tr.cc-sum td`: dropping the `tr`
    leaves this at exactly the weight of the `.trk-heat td.h-low2` rules below,
-   so those win on source order and a summary cell keeps its heat colour. With
-   the `tr` in, this outranked them and painted the whole block flat. */
-.trk-heat .cc-sum td { background: var(--card-2); }
+   so a summary cell with no band of its own still gets this one. With the
+   `tr` in, this outranked them and painted the whole block flat. */
+.trk-heat .cc-sum td { background: rgba(148,163,184,0.22); }
 .trk-heat tr.trk-sum-top th, .trk-heat tr.trk-sum-top td { border-top: 2px solid var(--accent); }
+
+/* The same five bands, deepened, for the four rows that matter most.
+   They sit on a grey band, so the lighter mixes the categories use would come
+   out weaker down here than they do up there - the exact opposite of what
+   this block is for. Three classes to a rule, so these beat the base bands
+   whatever the source order. */
+.trk-heat .cc-sum td.h-low2 { background: rgba(16,185,129,0.55); color: var(--text); }
+.trk-heat .cc-sum td.h-low1 { background: rgba(16,185,129,0.30); }
+.trk-heat .cc-sum td.h-mid  { background: rgba(148,163,184,0.22); }
+.trk-heat .cc-sum td.h-hi1  { background: rgba(239,68,68,0.34); }
+.trk-heat .cc-sum td.h-hi2  { background: rgba(239,68,68,0.62); color: var(--text); font-weight: 800; }
 
 /* Five bands, read against the row's own usual month. Deliberately not a
    continuous gradient: an eye picks a band out of a grid far faster than it
