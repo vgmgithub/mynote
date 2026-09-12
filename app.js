@@ -6091,23 +6091,26 @@ function _openHeatmapMonthModal(ym, byCat, mod) {
 
 // One category's own entries for that month - displays date/time, tags, and
 // payment method as a badge. No category repeat (all entries are the same).
+// Payment method badge in top-right corner (green), amount below it.
 function _openHeatmapCatModal(cat, monthLabel, recs, ym, byCat, mod) {
   const sorted = recs.slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
   const list = el('div', { class: 'msheet' });
   sorted.forEach((r) => {
-    const meta = [_spendDayLabel(r.date)];
     const label = el('div', { class: 'msheet-label' }, [
       el('div', {}, [
         el('div', { style: 'font-weight: 500; margin-bottom: 4px;', text: _spendDayLabel(r.date) + (r.time ? ' · ' + r.time : '') }),
         el('div', { style: 'display: flex; gap: 4px; flex-wrap: wrap;' }, [
-          r.method ? el('span', { class: 'tag-pill', style: 'font-size: 0.75rem;', text: r.method }) : document.createTextNode(''),
           ...(r.tags || []).map(t => el('span', { class: 'tag-pill', style: 'font-size: 0.75rem;', text: t })),
         ]),
       ]),
     ]);
-    const row = el('div', { class: 'msheet-row trk-entry' }, [
-      label,
+    const rightSide = el('div', { style: 'display: flex; flex-direction: column; align-items: flex-end; gap: 6px;' }, [
+      r.method ? el('span', { class: 'tag-pill hm-payment-badge', style: 'font-size: 0.75rem; font-weight: 600;', text: r.method }) : document.createTextNode(''),
       el('span', { class: 'msheet-val', text: fmtSigned(r.amount) }),
+    ]);
+    const row = el('div', { class: 'msheet-row trk-entry', style: 'align-items: flex-start;' }, [
+      label,
+      rightSide,
     ]);
     list.appendChild(row);
   });

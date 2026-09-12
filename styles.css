@@ -2425,6 +2425,9 @@ input.tag-input::placeholder { color: var(--muted); opacity: 0.7; }
 /* Tags on an entry row, read-only. */
 .tag-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .tag-pill { padding: 2px 7px; border-radius: 999px; background: var(--card-2); border: 1px solid var(--line); font-size: 0.58rem; font-weight: 700; color: var(--muted); letter-spacing: 0.2px; }
+/* Payment method badge in heatmap cell modals - green to signal a positive
+   marker (the channel through which money moved), distinct from narrative tags. */
+.tag-pill.hm-payment-badge { background: rgba(52,211,153,0.2); color: var(--good); border-color: var(--good); }
 /* Inside a section that already says "Tags", the panel drops its own label and
    keeps only the counter. */
 .tag-field-head.is-bare { justify-content: flex-end; margin-bottom: 4px; min-height: 12px; }
