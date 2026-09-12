@@ -16941,6 +16941,31 @@ function checkMonthEndSnapshotReminder() {
   setTimeout(() => toast('Month-end reminder: capture ' + ymToLabel(thisYm()) + ' snapshot'), 2300);
 }
 
+
+// Handle quick-add shortcuts from home screen or share intent
+// URL params: ?quickadd=spend or ?quickadd=personal
+function _checkQuickAddIntent() {
+  try {
+    const params = new URLSearchParams(location.search);
+    const quickAdd = params.get('quickadd');
+    if (!quickAdd || !state) return;
+    
+    if (quickAdd === 'spend') {
+      state.appMode = 'expense';
+      _expTab = 'spend';
+      renderHomeExpense();
+      setTimeout(() => openSpendQuick(), 200);
+    } else if (quickAdd === 'personal') {
+      state.appMode = 'personal';
+      _pfTab = 'spends';
+      renderPersonal();
+      setTimeout(() => openPfSpendForm(null), 200);
+    }
+  } catch (e) {
+    console.error('quickadd error:', e);
+  }
+}
+
 async function init() {
   applyTheme();
   buildChrome();
@@ -17008,6 +17033,8 @@ async function init() {
   // Idempotent: back-fills wife-in (and reverse) months with the peer's Nifty
   // where one side is missing it. Cheap; a no-op once everything's in sync.
   syncNiftyAll().catch(() => {});
+  // Check for quick-add intent from home screen shortcuts
+  _checkQuickAddIntent();
   // Silent feed refresh on app open - so the user doesn't have to visit the
   // Feed tab to get fresh news. Fires for the active portfolio when its
   // session-anchor sync is stale.
