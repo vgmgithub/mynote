@@ -6043,6 +6043,7 @@ const HEAT_BANDS = [
   [Infinity, 'h-hi2'],
 ];
 const _heatBand = (amount, median) => {
+  if (amount < 0) return 'h-refund';   // money came back - a different fact than "spent little"
   if (!(amount > 0)) return 'h-none';
   if (!(median > 0)) return 'h-mid';
   const r = amount / median;
@@ -6051,46 +6052,81 @@ const _heatBand = (amount, median) => {
 
 
 // ---- Heatmap month click: show category popup ----
-function _openHeatmapMonthModal(ym, catByYmEntries) {
-  const catByYm = new Map(catByYmEntries);
-  const ordered = [...catByYm.keys()];
+// Category breakdown for one heatmap month - the same shape a tap-open sheet
+// uses everywhere else in the app (.sheet / .msheet-row), so this needed no
+// CSS of its own.
+function _openHeatmapMonthModal(ym, byCat, mod) {
+  // In the picker's own order, matching how the grid's rows read top to
+  // bottom. Only categories with an entry that month appear - a cell with
+  // nothing in it has nothing to open, so it is not offered as if it did.
+  const ordered = [];
+  catList('spend').forEach((g) => g.items.forEach((n) => { if (byCat.has(n)) ordered.push(n); }));
+  [...byCat.keys()].forEach((n) => { if (ordered.indexOf(n) < 0) ordered.push(n); });
 
-  const modal = el('div', { class: 'modal-content' }, [
-    el('div', { class: 'modal-head' }, [
-      el('h3', { text: 'Spends: ' + ym.slice(0, 7) }),
-      el('button', { class: 'icon-btn', text: '×', onclick: closeModal }),
+  const monthLabel = mod.monthLabel(ym);
+  const list = el('div', { class: 'msheet' });
+  ordered.forEach((cat) => {
+    const recs = byCat.get(cat);
+    const total = round2(recs.reduce((a, r) => a + (Number(r.amount) || 0), 0));
+    list.appendChild(el('div', { class: 'msheet-row trk-entry is-tappable', onclick: () => {
+      _openHeatmapCatModal(cat, monthLabel, recs, ym, byCat, mod);
+    } }, [
+      el('div', { class: 'msheet-label' }, [
+        el('span', { text: cat }),
+        el('span', { class: 'msheet-note', text: recs.length + (recs.length === 1 ? ' entry' : ' entries') }),
+      ]),
+      el('span', { class: 'msheet-val', text: fmtSigned(total) }),
+    ]));
+  });
+  openModal(el('div', { class: 'sheet has-fixed-footer' }, [
+    el('div', { class: 'sheet-scroll' }, [
+      el('h2', { text: monthLabel }),
+      list,
     ]),
-    el('div', { class: 'modal-body' }, [
-      el('div', { class: 'hm-cat-list' }, ordered.map((cat) => {
-        const recs = catByYm.get(cat);
-        const total = round2(recs.reduce((a, r) => a + (Number(r.amount) || 0), 0));
-        return el('div', { class: 'hm-cat-row is-tappable', onclick: () => {
-          closeModal();
-          // Open the entries list with these records
-          const modal2 = el('div', { class: 'modal-content modal-list' }, [
-            el('div', { class: 'modal-head' }, [
-              el('h3', { text: cat + ' · ' + ym.slice(0, 7) }),
-              el('button', { class: 'icon-btn', text: '×', onclick: closeModal }),
-            ]),
-            el('div', { class: 'modal-body' }, [
-              el('div', { class: 'entry-list' }, recs.map((r) =>
-                el('div', { class: 'entry-row' }, [
-                  el('span', { class: 'entry-label', text: r.category || 'Misc' }),
-                  el('span', { class: 'entry-date', text: r.date }),
-                  el('span', { class: 'entry-amt', text: fmtSigned(r.amount) }),
-                ]),
-              )),
-            ]),
-          ]);
-          openModal(modal2);
-        } }, [
-          el('span', { class: 'hm-cat-name', text: cat }),
-          el('span', { class: 'hm-cat-total', text: fmtIntCur(total) }),
-        ]);
-      })),
+    el('div', { class: 'sheet-footer' }, [
+      el('button', { class: 'btn ghost', text: 'Close', onclick: closeModal }),
     ]),
-  ]);
-  openModal(modal);
+  ]));
+}
+
+// One category's own entries for that month, same row shape the main
+// Entries list uses.
+function _openHeatmapCatModal(cat, monthLabel, recs, ym, byCat, mod) {
+  const sorted = recs.slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+  const list = el('div', { class: 'msheet' });
+  sorted.forEach((r) => {
+    list.appendChild(el('div', { class: 'msheet-row trk-entry' }, [
+      el('div', { class: 'msheet-label' }, [
+        el('span', { text: cat }),
+        el('span', { class: 'msheet-note', text: _spendDayLabel(r.date) + (r.method ? ' · ' + r.method : '') }),
+      ]),
+      el('span', { class: 'msheet-val', text: fmtSigned(r.amount) }),
+    ]));
+  });
+  openModal(el('div', { class: 'sheet has-fixed-footer' }, [
+    el('div', { class: 'sheet-scroll' }, [
+      el('h2', { text: cat + ' · ' + monthLabel }),
+      list,
+    ]),
+    el('div', { class: 'sheet-footer' }, [
+      el('button', { class: 'btn ghost', text: 'Back', onclick: () => _openHeatmapMonthModal(ym, byCat, mod) }),
+      el('button', { class: 'btn primary', text: 'Close', onclick: closeModal }),
+    ]),
+  ]));
+}
+
+// One month's raw records, grouped by category - shared by the month header
+// (every category that month) and a single cell (this cell's category only,
+// but still needs the full map so its own Back button can reopen the header
+// view rather than crash on a missing map).
+function _groupByCategory(recs) {
+  const byCat = new Map();
+  (recs || []).forEach((r) => {
+    const n = r.category || 'Prev Bill Bal / Misc';
+    if (!byCat.has(n)) byCat.set(n, []);
+    byCat.get(n).push(r);
+  });
+  return byCat;
 }
 
 function _trkHeatmapGrid(host, yms, byYm, allocs, efLoans, thisYm, mod, now) {
@@ -6129,21 +6165,28 @@ function _trkHeatmapGrid(host, yms, byYm, allocs, efLoans, thisYm, mod, now) {
   const head = el('tr', {}, [el('th', { class: 'corner', text: 'Month' })]
     .concat(cols.map((k) => {
     const th = el('th', { class: (k === thisYm ? 'is-now' : '') + ' is-clickable hm-ym', text: mod.monthLabel(k) });
-    th.dataset.ym = k;
-    th.dataset.catJson = JSON.stringify([...catByYm.entries()].map(([cat, recs]) => [cat, recs.map(r => ({ date: r.date, amount: r.amount, category: r.category }))]));
-    th.onclick = () => {
-      const ym = th.dataset.ym;
-      const catData = JSON.parse(th.dataset.catJson);
-      _openHeatmapMonthModal(ym, catData);
-    };
+    // That month's own raw records, grouped by category - NOT catByYm, which
+    // maps category -> Map(ym -> summed amount) for the heat cells above.
+    // Calling .map() on one of those Maps is what crashed every render of
+    // this grid: Map has no .map, so building this header threw before the
+    // table ever finished, and the whole Tracker view went blank with it.
+    th.onclick = () => _openHeatmapMonthModal(k, _groupByCategory(byYm.get(k)), mod);
     return th;
   })));
   const tbody = el('tbody');
 
-  const money = (v) => (v > 0 ? fmtIntCur(v) : '—');
+  // A refund's total for the month is negative, and it is real data - not
+  // the absence of any. Only an exact zero (nothing logged that cell at all)
+  // gets the dash; a negative total prints signed, the same "+" convention
+  // fmtSigned uses everywhere else money can come back rather than go out.
+  const money = (v) => (v > 0 ? fmtIntCur(v) : v < 0 ? '+' + fmtIntCur(Math.abs(v)) : '—');
   const row = (label, cls, cells) => {
     const tr = el('tr', { class: cls || '' }, [el('th', { class: 'rowhead', text: label })]);
-    cells.forEach((c) => tr.appendChild(el('td', { class: c.cls || '', title: c.title || '', text: c.text })));
+    cells.forEach((c) => {
+      const td = el('td', { class: (c.cls || '') + (c.onclick ? ' is-clickable' : ''), title: c.title || '', text: c.text });
+      if (c.onclick) td.onclick = c.onclick;
+      tr.appendChild(td);
+    });
     tbody.appendChild(tr);
   };
 
@@ -6157,12 +6200,19 @@ function _trkHeatmapGrid(host, yms, byYm, allocs, efLoans, thisYm, mod, now) {
     const med = _median(vals);
     row(name, '', cols.map((k) => {
       const v = per.get(k) || 0;
+      // Only a cell that actually holds something opens - an empty cell
+      // ("—") has nothing to show, so it stays inert rather than
+      // offering a tap that lands on nothing.
+      const recs = v !== 0 ? (byYm.get(k) || []).filter((r) => (r.category || 'Prev Bill Bal / Misc') === name) : null;
       return {
         text: money(v),
         cls: _heatBand(v, med),
         title: v > 0 && med > 0
           ? name + ' ' + mod.monthLabel(k) + ': ' + fmtSheetCur(v) + ' · usually ' + fmtIntCur(med)
           : '',
+        onclick: recs && recs.length
+          ? () => _openHeatmapCatModal(name, mod.monthLabel(k), recs, k, _groupByCategory(byYm.get(k)), mod)
+          : null,
       };
     }));
   });

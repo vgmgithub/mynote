@@ -2772,20 +2772,16 @@ input.milk-amt:focus { outline: none; }
 .trk-heat-chip { margin-right: 10px; font-weight: 800; }
 
 .trk-heat td { text-align: right; font-variant-numeric: tabular-nums; }
+/* A cell that actually holds a spend opens its entries directly - the dotted
+   underline is the same tap cue the month header carries, so both read as
+   "there's more here" without needing a second visual language. A cell with
+   nothing in it (the em dash) gets neither the class nor the cursor. */
+.trk-heat td.is-clickable { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
 .trk-heat th.is-now { color: var(--accent); }
-.trk-heat th.is-clickable { cursor: pointer; text-decoration: underline; }
-.hm-cat-list { display: flex; flex-direction: column; gap: 8px; }
-.hm-cat-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px;
-              background: var(--card); border-radius: 8px; cursor: pointer; }
-.hm-cat-row:hover { background: var(--card-2); }
-.hm-cat-name { font-weight: 600; }
-.hm-cat-total { font-weight: 700; color: var(--text); }
-.entry-list { display: flex; flex-direction: column; gap: 6px; }
-.entry-row { display: flex; justify-content: space-between; padding: 8px 10px; background: var(--card-2);
-             border-radius: 6px; font-size: 0.9rem; }
-.entry-label { font-weight: 500; }
-.entry-date { color: var(--muted); font-size: 0.8rem; }
-.entry-amt { font-weight: 700; }
+/* A month header opens the same sheet the entries list uses elsewhere, so
+   only the cursor and a faint underline mark it as tappable - no bespoke
+   list styling needed, .msheet-row carries all of that already. */
+.trk-heat th.is-clickable { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
 .trk-heat-kitty td { background: rgba(59,130,246,0.16); font-weight: 700; }
 .trk-heat-quiet td { color: var(--muted); }
 
@@ -2828,6 +2824,10 @@ input.milk-amt:focus { outline: none; }
    continuous gradient: an eye picks a band out of a grid far faster than it
    ranks two shades of the same colour. */
 .trk-heat td.h-none { color: var(--muted); opacity: 0.45; }
+/* Money coming back, not money going out at some rate against usual - the
+   same green the refund badge uses elsewhere in the app, so the two read as
+   one fact rather than two different colour languages. */
+.trk-heat td.h-refund { background: rgba(52,211,153,0.16); color: var(--good); font-weight: 700; }
 .trk-heat td.h-low2 { background: rgba(52,211,153,0.34); color: var(--text); }
 .trk-heat td.h-low1 { background: rgba(52,211,153,0.16); }
 .trk-heat td.h-mid  { background: transparent; }
