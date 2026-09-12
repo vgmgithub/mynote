@@ -6114,7 +6114,16 @@ function _trkHeatmapGrid(host, yms, byYm, allocs, efLoans, thisYm, mod, now) {
   });
 
   // ---- The four summary rows ----
-  row('Spent', 'cc-sum', cols.map((k) => {
+  //
+  // Marked as a block, not styled like the categories above them. The
+  // categories say where the money went; these four say whether the month
+  // worked, which is a different question and the one most often being asked
+  // of this grid.
+  //
+  // `trk-sum-top` rather than leaning on `tr.cc-sum:first-of-type`: that
+  // selector means "the first TR that also has cc-sum", and the first TR in
+  // this table is Kitty, so the separator it was meant to draw never appeared.
+  row('Spent', 'cc-sum trk-sum-top', cols.map((k) => {
     const t = totalOf(k), b = kittyOf(k);
     return { text: money(t), cls: b > 0 ? (t > b ? 'h-hi2' : 'h-low1') : '',
       title: b > 0 ? fmtSheetCur(t) + ' of a ' + fmtSheetCur(b) + ' kitty' : '' };

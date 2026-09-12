@@ -2776,6 +2776,27 @@ input.milk-amt:focus { outline: none; }
 .trk-heat-kitty td { background: rgba(59,130,246,0.16); font-weight: 700; }
 .trk-heat-quiet td { color: var(--muted); }
 
+/* Spent, Left, Days left, Per day - a block, not four more category rows.
+   The rows above say where the money went; these say whether the month
+   worked, and they were styled identically, so the eye had to find them by
+   reading labels.
+
+   Banded, with a rule across the top and an accent edge down the labels. The
+   band is declared HERE, above the h- rules, on purpose: a cell carrying a
+   heat colour keeps it, because that colour is the answer and the band is
+   only the frame around it. */
+.trk-heat tr.cc-sum th.rowhead {
+  color: var(--text); font-weight: 800;
+  background: var(--card-2);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+/* `.trk-heat .cc-sum td`, not `.trk-heat tr.cc-sum td`: dropping the `tr`
+   leaves this at exactly the weight of the `.trk-heat td.h-low2` rules below,
+   so those win on source order and a summary cell keeps its heat colour. With
+   the `tr` in, this outranked them and painted the whole block flat. */
+.trk-heat .cc-sum td { background: var(--card-2); }
+.trk-heat tr.trk-sum-top th, .trk-heat tr.trk-sum-top td { border-top: 2px solid var(--accent); }
+
 /* Five bands, read against the row's own usual month. Deliberately not a
    continuous gradient: an eye picks a band out of a grid far faster than it
    ranks two shades of the same colour. */
