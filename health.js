@@ -67,15 +67,14 @@ function paramRangeLabel(param) {
 const CHECK_TYPES = ['Annual Check-up', 'Periodic Check-up'];
 const MONTH_ABBR = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
-// A small calendar-card chip (month header + day, year underneath) used
+// A small calendar-card chip (day + month on top, year underneath) used
 // wherever a reading or a record's date is shown, instead of a plain
 // "YYYY-MM-DD" string.
 function calChip(dateStr) {
   const [y, m, d] = (dateStr || '').split('-');
   const monthAbbr = MONTH_ABBR[(parseInt(m, 10) || 1) - 1];
   return el('div', { class: 'hc-cal' }, [
-    el('div', { class: 'hc-cal-month', text: monthAbbr }),
-    el('div', { class: 'hc-cal-day', text: String(parseInt(d, 10) || '') }),
+    el('div', { class: 'hc-cal-top', text: (parseInt(d, 10) || '') + ' ' + monthAbbr }),
     el('div', { class: 'hc-cal-year', text: y }),
   ]);
 }
@@ -195,12 +194,10 @@ function renderEntryRow(entry, param) {
   const badge = checkTypeBadge(entry.checkType);
   return el('div', { class: 'hc-entry-row' }, [
     calChip(entry.date),
-    el('div', { class: 'hc-entry-mid' }, [
-      el('div', { class: 'hc-entry-value', text: entry.value + (param.unit ? ' ' + param.unit : '') }),
-      badge,
-    ].filter(Boolean)),
+    badge,
+    el('div', { class: 'hc-entry-value', text: entry.value + (param.unit ? ' ' + param.unit : '') }),
     el('span', { class: 'hc-badge', style: 'background: ' + getStatusBg(status) + '; color: ' + getStatusColor(status) + ';', text: getStatusIcon(status) }),
-  ]);
+  ].filter(Boolean));
 }
 
 // A small bar-per-reading trend strip, oldest to newest left-to-right so the
