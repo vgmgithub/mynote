@@ -73,7 +73,10 @@ const MONTH_ABBR = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP
 // One fixed color per calendar month, shared by every entry that falls in
 // that month regardless of parameter or year - a quick visual "which month"
 // cue when scanning a list of readings.
-const MONTH_COLORS = ['#ef4444', '#f97316', '#f59e0b', '#84cc16', '#22c55e', '#10b981', '#14b8a6', '#0ea5e9', '#6366f1', '#8b5cf6', '#d946ef', '#ec4899'];
+// Jan starts green, Dec ends blue, each month a small step along that one
+// hue sweep rather than a full rainbow - close neighbors (e.g. Jun/Jul) read
+// as similar, while Jan and Dec read as clearly different.
+const MONTH_COLORS = Array.from({ length: 12 }, (_, i) => 'hsl(' + (150 + (220 - 150) * (i / 11)).toFixed(0) + ', 62%, 42%)');
 
 // A small calendar-card chip (day + month on top, year underneath) used
 // wherever a reading or a record's date is shown, instead of a plain
@@ -185,7 +188,15 @@ function renderParamSection(param, entries) {
   const [latest, ...older] = entries;
   const isExpanded = _expandedParamId === param.id;
 
-  const toggle = () => { _expandedParamId = isExpanded ? null : param.id; renderHealthCheck(); };
+  // renderHealthCheck() rebuilds the whole view, which otherwise leaves the
+  // page at the top - restore the scroll position once the rebuild (and its
+  // awaited DB reads) finish, so expanding/collapsing an entry doesn't yank
+  // the page away from where the tap happened.
+  const toggle = () => {
+    const y = window.scrollY;
+    _expandedParamId = isExpanded ? null : param.id;
+    renderHealthCheck().then(() => window.scrollTo(0, y));
+  };
 
   const children = [
     el('div', { class: 'hc-card-head' }, [
