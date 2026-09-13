@@ -45,6 +45,7 @@ html, body {
 body {
   padding-bottom: calc(72px + var(--safe-bottom));
   min-height: 100vh;
+  touch-action: manipulation;
 }
 
 /* Header */
