@@ -15,11 +15,21 @@ const HEALTH_PARAMS = [
 
 async function renderHealthCheck() {
   const host = document.getElementById('healthView');
+  if (!host) {
+    console.error('healthView element not found');
+    return;
+  }
   host.innerHTML = '';
 
-  const people = await DB.all('healthPeople').catch(() => []);
-  if (!people.length) {
-    host.innerHTML = '<div style="padding: 20px; text-align: center; color: #9fb0d4;">No people added. Tap the gear icon to add family members.</div>';
+  try {
+    const people = await DB.all('healthPeople').catch(() => []);
+    if (!people.length) {
+      host.innerHTML = '<div style="padding: 20px; text-align: center; color: #9fb0d4;">No people added. Tap the gear icon to add family members.</div>';
+      return;
+    }
+  } catch (e) {
+    console.error('Error loading health data:', e);
+    host.innerHTML = '<div style="padding: 20px; text-align: center; color: #f87171;">Error loading health data. Please try again.</div>';
     return;
   }
 
