@@ -91,7 +91,7 @@ const MF_STATUS = ['Investing', 'Investing On/Off', 'Investing Variable', 'Stopp
 let deferredInstall = null;
 
 // ---------- tiny DOM helpers (no innerHTML: dynamic strings are always text nodes) ----------
-const $ = (sel, root) => (root || document).querySelector(sel);
+export const $ = (sel, root) => (root || document).querySelector(sel);
 // Returns a size-class suffix for .stat-v based on text length, so a long
 // formatted currency string (e.g. "+₹1,91,997.42" = 13 chars, or "+₹10,00,000.00"
 // = 14 chars) shrinks instead of wrapping mid-value. Combined with
@@ -103,7 +103,7 @@ function _statSizeClass(value) {
   return '';
 }
 
-function el(tag, props, children) {
+export function el(tag, props, children) {
   const n = document.createElement(tag);
   if (props) {
     for (const k in props) {
@@ -198,7 +198,7 @@ let toastTimer = null;
 // button is, in a message that vanishes in two seconds, is how a reminder gets
 // read and then not acted on. One that acts gets a longer life, because it is
 // asking for a decision rather than reporting a fact.
-function toast(msg, onTap) {
+export function toast(msg, onTap) {
   const existing = $('.toast');
   if (existing) existing.remove();
   const t = el('div', { class: 'toast' + (onTap ? ' is-tappable' : ''), text: msg });
@@ -15466,7 +15466,7 @@ function applyTheme() {
 
 // ---------- modals ----------
 let escHandler = null;
-function openModal(node) {
+export function openModal(node) {
   const host = $('#modalHost');
   host.innerHTML = '';
   host.appendChild(node);
@@ -15476,14 +15476,14 @@ function openModal(node) {
   escHandler = (e) => { if (e.key === 'Escape') closeModal(); };
   document.addEventListener('keydown', escHandler);
 }
-function closeModal() {
+export function closeModal() {
   const host = $('#modalHost');
   host.classList.add('hidden');
   host.setAttribute('aria-hidden', 'true');
   host.innerHTML = '';
   if (escHandler) { document.removeEventListener('keydown', escHandler); escHandler = null; }
 }
-const field = (labelText, inputNode) => el('div', { class: 'field' }, [el('label', { text: labelText }), inputNode]);
+export const field = (labelText, inputNode) => el('div', { class: 'field' }, [el('label', { text: labelText }), inputNode]);
 
 // A segmented control over a short list of options, exposing the same `.value`
 // a <select> does so a caller reading it does not care which one it got. For a

@@ -1,5 +1,7 @@
 // Health Check module - Medical records tracking
 import { DB } from './db.js';
+import { $, el, toast, openModal, closeModal, field } from './app.js';
+import { todayISO, num } from './core.js';
 
 let _healthPerson = null;
 let _healthYear = new Date().getFullYear();
@@ -22,15 +24,24 @@ async function renderHealthCheck() {
   }
   host.innerHTML = '';
 
+  let people;
   try {
-    const people = await DB.all('healthPeople').catch(() => []);
-    if (!people.length) {
-      host.innerHTML = '<div style="padding: 20px; text-align: center; color: #9fb0d4;">No people added. Tap the gear icon to add family members.</div>';
-      return;
-    }
+    people = await DB.all('healthPeople');
   } catch (e) {
     console.error('Error loading health data:', e);
     host.innerHTML = '<div style="padding: 20px; text-align: center; color: #f87171;">Error loading health data. Please try again.</div>';
+    return;
+  }
+
+  if (!people.length) {
+    host.appendChild(el('div', { style: 'padding: 40px 20px; text-align: center;' }, [
+      el('div', { style: 'color: #9fb0d4; margin-bottom: 16px;', text: 'No people added yet.' }),
+      el('button', {
+        style: 'padding: 10px 20px; background: #34d399; color: #0e1726; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;',
+        text: '+ Add Family Member',
+        onclick: () => openHealthPeopleManager(),
+      }),
+    ]));
     return;
   }
 
@@ -94,13 +105,15 @@ function renderHealthCheckCard(check, person) {
     ]);
   });
 
-  return el('div', { style: 'background: #1f2d52; border: 1px solid #28365e; border-radius: 14px; padding: 16px;' }, [
+  const cardChildren = [
     el('div', { style: 'font-size: 0.9rem; color: #9fb0d4; margin-bottom: 12px;', text: check.date + ' · ' + (check.checkType || 'Check') }),
-    check.notes ? el('div', { style: 'font-size: 0.85rem; color: #9fb0d4; margin-bottom: 12px; font-style: italic;', text: check.notes }) : null,
-    el('table', { style: 'width: 100%; border-collapse: collapse;' }, [
-      el('tbody', {}, rows)
-    ]),
-  ]);
+  ];
+  if (check.notes) cardChildren.push(el('div', { style: 'font-size: 0.85rem; color: #9fb0d4; margin-bottom: 12px; font-style: italic;', text: check.notes }));
+  cardChildren.push(el('table', { style: 'width: 100%; border-collapse: collapse;' }, [
+    el('tbody', {}, rows)
+  ]));
+
+  return el('div', { style: 'background: #1f2d52; border: 1px solid #28365e; border-radius: 14px; padding: 16px;' }, cardChildren);
 }
 
 function getParamStatus(value, param) {
@@ -134,14 +147,107 @@ function getStatusBg(status) {
   return { good: 'rgba(52, 211, 153, 0.25)', high: 'rgba(248, 113, 113, 0.25)', low: 'rgba(251, 191, 36, 0.25)', unknown: 'transparent' }[status] || 'transparent';
 }
 
-function openHealthPeopleManager() {
-  // TODO: People manager modal
-  toast('People manager coming soon');
+async function openHealthPeopleManager() {
+  const people = await DB.all('healthPeople').catch(() => []);
+
+  const list = el('div', { style: 'display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px;' },
+    people.map(p => el('div', { style: 'display: flex; align-items: center; gap: 8px; padding: 10px; background: #182441; border-radius: 8px;' }, [
+      el('div', { style: 'flex: 1;', text: p.name + (p.age ? ' · ' + p.age + 'y' : '') + (p.gender ? ' · ' + p.gender : '') }),
+      el('button', {
+        class: 'btn ghost', style: 'padding: 6px 10px;', text: 'Delete',
+        onclick: async () => {
+          if (!window.confirm('Delete ' + p.name + '? This also removes their health records.')) return;
+          await DB.del('healthPeople', p.id);
+          const checks = await DB.all('healthChecks').catch(() => []);
+          await Promise.all(checks.filter(c => c.personId === p.id).map(c => DB.del('healthChecks', c.id)));
+          closeModal(); toast('Removed'); openHealthPeopleManager();
+        },
+      }),
+    ]))
+  );
+
+  const nameInput = el('input', { type: 'text', placeholder: 'Name' });
+  const ageInput = el('input', { type: 'number', inputmode: 'numeric', placeholder: 'Age (optional)' });
+  const genderInput = el('select', {}, [
+    el('option', { value: '', text: 'Gender (optional)' }),
+    el('option', { value: 'Male', text: 'Male' }),
+    el('option', { value: 'Female', text: 'Female' }),
+    el('option', { value: 'Other', text: 'Other' }),
+  ]);
+
+  const add = async () => {
+    const name = nameInput.value.trim();
+    if (!name) { toast('Enter a name'); return; }
+    await DB.put('healthPeople', { name, age: num(ageInput.value) || null, gender: genderInput.value || null });
+    closeModal(); toast('Added'); openHealthPeopleManager();
+  };
+
+  openModal(el('div', { class: 'sheet has-fixed-footer' }, [
+    el('div', { class: 'sheet-scroll' }, [
+      el('h2', { text: 'Family Members' }),
+      people.length ? list : el('div', { style: 'color: #9fb0d4; margin-bottom: 16px;', text: 'No one added yet.' }),
+      field('Name', nameInput),
+      field('Age', ageInput),
+      field('Gender', genderInput),
+    ]),
+    el('div', { class: 'sheet-footer' }, [
+      el('div', { class: 'btn-row', style: 'flex-wrap:wrap' }, [
+        el('button', { class: 'btn primary', text: '+ Add', onclick: add }),
+        el('button', { class: 'btn ghost', text: 'Close', onclick: () => { closeModal(); renderHealthCheck(); } }),
+      ]),
+    ]),
+  ]));
 }
 
 function openHealthCheckForm(person) {
-  // TODO: Health check entry form
-  toast('Add check form coming soon');
+  const dateInput = el('input', { type: 'date', value: todayISO() });
+  const checkTypeInput = el('input', { type: 'text', placeholder: 'e.g. Annual Physical, Quarterly Check' });
+  const notesInput = el('textarea', { placeholder: 'Notes (optional)' });
+  const paymentInput = el('input', { type: 'text', placeholder: 'Payment method (optional)' });
+
+  const paramInputs = {};
+  const paramFields = HEALTH_PARAMS.map(p => {
+    const input = el('input', { type: 'number', inputmode: 'decimal', step: 'any', placeholder: p.range + ' ' + p.unit });
+    paramInputs[p.key] = input;
+    return field(p.label + ' (' + p.unit + ')', input);
+  });
+
+  const save = async () => {
+    const date = dateInput.value || todayISO();
+    const parameters = {};
+    HEALTH_PARAMS.forEach(p => {
+      const v = paramInputs[p.key].value;
+      if (v !== '' && v != null) parameters[p.key] = num(v);
+    });
+    if (!Object.keys(parameters).length) { toast('Enter at least one parameter'); return; }
+    await DB.put('healthChecks', {
+      personId: person.id,
+      date,
+      ym: date.slice(0, 7),
+      checkType: checkTypeInput.value.trim(),
+      notes: notesInput.value.trim(),
+      paymentMethod: paymentInput.value.trim(),
+      parameters,
+    });
+    closeModal(); toast('Health check added'); renderHealthCheck();
+  };
+
+  openModal(el('div', { class: 'sheet has-fixed-footer' }, [
+    el('div', { class: 'sheet-scroll' }, [
+      el('h2', { text: 'Add Health Check' }),
+      field('Date', dateInput),
+      field('Check type', checkTypeInput),
+      ...paramFields,
+      field('Payment method', paymentInput),
+      field('Notes', notesInput),
+    ]),
+    el('div', { class: 'sheet-footer' }, [
+      el('div', { class: 'btn-row', style: 'flex-wrap:wrap' }, [
+        el('button', { class: 'btn primary', text: 'Save', onclick: save }),
+        el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }),
+      ]),
+    ]),
+  ]));
 }
 
 export { renderHealthCheck, openHealthPeopleManager, openHealthCheckForm };
