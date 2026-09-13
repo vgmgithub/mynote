@@ -14,8 +14,7 @@ const HEALTH_PARAMS = [
 ];
 
 async function renderHealthCheck() {
-  if (state.appMode !== 'health') return;
-  const host = $('#healthView');
+  const host = document.getElementById('healthView');
   host.innerHTML = '';
 
   const people = await DB.all('healthPeople').catch(() => []);
@@ -133,3 +132,5 @@ function openHealthCheckForm(person) {
   // TODO: Health check entry form
   toast('Add check form coming soon');
 }
+
+export { renderHealthCheck, openHealthPeopleManager, openHealthCheckForm };

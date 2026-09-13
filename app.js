@@ -1781,7 +1781,7 @@ function applyAppMode(mode) {
     if (isSavings) renderHomeSavings();
     if (isExpense) { buildExpBottomNav(); renderHomeExpense(); }
     if (isPersonal) { buildPfBottomNav(); renderPersonal(); }
-    if (isHealth) { renderHealthCheck(); }
+    if (isHealth) { import('./health.js').then(m => m.renderHealthCheck()); }
     if (isMF) { buildMfBottomNav(); renderMF(); }
     if (isFD) { buildFdBottomNav(); renderFD(); }
     if (isDiv) { buildDivBottomNav(); renderDividend(); }
