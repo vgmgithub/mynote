@@ -1718,12 +1718,13 @@ function applyAppMode(mode) {
   // Which screen is up, exposed for CSS. Home is the one screen with no bottom
   // nav, so the offset the FABs use to clear one is dead space there.
   document.body.setAttribute('data-mode', mode);
-  const isHome = mode === 'home', isStocks = mode === 'stocks', isMF = mode === 'mf', isFD = mode === 'fd', isDiv = mode === 'div', isMetal = mode === 'metal', isBond = mode === 'bond', isEF = mode === 'ef', isBankSav = mode === 'banksav', isInvestment = mode === 'investment', isSavings = mode === 'savings', isExpense = mode === 'expense', isPersonal = mode === 'personal', isVault = mode === 'vault';
+  const isHome = mode === 'home', isStocks = mode === 'stocks', isMF = mode === 'mf', isFD = mode === 'fd', isDiv = mode === 'div', isMetal = mode === 'metal', isBond = mode === 'bond', isEF = mode === 'ef', isBankSav = mode === 'banksav', isInvestment = mode === 'investment', isSavings = mode === 'savings', isExpense = mode === 'expense', isPersonal = mode === 'personal', isHealth = mode === 'health', isVault = mode === 'vault';
   $('#homeView').classList.toggle('hidden', !isHome);
   $('#investmentView').classList.toggle('hidden', !isInvestment);
   $('#savingsView').classList.toggle('hidden', !isSavings);
   $('#expenseView').classList.toggle('hidden', !isExpense);
   $('#pfView').classList.toggle('hidden', !isPersonal);
+  $('#healthView').classList.toggle('hidden', !isHealth);
   $('#vaultView').classList.toggle('hidden', !isVault);
   $('#mfView').classList.toggle('hidden', !isMF);
   $('#fdView').classList.toggle('hidden', !isFD);
@@ -1742,6 +1743,7 @@ function applyAppMode(mode) {
   $('#efBottomNav').classList.toggle('hidden', !isEF);
   $('#expBottomNav').classList.toggle('hidden', !isExpense);
   $('#pfBottomNav').classList.toggle('hidden', !isPersonal);
+  $('#healthBottomNav').classList.toggle('hidden', !isHealth);
   $('#mfAddBtn').classList.toggle('hidden', !isMF);
   $('#mfFetchBtn').classList.toggle('hidden', !isMF);
   $('#fdAddBtn').classList.toggle('hidden', !isFD);
@@ -1768,7 +1770,7 @@ function applyAppMode(mode) {
   $('#vaultAddBtn').classList.toggle('hidden', !(isVault && _vaultKey));
   if (!isMetal) $('#metalAddBtn').classList.add('hidden'); // renderMetal shows it on Gold/Silver only
   $('#backBtn').classList.toggle('hidden', isHome);
-  $('#appTitle').innerHTML = isHome ? '' : (isInvestment ? 'Investment' : isSavings ? 'Savings' : isExpense ? 'Expense' : isPersonal ? 'Personal&nbsp;Finance' : isMF ? 'Mutual&nbsp;Funds' : isFD ? 'Fixed&nbsp;Deposits' : isDiv ? 'Dividends' : isMetal ? 'Metals' : isBond ? 'Bonds' : isEF ? 'Emergency&nbsp;Fund' : isBankSav ? 'Bank&nbsp;Savings' : isVault ? 'My&nbsp;Passwords' : 'MyNotes');
+  $('#appTitle').innerHTML = isHome ? '' : (isInvestment ? 'Investment' : isSavings ? 'Savings' : isExpense ? 'Expense' : isPersonal ? 'Personal&nbsp;Finance' : isHealth ? 'Health&nbsp;Check' : isMF ? 'Mutual&nbsp;Funds' : isFD ? 'Fixed&nbsp;Deposits' : isDiv ? 'Dividends' : isMetal ? 'Metals' : isBond ? 'Bonds' : isEF ? 'Emergency&nbsp;Fund' : isBankSav ? 'Bank&nbsp;Savings' : isVault ? 'My&nbsp;Passwords' : 'MyNotes');
   if (isStocks) {
     render();
   } else {
@@ -1779,6 +1781,7 @@ function applyAppMode(mode) {
     if (isSavings) renderHomeSavings();
     if (isExpense) { buildExpBottomNav(); renderHomeExpense(); }
     if (isPersonal) { buildPfBottomNav(); renderPersonal(); }
+    if (isHealth) { renderHealthCheck(); }
     if (isMF) { buildMfBottomNav(); renderMF(); }
     if (isFD) { buildFdBottomNav(); renderFD(); }
     if (isDiv) { buildDivBottomNav(); renderDividend(); }
@@ -4195,8 +4198,9 @@ async function renderHome() {
   const savingsCard = _homeCard('🏦', 'Savings', 'Emergency Fund · Goals', () => setAppMode('savings'));
   const expenseCard = _homeCard('💳', 'Expense', 'Credit Card · Allocation · Monthly sheet', () => setAppMode('expense'));
   const personalCard = _homeCard(_walletIcon(), 'Personal Finance', 'Own spends · card & UPI limits', () => setAppMode('personal'));
+  const healthCard = _homeCard('⚕️', 'Health Check', 'Medical records · Family history', () => setAppMode('health'));
   const vaultCard = _homeCard('\ud83d\udd10', 'My Passwords', 'Locked · encrypted on this device', () => setAppMode('vault'));
-  host.appendChild(el('div', { class: 'home-cards' }, [investmentCard, savingsCard, expenseCard, personalCard, vaultCard]));
+  host.appendChild(el('div', { class: 'home-cards' }, [investmentCard, savingsCard, expenseCard, personalCard, healthCard, vaultCard]));
   host.appendChild(el('p', { class: 'hint home-foot', text: 'Backup covers everything - open the ⋮ menu → Backup & Restore.' }));
 
   // Per-day room on the two cards that have a budget behind them. Wrapped, and

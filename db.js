@@ -1,7 +1,7 @@
 // IndexedDB data layer. All data lives on this device only.
 export const DB = (function () {
   const NAME = 'mynote-stocks';
-  const VERSION = 17;
+  const VERSION = 18;
   let dbp = null;
 
   function open() {
@@ -152,6 +152,19 @@ export const DB = (function () {
         // envelope (iv + payload) sit in the clear. Added in v17.
         if (!db.objectStoreNames.contains('vault')) {
           db.createObjectStore('vault', { keyPath: 'id', autoIncrement: true });
+        }
+        // Health Check - family members. One row per person, holding name/age/gender.
+        // Indexed by `id` for quick lookup. Added in v18.
+        if (!db.objectStoreNames.contains('healthPeople')) {
+          db.createObjectStore('healthPeople', { keyPath: 'id', autoIncrement: true });
+        }
+        // Health Check - medical records. One row per check/person/date combo,
+        // holding date, parameters, notes, payment method. Indexed by `personId`
+        // and `ym` (year-month) for filtering. Added in v18.
+        if (!db.objectStoreNames.contains('healthChecks')) {
+          const s = db.createObjectStore('healthChecks', { keyPath: 'id', autoIncrement: true });
+          s.createIndex('personId', 'personId', { unique: false });
+          s.createIndex('ym', 'ym', { unique: false });
         }
       };
       req.onsuccess = () => resolve(req.result);
