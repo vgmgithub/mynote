@@ -3068,13 +3068,22 @@ textarea.vault-notes { width: 100%; padding: 10px 12px; border: 1px solid var(--
 textarea.vault-notes:focus { outline: none; border-color: var(--accent); }
 
 /* ---------- Health Check ---------- */
-.hc-header { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
 .hc-avatar { width: 40px; height: 40px; border-radius: 50%; background: var(--card-2); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; font-size: 1.3rem; flex-shrink: 0; }
-.hc-header h2 { margin: 0; flex: 1; font-size: 1.25rem; }
-.hc-tabs { display: flex; gap: 8px; margin-bottom: 18px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; -ms-overflow-style: none; }
+/* Person badges + gear on one row. The tabs live in their own scrolling
+   wrapper so a mask can fade their trailing edge without touching the gear
+   button beside it - a long people list signals "more" instead of getting
+   visually cut against the gear. */
+.hc-toprow { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+.hc-tabs-wrap { flex: 1; min-width: 0; overflow: hidden; -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent 100%); mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent 100%); }
+.hc-gear { flex-shrink: 0; }
+.hc-tabs { display: flex; gap: 8px; overflow-x: auto; padding: 2px 28px 2px 2px; scrollbar-width: none; -ms-overflow-style: none; }
 .hc-tabs::-webkit-scrollbar { display: none; }
 .hc-tab { padding: 9px 16px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--muted); cursor: pointer; white-space: nowrap; font-weight: 500; font-size: 0.9rem; display: inline-flex; align-items: center; gap: 6px; }
 .hc-tab.active { background: var(--accent); color: #0e1726; border-color: var(--accent); font-weight: 700; }
+/* Selected person, shown below the badge row - emoji + name + age. */
+.hc-selected { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+.hc-selected-name { font-size: 1.2rem; font-weight: 700; }
+.hc-selected-age { font-size: 0.82rem; color: var(--muted); }
 .hc-empty { padding: 48px 20px; text-align: center; color: var(--muted); }
 .hc-empty-cta { margin-top: 14px; padding: 11px 22px; background: var(--good); color: #fff; border: none; border-radius: 10px; cursor: pointer; font-weight: 700; font-size: 0.95rem; }
 html[data-theme="light"] .hc-empty-cta { color: #fff; }
@@ -3092,7 +3101,7 @@ html[data-theme="light"] .hc-empty-cta { color: #fff; }
 .hc-entry-row + .hc-entry-row { border-top: 1px solid var(--line); }
 .hc-entry-row.clickable { cursor: pointer; }
 .hc-cal { width: 52px; flex-shrink: 0; border-radius: 7px; overflow: hidden; text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,0.18); }
-.hc-cal-top { background: var(--accent); color: #fff; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.02em; padding: 4px 0; text-transform: uppercase; }
+.hc-cal-top { color: #fff; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.02em; padding: 4px 0; text-transform: uppercase; }
 .hc-cal-year { background: var(--card); color: var(--muted); font-size: 0.6rem; padding: 2px 0; }
 .hc-entry-value { flex: 1; min-width: 0; text-align: right; font-weight: 700; font-size: 0.98rem; padding-right: 2px; }
 .hc-type-badge { display: inline-block; flex-shrink: 0; padding: 2px 8px; border-radius: 999px; font-size: 0.66rem; font-weight: 700; white-space: nowrap; }

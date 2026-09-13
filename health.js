@@ -70,15 +70,19 @@ function paramRangeLabel(param) {
 
 const CHECK_TYPES = ['Annual Check-up', 'Periodic Check-up'];
 const MONTH_ABBR = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+// One fixed color per calendar month, shared by every entry that falls in
+// that month regardless of parameter or year - a quick visual "which month"
+// cue when scanning a list of readings.
+const MONTH_COLORS = ['#ef4444', '#f97316', '#f59e0b', '#84cc16', '#22c55e', '#10b981', '#14b8a6', '#0ea5e9', '#6366f1', '#8b5cf6', '#d946ef', '#ec4899'];
 
 // A small calendar-card chip (day + month on top, year underneath) used
 // wherever a reading or a record's date is shown, instead of a plain
 // "YYYY-MM-DD" string.
 function calChip(dateStr) {
   const [y, m, d] = (dateStr || '').split('-');
-  const monthAbbr = MONTH_ABBR[(parseInt(m, 10) || 1) - 1];
+  const mi = (parseInt(m, 10) || 1) - 1;
   return el('div', { class: 'hc-cal' }, [
-    el('div', { class: 'hc-cal-top', text: (parseInt(d, 10) || '') + ' ' + monthAbbr }),
+    el('div', { class: 'hc-cal-top', style: 'background: ' + MONTH_COLORS[mi] + ';', text: (parseInt(d, 10) || '') + ' ' + MONTH_ABBR[mi] }),
     el('div', { class: 'hc-cal-year', text: y }),
   ]);
 }
@@ -121,19 +125,30 @@ async function renderHealthCheck() {
   const person = people.find(p => p.id === _healthPerson) || people[0];
   if (!person.id) _healthPerson = people[0].id;
 
-  const head = el('div', { class: 'hc-header' }, [
-    el('div', { class: 'hc-avatar', text: personEmoji(calcAge(person.dob), person.gender) }),
-    el('h2', { text: person.name }),
-    el('button', { class: 'icon-btn', text: '⚙️', onclick: () => openHealthSettingsMenu() }),
-  ]);
-
   const personTabs = el('div', { class: 'hc-tabs' },
     people.map(p => el('button', {
       class: 'hc-tab' + (_healthPerson === p.id ? ' active' : ''),
-      text: personEmoji(calcAge(p.dob), p.gender) + ' ' + p.name,
+      text: p.name,
       onclick: () => { _healthPerson = p.id; renderHealthCheck(); }
     }))
   );
+
+  // Badges on top with the gear pinned beside them (never under them) - the
+  // tabs row fades out at its own trailing edge via a mask, so a long list
+  // of people signals "there's more" without a hard cut against the gear.
+  const topRow = el('div', { class: 'hc-toprow' }, [
+    el('div', { class: 'hc-tabs-wrap' }, [personTabs]),
+    el('button', { class: 'icon-btn hc-gear', text: '⚙️', onclick: () => openHealthSettingsMenu() }),
+  ]);
+
+  const age = calcAge(person.dob);
+  const selected = el('div', { class: 'hc-selected' }, [
+    el('div', { class: 'hc-avatar', text: personEmoji(age, person.gender) }),
+    el('div', {}, [
+      el('div', { class: 'hc-selected-name', text: person.name }),
+      age != null ? el('div', { class: 'hc-selected-age', text: age + 'y' }) : null,
+    ].filter(Boolean)),
+  ]);
 
   const checks = await DB.all('healthChecks').catch(() => []);
   const personChecks = checks.filter(c => c.personId === _healthPerson).sort((a, b) => b.date.localeCompare(a.date));
@@ -142,8 +157,8 @@ async function renderHealthCheck() {
   fab.classList.remove('hidden');
   fab.onclick = () => openHealthCheckForm(person);
 
-  host.appendChild(head);
-  host.appendChild(personTabs);
+  host.appendChild(topRow);
+  host.appendChild(selected);
 
   if (!personChecks.length) {
     host.appendChild(el('div', { class: 'hc-empty', text: 'No records yet. Tap the + button to add one.' }));
