@@ -1,4 +1,5 @@
 // Health Check module - Medical records tracking
+import { DB } from './db.js';
 
 let _healthPerson = null;
 let _healthYear = new Date().getFullYear();
