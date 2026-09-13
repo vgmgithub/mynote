@@ -3104,4 +3104,6 @@ html[data-theme="light"] .hc-empty-cta { color: #fff; }
 .hc-mgr-tab.active { background: var(--accent); color: #0e1726; border-color: var(--accent); }
 .hc-list-row { display: flex; align-items: center; gap: 10px; padding: 12px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
 .hc-list-row + .hc-list-row { margin-top: 8px; }
+.hc-icon-btn { width: 36px; height: 36px; flex-shrink: 0; border-radius: 9px; border: 1px solid var(--line); background: var(--card-2); color: var(--text); font-size: 1.05rem; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.hc-icon-btn.danger { color: var(--bad); }
 .hc-list-empty { color: var(--muted); text-align: center; padding: 30px 10px; }

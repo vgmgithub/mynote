@@ -253,9 +253,9 @@ async function openHealthPeopleManager(activeTab, editing) {
         return el('div', { class: 'hc-list-row' }, [
           el('div', { style: 'font-size: 1.3rem;', text: personEmoji(age, p.gender) }),
           el('div', { style: 'flex: 1;', text: p.name + (age != null ? ' · ' + age + 'y' : '') + (p.gender ? ' · ' + p.gender : '') }),
-          el('button', { class: 'btn ghost', style: 'padding: 6px 10px;', text: 'Edit', onclick: () => { closeModal(); openHealthPeopleManager('add', p); } }),
+          el('button', { class: 'hc-icon-btn', 'aria-label': 'Edit', title: 'Edit', text: '✏️', onclick: () => { closeModal(); openHealthPeopleManager('add', p); } }),
           el('button', {
-            class: 'btn ghost', style: 'padding: 6px 10px;', text: 'Delete',
+            class: 'hc-icon-btn danger', 'aria-label': 'Delete', title: 'Delete', text: '🗑️',
             onclick: async () => {
               if (!window.confirm('Delete ' + p.name + '? This also removes their health records.')) return;
               await DB.del('healthPeople', p.id);
@@ -285,7 +285,11 @@ async function openHealthPeopleManager(activeTab, editing) {
 
   if (isEdit) { nameInput.value = editing.name || ''; dobInput.value = editing.dob || ''; }
   paintAvatar();
+  // Some mobile browsers only fire 'change' (not 'input') once a date is
+  // picked via the native picker UI, so both are wired to be sure the
+  // avatar preview actually updates.
   dobInput.addEventListener('input', paintAvatar);
+  dobInput.addEventListener('change', paintAvatar);
 
   const save = async () => {
     const name = nameInput.value.trim();
@@ -332,9 +336,9 @@ async function openHealthParamsManager(activeTab, editing) {
           el('div', { style: 'font-weight: 600;', text: p.label + (p.unit ? ' (' + p.unit + ')' : '') }),
           el('div', { style: 'font-size: 0.8rem; color: var(--muted);', text: paramRangeLabel(p) }),
         ]),
-        el('button', { class: 'btn ghost', style: 'padding: 6px 10px;', text: 'Edit', onclick: () => { closeModal(); openHealthParamsManager('add', p); } }),
+        el('button', { class: 'hc-icon-btn', 'aria-label': 'Edit', title: 'Edit', text: '✏️', onclick: () => { closeModal(); openHealthParamsManager('add', p); } }),
         el('button', {
-          class: 'btn ghost', style: 'padding: 6px 10px;', text: 'Delete',
+          class: 'hc-icon-btn danger', 'aria-label': 'Delete', title: 'Delete', text: '🗑️',
           onclick: async () => {
             if (!window.confirm('Delete parameter "' + p.label + '"? Past readings for it are kept but will no longer show a status color.')) return;
             await DB.del('healthParams', p.id);
