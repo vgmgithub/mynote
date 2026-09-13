@@ -1,4 +1,4 @@
-const CACHE = 'mynote-stocks-v418';
+const CACHE = 'mynote-stocks-v420';
 const ASSETS = [
   './',
   './index.html',
@@ -26,6 +26,7 @@ const ASSETS = [
   './icons/icon-512.png',
   './icons/icon-maskable-512.png',
   './icons/gold-bars.png',
+  './icons/health-fab.png',
 ];
 
 // Precache fresh copies (bypass the HTTP cache so we never bake in a stale file).

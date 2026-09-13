@@ -20,6 +20,34 @@ const DEFAULT_HEALTH_PARAMS = [
   { label: 'BP Diastolic', unit: 'mmHg', intervalType: 'range', min: 60, max: 80 },
 ];
 
+// Stored as a date of birth rather than a static age, so a person's avatar
+// and any age display stay correct on their own as years pass instead of
+// quietly going stale until someone reopens their record to bump a number.
+function calcAge(dob) {
+  if (!dob) return null;
+  const b = new Date(dob);
+  if (isNaN(b.getTime())) return null;
+  const now = new Date();
+  let age = now.getFullYear() - b.getFullYear();
+  const m = now.getMonth() - b.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < b.getDate())) age--;
+  return age;
+}
+
+// Age/gender -> avatar, so people aren't asked to pick their own emoji.
+// Falls back to a neutral figure whenever either input is missing.
+function personEmoji(age, gender) {
+  const male = gender === 'Male';
+  const female = gender === 'Female';
+  if (age != null) {
+    if (age < 3) return '👶';
+    if (age < 13) return male ? '👦' : female ? '👧' : '🧒';
+    if (age < 60) return male ? '👨' : female ? '👩' : '🧑';
+    return male ? '👴' : female ? '👵' : '🧓';
+  }
+  return male ? '👨' : female ? '👩' : '🧑';
+}
+
 async function getHealthParams() {
   let params = await DB.all('healthParams').catch(() => []);
   if (!params.length) {
@@ -67,7 +95,7 @@ async function renderHealthCheck() {
   if (!person.id) _healthPerson = people[0].id;
 
   const head = el('div', { class: 'hc-header' }, [
-    el('div', { class: 'hc-avatar', text: person.emoji || '🧑' }),
+    el('div', { class: 'hc-avatar', text: personEmoji(calcAge(person.dob), person.gender) }),
     el('h2', { text: person.name }),
     el('button', { class: 'icon-btn', text: '⚙️', onclick: () => openHealthSettingsMenu() }),
   ]);
@@ -75,7 +103,7 @@ async function renderHealthCheck() {
   const personTabs = el('div', { class: 'hc-tabs' },
     people.map(p => el('button', {
       class: 'hc-tab' + (_healthPerson === p.id ? ' active' : ''),
-      text: (p.emoji ? p.emoji + ' ' : '') + p.name,
+      text: personEmoji(calcAge(p.dob), p.gender) + ' ' + p.name,
       onclick: () => { _healthPerson = p.id; renderHealthCheck(); }
     }))
   );
@@ -212,51 +240,67 @@ function renderManagerTabs(activeKey, addLabel, listLabel, listCount, onSwitch) 
   ]);
 }
 
-async function openHealthPeopleManager(activeTab) {
+async function openHealthPeopleManager(activeTab, editing) {
   const people = await DB.all('healthPeople').catch(() => []);
   const tab = activeTab || 'add';
+  const isEdit = !!editing;
 
-  const tabs = renderManagerTabs(tab, 'Add', 'List', people.length, (next) => { closeModal(); openHealthPeopleManager(next); });
+  const tabs = renderManagerTabs(tab, isEdit ? 'Edit' : 'Add', 'List', people.length, (next) => { closeModal(); openHealthPeopleManager(next); });
 
   const listBody = people.length
-    ? el('div', {}, people.map(p => el('div', { class: 'hc-list-row' }, [
-        el('div', { style: 'font-size: 1.3rem;', text: p.emoji || '🧑' }),
-        el('div', { style: 'flex: 1;', text: p.name + (p.age ? ' · ' + p.age + 'y' : '') + (p.gender ? ' · ' + p.gender : '') }),
-        el('button', {
-          class: 'btn ghost', style: 'padding: 6px 10px;', text: 'Delete',
-          onclick: async () => {
-            if (!window.confirm('Delete ' + p.name + '? This also removes their health records.')) return;
-            await DB.del('healthPeople', p.id);
-            const checks = await DB.all('healthChecks').catch(() => []);
-            await Promise.all(checks.filter(c => c.personId === p.id).map(c => DB.del('healthChecks', c.id)));
-            closeModal(); toast('Removed'); openHealthPeopleManager('list');
-          },
-        }),
-      ])))
+    ? el('div', {}, people.map(p => {
+        const age = calcAge(p.dob);
+        return el('div', { class: 'hc-list-row' }, [
+          el('div', { style: 'font-size: 1.3rem;', text: personEmoji(age, p.gender) }),
+          el('div', { style: 'flex: 1;', text: p.name + (age != null ? ' · ' + age + 'y' : '') + (p.gender ? ' · ' + p.gender : '') }),
+          el('button', { class: 'btn ghost', style: 'padding: 6px 10px;', text: 'Edit', onclick: () => { closeModal(); openHealthPeopleManager('add', p); } }),
+          el('button', {
+            class: 'btn ghost', style: 'padding: 6px 10px;', text: 'Delete',
+            onclick: async () => {
+              if (!window.confirm('Delete ' + p.name + '? This also removes their health records.')) return;
+              await DB.del('healthPeople', p.id);
+              const checks = await DB.all('healthChecks').catch(() => []);
+              await Promise.all(checks.filter(c => c.personId === p.id).map(c => DB.del('healthChecks', c.id)));
+              closeModal(); toast('Removed'); openHealthPeopleManager('list');
+            },
+          }),
+        ]);
+      }))
     : el('div', { class: 'hc-list-empty', text: 'No one added yet.' });
 
-  const emojiInput = el('input', { type: 'text', placeholder: '🧑', maxlength: '4', style: 'width: 60px; text-align: center; font-size: 1.2rem;' });
   const nameInput = el('input', { type: 'text', placeholder: 'Name' });
-  const ageInput = el('input', { type: 'number', inputmode: 'numeric', placeholder: 'Age (optional)' });
-  const genderInput = el('select', {}, [
-    el('option', { value: '', text: 'Gender (optional)' }),
-    el('option', { value: 'Male', text: 'Male' }),
-    el('option', { value: 'Female', text: 'Female' }),
-    el('option', { value: 'Other', text: 'Other' }),
-  ]);
+  const dobInput = el('input', { type: 'date', max: todayISO() });
+  let gender = (isEdit && editing.gender) || null;
 
-  const add = async () => {
+  const avatarPreview = el('div', { style: 'width: 48px; height: 48px; border-radius: 50%; background: var(--card); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; font-size: 1.6rem;' });
+  const paintAvatar = () => { avatarPreview.textContent = personEmoji(calcAge(dobInput.value), gender); };
+
+  const maleBtn = el('button', { type: 'button', text: '👨 Male', onclick: () => { gender = 'Male'; paintGender(); paintAvatar(); } });
+  const femaleBtn = el('button', { type: 'button', text: '👩 Female', onclick: () => { gender = 'Female'; paintGender(); paintAvatar(); } });
+  const paintGender = () => {
+    maleBtn.className = 'btn' + (gender === 'Male' ? ' primary' : ' ghost');
+    femaleBtn.className = 'btn' + (gender === 'Female' ? ' primary' : ' ghost');
+  };
+  paintGender();
+
+  if (isEdit) { nameInput.value = editing.name || ''; dobInput.value = editing.dob || ''; }
+  paintAvatar();
+  dobInput.addEventListener('input', paintAvatar);
+
+  const save = async () => {
     const name = nameInput.value.trim();
     if (!name) { toast('Enter a name'); return; }
-    await DB.put('healthPeople', { name, emoji: emojiInput.value.trim() || null, age: num(ageInput.value) || null, gender: genderInput.value || null });
-    closeModal(); toast('Added'); openHealthPeopleManager('list');
+    const rec = { name, dob: dobInput.value || null, gender };
+    if (isEdit) rec.id = editing.id;
+    await DB.put('healthPeople', rec);
+    closeModal(); toast(isEdit ? 'Updated' : 'Added'); openHealthPeopleManager('list');
   };
 
   const formBody = el('div', {}, [
+    el('div', { style: 'display: flex; justify-content: center; margin-bottom: 16px;' }, [avatarPreview]),
     field('Name', nameInput),
-    field('Emoji', emojiInput),
-    field('Age', ageInput),
-    field('Gender', genderInput),
+    field('Date of birth', dobInput),
+    field('Gender', el('div', { style: 'display: flex; gap: 8px;' }, [maleBtn, femaleBtn])),
   ]);
 
   openModal(el('div', { class: 'sheet has-fixed-footer' }, [
@@ -268,18 +312,19 @@ async function openHealthPeopleManager(activeTab) {
     el('div', { class: 'sheet-footer' }, [
       el('div', { class: 'btn-row', style: 'flex-wrap:wrap' },
         tab === 'add'
-          ? [el('button', { class: 'btn primary', text: '+ Add', onclick: add }), el('button', { class: 'btn ghost', text: 'Close', onclick: () => { closeModal(); renderHealthCheck(); } })]
+          ? [el('button', { class: 'btn primary', text: isEdit ? 'Save' : '+ Add', onclick: save }), el('button', { class: 'btn ghost', text: 'Close', onclick: () => { closeModal(); renderHealthCheck(); } })]
           : [el('button', { class: 'btn ghost', text: 'Close', onclick: () => { closeModal(); renderHealthCheck(); } })]
       ),
     ]),
   ]));
 }
 
-async function openHealthParamsManager(activeTab) {
+async function openHealthParamsManager(activeTab, editing) {
   const params = await getHealthParams();
   const tab = activeTab || 'add';
+  const isEdit = !!editing;
 
-  const tabs = renderManagerTabs(tab, 'Add', 'List', params.length, (next) => { closeModal(); openHealthParamsManager(next); });
+  const tabs = renderManagerTabs(tab, isEdit ? 'Edit' : 'Add', 'List', params.length, (next) => { closeModal(); openHealthParamsManager(next); });
 
   const listBody = params.length
     ? el('div', {}, params.map(p => el('div', { class: 'hc-list-row' }, [
@@ -287,6 +332,7 @@ async function openHealthParamsManager(activeTab) {
           el('div', { style: 'font-weight: 600;', text: p.label + (p.unit ? ' (' + p.unit + ')' : '') }),
           el('div', { style: 'font-size: 0.8rem; color: var(--muted);', text: paramRangeLabel(p) }),
         ]),
+        el('button', { class: 'btn ghost', style: 'padding: 6px 10px;', text: 'Edit', onclick: () => { closeModal(); openHealthParamsManager('add', p); } }),
         el('button', {
           class: 'btn ghost', style: 'padding: 6px 10px;', text: 'Delete',
           onclick: async () => {
@@ -309,6 +355,13 @@ async function openHealthParamsManager(activeTab) {
   const maxInput = el('input', { type: 'number', inputmode: 'decimal', step: 'any', placeholder: 'Max' });
   const minField = field('Min', minInput);
   const maxField = field('Max', maxInput);
+  if (isEdit) {
+    labelInput.value = editing.label || '';
+    unitInput.value = editing.unit || '';
+    typeInput.value = editing.intervalType || 'range';
+    minInput.value = editing.min != null ? editing.min : '';
+    maxInput.value = editing.max != null ? editing.max : '';
+  }
 
   const syncFields = () => {
     minField.style.display = typeInput.value === 'below' ? 'none' : '';
@@ -317,7 +370,7 @@ async function openHealthParamsManager(activeTab) {
   typeInput.addEventListener('change', syncFields);
   syncFields();
 
-  const add = async () => {
+  const save = async () => {
     const label = labelInput.value.trim();
     if (!label) { toast('Enter a parameter name'); return; }
     const intervalType = typeInput.value;
@@ -326,8 +379,10 @@ async function openHealthParamsManager(activeTab) {
     if (intervalType === 'range' && (min == null || max == null)) { toast('Enter both min and max'); return; }
     if (intervalType === 'below' && max == null) { toast('Enter the max limit'); return; }
     if (intervalType === 'above' && min == null) { toast('Enter the min limit'); return; }
-    await DB.put('healthParams', { label, unit: unitInput.value.trim(), intervalType, min, max });
-    closeModal(); toast('Added'); openHealthParamsManager('list');
+    const rec = { label, unit: unitInput.value.trim(), intervalType, min, max };
+    if (isEdit) rec.id = editing.id;
+    await DB.put('healthParams', rec);
+    closeModal(); toast(isEdit ? 'Updated' : 'Added'); openHealthParamsManager('list');
   };
 
   const formBody = el('div', {}, [
@@ -347,7 +402,7 @@ async function openHealthParamsManager(activeTab) {
     el('div', { class: 'sheet-footer' }, [
       el('div', { class: 'btn-row', style: 'flex-wrap:wrap' },
         tab === 'add'
-          ? [el('button', { class: 'btn primary', text: '+ Add', onclick: add }), el('button', { class: 'btn ghost', text: 'Close', onclick: () => { closeModal(); renderHealthCheck(); } })]
+          ? [el('button', { class: 'btn primary', text: isEdit ? 'Save' : '+ Add', onclick: save }), el('button', { class: 'btn ghost', text: 'Close', onclick: () => { closeModal(); renderHealthCheck(); } })]
           : [el('button', { class: 'btn ghost', text: 'Close', onclick: () => { closeModal(); renderHealthCheck(); } })]
       ),
     ]),
