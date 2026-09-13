@@ -1768,6 +1768,10 @@ function applyAppMode(mode) {
   // Only once the vault is open. A + on a locked screen offers to add
   // something to a list you cannot see.
   $('#vaultAddBtn').classList.toggle('hidden', !(isVault && _vaultKey));
+  // Hidden whenever we leave Health Check; health.js's renderHealthCheck()
+  // shows it again (and wires its click to the current person) only once a
+  // family member exists to log a check against.
+  if (!isHealth) $('#healthAddBtn').classList.add('hidden');
   if (!isMetal) $('#metalAddBtn').classList.add('hidden'); // renderMetal shows it on Gold/Silver only
   $('#backBtn').classList.toggle('hidden', isHome);
   $('#appTitle').innerHTML = isHome ? '' : (isInvestment ? 'Investment' : isSavings ? 'Savings' : isExpense ? 'Expense' : isPersonal ? 'Personal&nbsp;Finance' : isHealth ? 'Health&nbsp;Check' : isMF ? 'Mutual&nbsp;Funds' : isFD ? 'Fixed&nbsp;Deposits' : isDiv ? 'Dividends' : isMetal ? 'Metals' : isBond ? 'Bonds' : isEF ? 'Emergency&nbsp;Fund' : isBankSav ? 'Bank&nbsp;Savings' : isVault ? 'My&nbsp;Passwords' : 'MyNotes');

@@ -1861,6 +1861,13 @@ html[data-theme="light"] {
 }
 .fab.fab-spend:active { transform: translateY(1px); box-shadow: 0 4px 10px rgba(0,0,0,0.2); }
 .fab.fab-spend svg { width: 26px; height: 26px; display: block; }
+.fab.fab-health {
+  background: #fff; color: #14203a;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 6px 14px rgba(0,0,0,0.18), 0 12px 28px rgba(0,0,0,0.22);
+}
+.fab.fab-health:active { transform: translateY(1px); box-shadow: 0 4px 10px rgba(0,0,0,0.2); }
+.fab.fab-health svg { width: 26px; height: 26px; display: block; }
 /* Tracker timeline: three states that must be told apart at a glance —
    an empty month, a month with spends in it, and the one being viewed.
    Scoped to .trk-timeline so the Credit Card strip, which uses the same chip

@@ -1,7 +1,7 @@
 // IndexedDB data layer. All data lives on this device only.
 export const DB = (function () {
   const NAME = 'mynote-stocks';
-  const VERSION = 18;
+  const VERSION = 19;
   let dbp = null;
 
   function open() {
@@ -165,6 +165,14 @@ export const DB = (function () {
           const s = db.createObjectStore('healthChecks', { keyPath: 'id', autoIncrement: true });
           s.createIndex('personId', 'personId', { unique: false });
           s.createIndex('ym', 'ym', { unique: false });
+        }
+        // Health Check - user-customizable parameters (Fasting Sugar, HbA1c, ...).
+        // Each row holds a label/unit plus how its value maps to a status color:
+        // `intervalType` is 'range' (needs min+max), 'below' (needs max) or
+        // 'above' (needs min). Replaces a v18 hardcoded list so a user can add,
+        // edit or remove parameters and their thresholds. Added in v19.
+        if (!db.objectStoreNames.contains('healthParams')) {
+          db.createObjectStore('healthParams', { keyPath: 'id', autoIncrement: true });
         }
       };
       req.onsuccess = () => resolve(req.result);
