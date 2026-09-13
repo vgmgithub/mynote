@@ -64,6 +64,30 @@ function paramRangeLabel(param) {
   return '';
 }
 
+const CHECK_TYPES = ['Annual Check-up', 'Periodic Check-up'];
+const MONTH_ABBR = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+
+// A small calendar-card chip (month header + day, year underneath) used
+// wherever a reading or a record's date is shown, instead of a plain
+// "YYYY-MM-DD" string.
+function calChip(dateStr) {
+  const [y, m, d] = (dateStr || '').split('-');
+  const monthAbbr = MONTH_ABBR[(parseInt(m, 10) || 1) - 1];
+  return el('div', { class: 'hc-cal' }, [
+    el('div', { class: 'hc-cal-month', text: monthAbbr }),
+    el('div', { class: 'hc-cal-day', text: String(parseInt(d, 10) || '') }),
+    el('div', { class: 'hc-cal-year', text: y }),
+  ]);
+}
+
+function checkTypeBadge(type) {
+  if (!type) return null;
+  const isAnnual = type === 'Annual Check-up';
+  const short = isAnnual ? 'Annual' : type === 'Periodic Check-up' ? 'Periodic' : type;
+  const color = isAnnual ? '#38bdf8' : '#34d399';
+  return el('span', { class: 'hc-type-badge', style: 'background: ' + color + '22; color: ' + color + ';', text: short });
+}
+
 async function renderHealthCheck() {
   const host = document.getElementById('healthView');
   if (!host) {
@@ -134,30 +158,49 @@ async function renderHealthCheck() {
   host.appendChild(sections);
 }
 
+// entries is newest-first. Only the latest reading is shown by default -
+// tapping "N more" reveals the rest, so a parameter with a long history
+// doesn't push every other parameter off screen.
 function renderParamSection(param, entries) {
-  const rows = entries.map(e => {
-    const status = getParamStatus(e.value, param);
-    return el('tr', {}, [
-      el('td', { class: 'hc-row-date', text: e.date + (e.checkType ? ' · ' + e.checkType : '') }),
-      el('td', { class: 'hc-row-value', text: e.value + (param.unit ? ' ' + param.unit : '') }),
-      el('td', {}, [
-        el('span', { class: 'hc-badge', style: 'background: ' + getStatusBg(status) + '; color: ' + getStatusColor(status) + ';', text: getStatusIcon(status) }),
-      ]),
-    ]);
-  });
+  const [latest, ...older] = entries;
 
   const children = [
     el('div', { class: 'hc-card-head' }, [
       el('div', { class: 'hc-card-title', text: param.label + (param.unit ? ' (' + param.unit + ')' : '') }),
       el('div', { class: 'hc-card-range', text: paramRangeLabel(param) }),
     ]),
-    el('table', { class: 'hc-rows' }, [
-      el('tbody', {}, rows)
-    ]),
+    renderEntryRow(latest, param),
   ];
+
+  if (older.length) {
+    const historyHost = el('div', { style: 'display: none;' }, older.map(e => renderEntryRow(e, param)));
+    const toggleBtn = el('button', {
+      class: 'hc-toggle-btn', text: '▾ ' + older.length + ' more',
+      onclick: () => {
+        const expanded = historyHost.style.display !== 'none';
+        historyHost.style.display = expanded ? 'none' : '';
+        toggleBtn.textContent = expanded ? '▾ ' + older.length + ' more' : '▴ Hide';
+      },
+    });
+    children.push(toggleBtn, historyHost);
+  }
+
   if (entries.length > 1) children.push(renderTrendGraph(param, entries));
 
   return el('div', { class: 'hc-card' }, children);
+}
+
+function renderEntryRow(entry, param) {
+  const status = getParamStatus(entry.value, param);
+  const badge = checkTypeBadge(entry.checkType);
+  return el('div', { class: 'hc-entry-row' }, [
+    calChip(entry.date),
+    el('div', { class: 'hc-entry-mid' }, [
+      el('div', { class: 'hc-entry-value', text: entry.value + (param.unit ? ' ' + param.unit : '') }),
+      badge,
+    ].filter(Boolean)),
+    el('span', { class: 'hc-badge', style: 'background: ' + getStatusBg(status) + '; color: ' + getStatusColor(status) + ';', text: getStatusIcon(status) }),
+  ]);
 }
 
 // A small bar-per-reading trend strip, oldest to newest left-to-right so the
@@ -253,6 +296,7 @@ async function openHealthPeopleManager(activeTab, editing) {
         return el('div', { class: 'hc-list-row' }, [
           el('div', { style: 'font-size: 1.3rem;', text: personEmoji(age, p.gender) }),
           el('div', { style: 'flex: 1;', text: p.name + (age != null ? ' · ' + age + 'y' : '') + (p.gender ? ' · ' + p.gender : '') }),
+          el('button', { class: 'hc-icon-btn', 'aria-label': 'Health records', title: 'Health records', text: '📋', onclick: () => { closeModal(); openHealthRecordsManager(p); } }),
           el('button', { class: 'hc-icon-btn', 'aria-label': 'Edit', title: 'Edit', text: '✏️', onclick: () => { closeModal(); openHealthPeopleManager('add', p); } }),
           el('button', {
             class: 'hc-icon-btn danger', 'aria-label': 'Delete', title: 'Delete', text: '🗑️',
@@ -413,16 +457,23 @@ async function openHealthParamsManager(activeTab, editing) {
   ]));
 }
 
-async function openHealthCheckForm(person) {
+async function openHealthCheckForm(person, existing) {
   const params = await getHealthParams();
+  const isEdit = !!existing;
 
-  const dateInput = el('input', { type: 'date', value: todayISO() });
-  const checkTypeInput = el('input', { type: 'text', placeholder: 'e.g. Annual Physical, Quarterly Check' });
+  const dateInput = el('input', { type: 'date', value: (isEdit && existing.date) || todayISO() });
+  const checkTypeInput = el('select', {}, [
+    el('option', { value: '', text: 'Select check type' }),
+    ...CHECK_TYPES.map(t => el('option', { value: t, text: t })),
+  ]);
+  if (isEdit) checkTypeInput.value = existing.checkType || '';
   const notesInput = el('textarea', { placeholder: 'Notes (optional)' });
+  if (isEdit) notesInput.value = existing.notes || '';
 
   const paramInputs = {};
   const paramFields = params.map(p => {
     const input = el('input', { type: 'number', inputmode: 'decimal', step: 'any', placeholder: paramRangeLabel(p) + (p.unit ? ' ' + p.unit : '') });
+    if (isEdit && existing.parameters && existing.parameters[p.id] != null) input.value = existing.parameters[p.id];
     paramInputs[p.id] = input;
     return field(p.label + (p.unit ? ' (' + p.unit + ')' : ''), input);
   });
@@ -435,32 +486,80 @@ async function openHealthCheckForm(person) {
       if (v !== '' && v != null) parameters[p.id] = num(v);
     });
     if (!Object.keys(parameters).length) { toast('Enter at least one parameter'); return; }
-    await DB.put('healthChecks', {
+    const rec = {
       personId: person.id,
       date,
       ym: date.slice(0, 7),
-      checkType: checkTypeInput.value.trim(),
+      checkType: checkTypeInput.value,
       notes: notesInput.value.trim(),
       parameters,
-    });
-    closeModal(); toast('Health check added'); renderHealthCheck();
+    };
+    if (isEdit) rec.id = existing.id;
+    await DB.put('healthChecks', rec);
+    closeModal(); toast(isEdit ? 'Health check updated' : 'Health check added'); renderHealthCheck();
   };
+
+  const del = async () => {
+    if (!window.confirm('Delete this health check record?')) return;
+    await DB.del('healthChecks', existing.id);
+    closeModal(); toast('Removed'); renderHealthCheck();
+  };
+
+  const footerBtns = [el('button', { class: 'btn primary', text: 'Save', onclick: save })];
+  if (isEdit) footerBtns.push(el('button', { class: 'btn danger', text: 'Delete', onclick: del }));
+  footerBtns.push(el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }));
 
   openModal(el('div', { class: 'sheet has-fixed-footer' }, [
     el('div', { class: 'sheet-scroll' }, [
-      el('h2', { text: 'Add Health Check' }),
+      el('h2', { text: isEdit ? 'Edit Health Check' : 'Add Health Check' }),
       field('Date', dateInput),
       field('Check type', checkTypeInput),
       ...paramFields,
       field('Notes', notesInput),
     ]),
     el('div', { class: 'sheet-footer' }, [
-      el('div', { class: 'btn-row', style: 'flex-wrap:wrap' }, [
-        el('button', { class: 'btn primary', text: 'Save', onclick: save }),
-        el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }),
+      el('div', { class: 'btn-row', style: 'flex-wrap:wrap' }, footerBtns),
+    ]),
+  ]));
+}
+
+// Reached from a person's row in Family Members (a small "records" icon) -
+// every health check for that person, newest first, each editable or
+// removable directly rather than only ever addable through the FAB.
+async function openHealthRecordsManager(person) {
+  const checks = await DB.all('healthChecks').catch(() => []);
+  const personChecks = checks.filter(c => c.personId === person.id).sort((a, b) => b.date.localeCompare(a.date));
+
+  const listBody = personChecks.length
+    ? el('div', {}, personChecks.map(c => el('div', { class: 'hc-list-row' }, [
+        calChip(c.date),
+        el('div', { style: 'flex: 1;' }, [
+          el('div', { style: 'font-weight: 600;', text: c.checkType || 'Check' }),
+          el('div', { style: 'font-size: 0.8rem; color: var(--muted);', text: Object.keys(c.parameters || {}).length + ' parameter(s) recorded' }),
+        ]),
+        el('button', { class: 'hc-icon-btn', 'aria-label': 'Edit', title: 'Edit', text: '✏️', onclick: () => { closeModal(); openHealthCheckForm(person, c); } }),
+        el('button', {
+          class: 'hc-icon-btn danger', 'aria-label': 'Delete', title: 'Delete', text: '🗑️',
+          onclick: async () => {
+            if (!window.confirm('Delete this health check record from ' + c.date + '?')) return;
+            await DB.del('healthChecks', c.id);
+            closeModal(); toast('Removed'); openHealthRecordsManager(person);
+          },
+        }),
+      ])))
+    : el('div', { class: 'hc-list-empty', text: 'No records yet.' });
+
+  openModal(el('div', { class: 'sheet has-fixed-footer' }, [
+    el('div', { class: 'sheet-scroll' }, [
+      el('h2', { text: person.name + '’s Records' }),
+      listBody,
+    ]),
+    el('div', { class: 'sheet-footer' }, [
+      el('div', { class: 'btn-row' }, [
+        el('button', { class: 'btn ghost', text: 'Close', onclick: () => { closeModal(); renderHealthCheck(); } }),
       ]),
     ]),
   ]));
 }
 
-export { renderHealthCheck, openHealthPeopleManager, openHealthCheckForm, openHealthParamsManager };
+export { renderHealthCheck, openHealthPeopleManager, openHealthCheckForm, openHealthParamsManager, openHealthRecordsManager };

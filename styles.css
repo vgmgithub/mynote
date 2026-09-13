@@ -3071,7 +3071,8 @@ textarea.vault-notes:focus { outline: none; border-color: var(--accent); }
 .hc-header { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
 .hc-avatar { width: 40px; height: 40px; border-radius: 50%; background: var(--card-2); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; font-size: 1.3rem; flex-shrink: 0; }
 .hc-header h2 { margin: 0; flex: 1; font-size: 1.25rem; }
-.hc-tabs { display: flex; gap: 8px; margin-bottom: 18px; overflow-x: auto; padding-bottom: 2px; }
+.hc-tabs { display: flex; gap: 8px; margin-bottom: 18px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; -ms-overflow-style: none; }
+.hc-tabs::-webkit-scrollbar { display: none; }
 .hc-tab { padding: 9px 16px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--muted); cursor: pointer; white-space: nowrap; font-weight: 500; font-size: 0.9rem; display: inline-flex; align-items: center; gap: 6px; }
 .hc-tab.active { background: var(--accent); color: #0e1726; border-color: var(--accent); font-weight: 700; }
 .hc-empty { padding: 48px 20px; text-align: center; color: var(--muted); }
@@ -3082,12 +3083,21 @@ html[data-theme="light"] .hc-empty-cta { color: #fff; }
 .hc-card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 10px; }
 .hc-card-title { font-weight: 700; font-size: 0.98rem; }
 .hc-card-range { font-size: 0.75rem; color: var(--muted); background: var(--bg-2); padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
-.hc-rows { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
-.hc-rows td { padding: 9px 4px; }
-.hc-rows tr + tr td { border-top: 1px solid var(--line); }
-.hc-row-date { color: var(--muted); font-size: 0.85rem; text-align: left; }
-.hc-row-value { text-align: right; font-weight: 700; padding-right: 10px !important; }
 .hc-badge { display: inline-block; min-width: 26px; text-align: center; padding: 3px 9px; border-radius: 8px; font-weight: 700; font-size: 0.85rem; }
+
+/* One reading: a calendar-chip date, the value + check-type badge, and the
+   status badge. Used both for the single latest reading a param card shows
+   by default and for the older readings revealed by "N more". */
+.hc-entry-row { display: flex; align-items: center; gap: 12px; padding: 9px 0; }
+.hc-entry-row + .hc-entry-row { border-top: 1px solid var(--line); }
+.hc-cal { width: 34px; flex-shrink: 0; border-radius: 7px; overflow: hidden; text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,0.18); }
+.hc-cal-month { background: var(--accent); color: #fff; font-size: 0.5rem; font-weight: 700; letter-spacing: 0.02em; padding: 1px 0; text-transform: uppercase; }
+.hc-cal-day { background: var(--card); color: var(--text); font-size: 0.85rem; font-weight: 800; line-height: 1.15; padding-top: 1px; }
+.hc-cal-year { background: var(--card); color: var(--muted); font-size: 0.48rem; padding-bottom: 1px; }
+.hc-entry-mid { flex: 1; min-width: 0; }
+.hc-entry-value { font-weight: 700; font-size: 0.98rem; }
+.hc-type-badge { display: inline-block; margin-top: 4px; padding: 2px 8px; border-radius: 999px; font-size: 0.66rem; font-weight: 700; }
+.hc-toggle-btn { display: block; width: 100%; text-align: left; background: none; border: none; color: var(--accent); font-weight: 600; font-size: 0.85rem; padding: 8px 0 2px; cursor: pointer; }
 .hc-trend { height: 84px; display: flex; align-items: flex-end; gap: 6px; padding: 10px 8px 8px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px; }
 .hc-trend-bar { flex: 1; max-width: 18px; border-radius: 3px 3px 0 0; min-height: 4px; }
 
