@@ -4,6 +4,10 @@ import { $, el, toast, openModal, closeModal, field } from './app.js';
 import { todayISO, num } from './core.js';
 
 let _healthPerson = null;
+// Which parameter card (by id) currently has its older readings expanded -
+// a single value, not a set, so opening one accordion-style closes any
+// other that was open.
+let _expandedParamId = null;
 
 // Seeded once, the first time the Health Check section is opened with no
 // parameters yet defined - after that the user owns this list via the gear
@@ -157,47 +161,52 @@ async function renderHealthCheck() {
   host.appendChild(sections);
 }
 
-// entries is newest-first. Only the latest reading is shown by default -
-// tapping "N more" reveals the rest, so a parameter with a long history
-// doesn't push every other parameter off screen.
+// entries is newest-first. Only the latest reading shows by default; tapping
+// it expands the rest in place, as one continuous list with no separate
+// "N more"/"Hide" row - only a small caption under the latest row's status
+// icon while collapsed. Only one parameter is expanded at a time: expanding
+// another closes this one, since they all share _expandedParamId.
 function renderParamSection(param, entries) {
   const [latest, ...older] = entries;
+  const isExpanded = _expandedParamId === param.id;
+
+  const toggle = () => { _expandedParamId = isExpanded ? null : param.id; renderHealthCheck(); };
 
   const children = [
     el('div', { class: 'hc-card-head' }, [
       el('div', { class: 'hc-card-title', text: param.label + (param.unit ? ' (' + param.unit + ')' : '') }),
       el('div', { class: 'hc-card-range', text: paramRangeLabel(param) }),
     ]),
-    renderEntryRow(latest, param),
+    renderEntryRow(latest, param, {
+      onClick: older.length ? toggle : null,
+      moreCount: (!isExpanded && older.length) ? older.length : 0,
+    }),
   ];
 
-  if (older.length) {
-    const historyHost = el('div', { style: 'display: none;' }, older.map(e => renderEntryRow(e, param)));
-    const toggleBtn = el('button', {
-      class: 'hc-toggle-btn', text: '▾ ' + older.length + ' more',
-      onclick: () => {
-        const expanded = historyHost.style.display !== 'none';
-        historyHost.style.display = expanded ? 'none' : '';
-        toggleBtn.textContent = expanded ? '▾ ' + older.length + ' more' : '▴ Hide';
-      },
-    });
-    children.push(toggleBtn, historyHost);
-  }
+  if (isExpanded) older.forEach(e => children.push(renderEntryRow(e, param)));
 
   if (entries.length > 1) children.push(renderTrendGraph(param, entries));
 
   return el('div', { class: 'hc-card' }, children);
 }
 
-function renderEntryRow(entry, param) {
+function renderEntryRow(entry, param, opts) {
+  opts = opts || {};
   const status = getParamStatus(entry.value, param);
   const badge = checkTypeBadge(entry.checkType);
-  return el('div', { class: 'hc-entry-row' }, [
+  const statusCol = [
+    el('span', { class: 'hc-badge', style: 'background: ' + getStatusBg(status) + '; color: ' + getStatusColor(status) + ';', text: getStatusIcon(status) }),
+    opts.moreCount ? el('div', { class: 'hc-more-caption', text: opts.moreCount + ' more' }) : null,
+  ].filter(Boolean);
+
+  const row = el('div', { class: 'hc-entry-row' + (opts.onClick ? ' clickable' : '') }, [
     calChip(entry.date),
     badge,
     el('div', { class: 'hc-entry-value', text: entry.value + (param.unit ? ' ' + param.unit : '') }),
-    el('span', { class: 'hc-badge', style: 'background: ' + getStatusBg(status) + '; color: ' + getStatusColor(status) + ';', text: getStatusIcon(status) }),
+    el('div', { class: 'hc-entry-status' }, statusCol),
   ].filter(Boolean));
+  if (opts.onClick) row.addEventListener('click', opts.onClick);
+  return row;
 }
 
 // A small bar-per-reading trend strip, oldest to newest left-to-right so the
