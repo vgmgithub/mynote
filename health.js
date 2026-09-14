@@ -4,6 +4,9 @@ import { $, el, toast, openModal, closeModal, field } from './app.js';
 import { todayISO, num } from './core.js';
 
 let _healthPerson = null;
+// 'family' shows the whole-family comparison table instead of one person's
+// records; null/falsy is the normal per-person view keyed by _healthPerson.
+let _hcView = null;
 // Which parameter card (by id) currently has its older readings expanded -
 // a single value, not a set, so opening one accordion-style closes any
 // other that was open.
@@ -76,9 +79,9 @@ function normalizeParamEntry(raw) {
 }
 
 function paramRangeLabel(param) {
-  if (param.intervalType === 'range') return param.min + '-' + param.max;
-  if (param.intervalType === 'below') return '<' + param.max;
-  if (param.intervalType === 'above') return '>' + param.min;
+  if (param.intervalType === 'range') return (param.min != null && param.max != null) ? (param.min + '-' + param.max) : '—';
+  if (param.intervalType === 'below') return param.max != null ? '<' + param.max : '—';
+  if (param.intervalType === 'above') return param.min != null ? '>' + param.min : '—';
   return '';
 }
 
@@ -160,13 +163,18 @@ async function renderHealthCheck() {
   const person = people.find(p => p.id === _healthPerson) || people[0];
   if (!person.id) _healthPerson = people[0].id;
 
-  const personTabs = el('div', { class: 'hc-tabs' },
-    people.map(p => el('button', {
-      class: 'hc-tab' + (_healthPerson === p.id ? ' active' : ''),
+  const personTabs = el('div', { class: 'hc-tabs' }, [
+    el('button', {
+      class: 'hc-tab' + (_hcView === 'family' ? ' active' : ''),
+      text: '👪 Family Health',
+      onclick: () => { _hcView = 'family'; renderHealthCheck(); },
+    }),
+    ...people.map(p => el('button', {
+      class: 'hc-tab' + (_hcView !== 'family' && _healthPerson === p.id ? ' active' : ''),
       text: p.name,
-      onclick: () => { _healthPerson = p.id; renderHealthCheck(); }
-    }))
-  );
+      onclick: () => { _hcView = null; _healthPerson = p.id; renderHealthCheck(); }
+    })),
+  ]);
 
   // Badges on top with the gear pinned beside them (never under them) - the
   // tabs row fades out at its own trailing edge via a mask, so a long list
@@ -175,30 +183,42 @@ async function renderHealthCheck() {
     el('div', { class: 'hc-tabs-wrap' }, [personTabs]),
     el('button', { class: 'icon-btn hc-gear gear-btn', text: '⚙️', onclick: () => openHealthSettingsMenu() }),
   ]);
+  host.appendChild(topRow);
 
-  const age = calcAge(person.dob);
+  const fab = $('#healthAddBtn');
+  const isFamily = _hcView === 'family';
+  const age = isFamily ? null : calcAge(person.dob);
+
+  // This row names whatever the tabs above selected - a person (their
+  // avatar, name, age) or the family table (a family emoji + its label) -
+  // and sticks to the top once scrolled there, same as the app header
+  // above it, so it's still clear who/what a card further down belongs to.
   const selected = el('div', { class: 'hc-selected' }, [
-    el('div', { class: 'hc-avatar', text: personEmoji(age, person.gender) }),
+    el('div', { class: 'hc-avatar', text: isFamily ? '👪' : personEmoji(age, person.gender) }),
     el('div', { style: 'flex: 1;' }, [
-      el('div', { class: 'hc-selected-name', text: person.name }),
-      age != null ? el('div', { class: 'hc-selected-age', text: age + 'y' }) : null,
+      el('div', { class: 'hc-selected-name', text: isFamily ? 'Family Health' : person.name }),
+      (!isFamily && age != null) ? el('div', { class: 'hc-selected-age', text: age + 'y' }) : null,
     ].filter(Boolean)),
-    el('button', {
+    isFamily ? null : el('button', {
       class: 'hc-filter-btn' + (_hcFilterOutOfRange ? ' active' : ''),
       text: 'Out of Range',
       onclick: () => { _hcFilterOutOfRange = !_hcFilterOutOfRange; renderHealthCheck(); },
     }),
-  ]);
+  ].filter(Boolean));
+  host.appendChild(selected);
+
+  if (isFamily) {
+    fab.classList.add('hidden');
+    const params = (await getHealthParams()).slice().sort((a, b) => a.label.localeCompare(b.label));
+    host.appendChild(await renderFamilyTable(people, params));
+    return;
+  }
 
   const checks = await DB.all('healthChecks').catch(() => []);
   const personChecks = checks.filter(c => c.personId === _healthPerson).sort((a, b) => b.date.localeCompare(a.date));
 
-  const fab = $('#healthAddBtn');
   fab.classList.remove('hidden');
   fab.onclick = () => openHealthCheckForm(person);
-
-  host.appendChild(topRow);
-  host.appendChild(selected);
 
   if (!personChecks.length) {
     host.appendChild(el('div', { class: 'hc-empty', text: 'No records yet. Tap the + button to add one.' }));
@@ -221,6 +241,47 @@ async function renderHealthCheck() {
     sections.appendChild(el('div', { class: 'hc-empty', text: 'Nothing out of range for the latest check of each parameter.' }));
   }
   host.appendChild(sections);
+}
+
+// One row per parameter, one column per family member, each cell the
+// person's LATEST reading for that parameter (not their whole history) -
+// a quick side-by-side instead of paging through each person one at a time.
+// Blank when a person has never recorded that parameter.
+async function renderFamilyTable(people, params) {
+  const checks = await DB.all('healthChecks').catch(() => []);
+  const byPerson = new Map(people.map(p => [p.id, checks.filter(c => c.personId === p.id).sort((a, b) => b.date.localeCompare(a.date))]));
+
+  const headerRow = el('tr', {}, [
+    el('th', { text: 'Parameter' }),
+    ...people.map(p => el('th', { text: (p.emoji ? p.emoji + ' ' : '') + p.name })),
+  ]);
+
+  const bodyRows = params.map(p => {
+    const cells = people.map(person => {
+      const personChecks = byPerson.get(person.id) || [];
+      let latest = null;
+      for (const c of personChecks) {
+        const n = c.parameters && normalizeParamEntry(c.parameters[p.id]);
+        if (n && n.value != null && n.value !== '') { latest = n; break; }
+      }
+      if (!latest) return el('td', {}, [el('span', { style: 'color: var(--muted);', text: '—' })]);
+      const status = getParamStatus(latest.value, effectiveRange(p, person.gender));
+      return el('td', {}, [
+        el('span', { class: 'hc-badge', style: 'background: ' + getStatusBg(status) + '; color: ' + getStatusColor(status) + ';', text: latest.value + (p.unit ? ' ' + p.unit : '') }),
+      ]);
+    });
+    return el('tr', {}, [
+      el('td', { class: 'hc-family-param', text: p.label + (p.unit ? ' (' + p.unit + ')' : '') }),
+      ...cells,
+    ]);
+  });
+
+  return el('div', { class: 'hc-family-wrap' }, [
+    el('table', { class: 'hc-family-table' }, [
+      el('thead', {}, [headerRow]),
+      el('tbody', {}, bodyRows),
+    ]),
+  ]);
 }
 
 // entries is newest-first. Only the latest reading shows by default; tapping
@@ -327,12 +388,15 @@ function getParamStatus(value, param) {
   if (isNaN(val)) return 'unknown';
 
   if (param.intervalType === 'range') {
+    if (param.min == null || param.max == null) return 'unknown';
     if (val >= param.min && val <= param.max) return 'good';
     if (val < param.min) return 'low';
     return 'high';
   } else if (param.intervalType === 'below') {
+    if (param.max == null) return 'unknown';
     return val < param.max ? 'good' : 'high';
   } else if (param.intervalType === 'above') {
+    if (param.min == null) return 'unknown';
     return val > param.min ? 'good' : 'low';
   }
   return 'unknown';
@@ -531,12 +595,15 @@ async function openHealthParamsManager(activeTab, editing) {
     femaleMaxInput.value = editing.femaleMax != null ? editing.femaleMax : '';
   }
 
+  // Gender-specific replaces the common range rather than supplementing it -
+  // once it's on, the common Min/Max are hidden entirely and only the
+  // Male/Female fields (for the chosen type) are asked for.
   const syncFields = () => {
-    minField.style.display = typeInput.value === 'below' ? 'none' : '';
-    maxField.style.display = typeInput.value === 'above' ? 'none' : '';
+    const showGender = genderSpecificInput.checked;
+    minField.style.display = (showGender || typeInput.value === 'below') ? 'none' : '';
+    maxField.style.display = (showGender || typeInput.value === 'above') ? 'none' : '';
     maleField.style.display = femaleField.style.display = typeInput.value === 'below' ? 'none' : '';
     maleMaxField.style.display = femaleMaxField.style.display = typeInput.value === 'above' ? 'none' : '';
-    const showGender = genderSpecificInput.checked;
     maleRow.style.display = femaleRow.style.display = showGender ? '' : 'none';
   };
   typeInput.addEventListener('change', syncFields);
@@ -547,18 +614,29 @@ async function openHealthParamsManager(activeTab, editing) {
     const label = labelInput.value.trim();
     if (!label) { toast('Enter a parameter name'); return; }
     const intervalType = typeInput.value;
-    const min = num(minInput.value);
-    const max = num(maxInput.value);
-    if (intervalType === 'range' && (min == null || max == null)) { toast('Enter both min and max'); return; }
-    if (intervalType === 'below' && max == null) { toast('Enter the max limit'); return; }
-    if (intervalType === 'above' && min == null) { toast('Enter the min limit'); return; }
+    const genderSpecific = genderSpecificInput.checked;
+
+    let min = null, max = null;
+    if (!genderSpecific) {
+      min = num(minInput.value);
+      max = num(maxInput.value);
+      if (intervalType === 'range' && (min == null || max == null)) { toast('Enter both min and max'); return; }
+      if (intervalType === 'below' && max == null) { toast('Enter the max limit'); return; }
+      if (intervalType === 'above' && min == null) { toast('Enter the min limit'); return; }
+    }
+
     const rec = { label, unit: unitInput.value.trim(), intervalType, min, max, genderSpecific: false, maleMin: null, maleMax: null, femaleMin: null, femaleMax: null };
-    if (genderSpecificInput.checked) {
+    if (genderSpecific) {
+      const maleMin = num(maleMinInput.value), maleMax = num(maleMaxInput.value);
+      const femaleMin = num(femaleMinInput.value), femaleMax = num(femaleMaxInput.value);
+      if (intervalType === 'range' && (maleMin == null || maleMax == null || femaleMin == null || femaleMax == null)) { toast('Enter both Male and Female min/max'); return; }
+      if (intervalType === 'below' && (maleMax == null || femaleMax == null)) { toast('Enter the Male and Female max limits'); return; }
+      if (intervalType === 'above' && (maleMin == null || femaleMin == null)) { toast('Enter the Male and Female min limits'); return; }
       rec.genderSpecific = true;
-      rec.maleMin = num(maleMinInput.value);
-      rec.maleMax = num(maleMaxInput.value);
-      rec.femaleMin = num(femaleMinInput.value);
-      rec.femaleMax = num(femaleMaxInput.value);
+      rec.maleMin = maleMin;
+      rec.maleMax = maleMax;
+      rec.femaleMin = femaleMin;
+      rec.femaleMax = femaleMax;
     }
     if (isEdit) rec.id = editing.id;
     await DB.put('healthParams', rec);

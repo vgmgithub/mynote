@@ -3086,12 +3086,24 @@ textarea.vault-notes:focus { outline: none; border-color: var(--accent); }
 .hc-tab { padding: 9px 16px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--muted); cursor: pointer; white-space: nowrap; font-weight: 500; font-size: 0.9rem; display: inline-flex; align-items: center; gap: 6px; }
 .hc-tab.active { background: var(--accent); color: #0e1726; border-color: var(--accent); font-weight: 700; }
 /* Selected person, shown below the badge row - emoji + name + age. */
-.hc-selected { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+.hc-selected { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; position: sticky; top: 0; z-index: 15; background: var(--bg); padding: 10px 0; }
 .hc-selected-name { font-size: 1.2rem; font-weight: 700; }
 .hc-selected-age { font-size: 0.82rem; color: var(--muted); }
 .hc-filter-btn { flex-shrink: 0; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--muted); font-size: 0.78rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .hc-filter-btn.active { background: var(--warn); color: #1a1200; border-color: var(--warn); }
 .hc-empty { padding: 48px 20px; text-align: center; color: var(--muted); }
+
+/* Family Health: one row per parameter, one column per person, each cell
+   their latest reading only. Scrolls horizontally on its own when there
+   are more people than fit; the parameter column stays put through that
+   scroll since it's what every row's cells are read against. */
+.hc-family-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; -webkit-overflow-scrolling: touch; }
+.hc-family-table { border-collapse: collapse; font-size: 0.85rem; }
+.hc-family-table th, .hc-family-table td { padding: 10px 14px; text-align: center; white-space: nowrap; border-bottom: 1px solid var(--line); }
+.hc-family-table th { background: var(--bg-2); font-weight: 700; color: var(--text); }
+.hc-family-table tr:last-child td { border-bottom: none; }
+.hc-family-table th:first-child, .hc-family-table td.hc-family-param { text-align: left; position: sticky; left: 0; background: var(--card-2); z-index: 1; }
+.hc-family-param { font-weight: 600; }
 .hc-empty-cta { margin-top: 14px; padding: 11px 22px; background: var(--good); color: #fff; border: none; border-radius: 10px; cursor: pointer; font-weight: 700; font-size: 0.95rem; }
 html[data-theme="light"] .hc-empty-cta { color: #fff; }
 .hc-card { background: var(--card-2); border: 1px solid var(--line); border-radius: 16px; padding: 16px; box-shadow: 0 2px 10px rgba(0,0,0,0.12); }
