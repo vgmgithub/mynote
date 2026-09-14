@@ -8,6 +8,10 @@ let _healthPerson = null;
 // a single value, not a set, so opening one accordion-style closes any
 // other that was open.
 let _expandedParamId = null;
+// When on, only parameters whose LATEST reading is outside its reference
+// range are listed - a parameter that has since returned to normal drops
+// out even if an older reading was abnormal.
+let _hcFilterOutOfRange = false;
 
 // Seeded once, the first time the Health Check section is opened with no
 // parameters yet defined - after that the user owns this list via the gear
@@ -147,10 +151,15 @@ async function renderHealthCheck() {
   const age = calcAge(person.dob);
   const selected = el('div', { class: 'hc-selected' }, [
     el('div', { class: 'hc-avatar', text: personEmoji(age, person.gender) }),
-    el('div', {}, [
+    el('div', { style: 'flex: 1;' }, [
       el('div', { class: 'hc-selected-name', text: person.name }),
       age != null ? el('div', { class: 'hc-selected-age', text: age + 'y' }) : null,
     ].filter(Boolean)),
+    el('button', {
+      class: 'hc-filter-btn' + (_hcFilterOutOfRange ? ' active' : ''),
+      text: 'Out of Range',
+      onclick: () => { _hcFilterOutOfRange = !_hcFilterOutOfRange; renderHealthCheck(); },
+    }),
   ]);
 
   const checks = await DB.all('healthChecks').catch(() => []);
@@ -168,14 +177,21 @@ async function renderHealthCheck() {
     return;
   }
 
-  const params = await getHealthParams();
+  const params = (await getHealthParams()).slice().sort((a, b) => a.label.localeCompare(b.label));
   const sections = el('div', {});
+  let shown = 0;
   params.forEach(p => {
     const entries = personChecks
       .filter(c => c.parameters && c.parameters[p.id] !== undefined && c.parameters[p.id] !== null && c.parameters[p.id] !== '')
-      .map(c => ({ date: c.date, checkType: c.checkType, value: c.parameters[p.id] }));
-    if (entries.length) sections.appendChild(renderParamSection(p, entries));
+      .map(c => ({ date: c.date, checkType: c.checkType, value: c.parameters[p.id], lab: c.lab, medicineTaken: c.medicineTaken }));
+    if (!entries.length) return;
+    if (_hcFilterOutOfRange && getParamStatus(entries[0].value, p) === 'good') return;
+    shown++;
+    sections.appendChild(renderParamSection(p, entries));
   });
+  if (_hcFilterOutOfRange && !shown) {
+    sections.appendChild(el('div', { class: 'hc-empty', text: 'Nothing out of range for the latest check of each parameter.' }));
+  }
   host.appendChild(sections);
 }
 
@@ -219,18 +235,23 @@ function renderParamSection(param, entries) {
 function renderEntryRow(entry, param, opts) {
   opts = opts || {};
   const status = getParamStatus(entry.value, param);
-  const badge = checkTypeBadge(entry.checkType);
   const statusCol = [
     el('span', { class: 'hc-badge', style: 'background: ' + getStatusBg(status) + '; color: ' + getStatusColor(status) + ';', text: getStatusIcon(status) }),
     opts.moreCount ? el('div', { class: 'hc-more-caption', text: opts.moreCount + ' more' }) : null,
   ].filter(Boolean);
 
+  const meta = [
+    checkTypeBadge(entry.checkType),
+    entry.lab ? el('span', { class: 'hc-lab-tag', text: entry.lab }) : null,
+    entry.medicineTaken ? el('span', { class: 'hc-med-pill', title: 'Medicine taken while testing', text: '💊' }) : null,
+  ].filter(Boolean);
+
   const row = el('div', { class: 'hc-entry-row' + (opts.onClick ? ' clickable' : '') }, [
     calChip(entry.date),
-    badge,
+    el('div', { class: 'hc-entry-meta' }, meta),
     el('div', { class: 'hc-entry-value', text: entry.value + (param.unit ? ' ' + param.unit : '') }),
     el('div', { class: 'hc-entry-status' }, statusCol),
-  ].filter(Boolean));
+  ]);
   if (opts.onClick) row.addEventListener('click', opts.onClick);
   return row;
 }
@@ -400,7 +421,7 @@ async function openHealthPeopleManager(activeTab, editing) {
 }
 
 async function openHealthParamsManager(activeTab, editing) {
-  const params = await getHealthParams();
+  const params = (await getHealthParams()).slice().sort((a, b) => a.label.localeCompare(b.label));
   const tab = activeTab || 'add';
   const isEdit = !!editing;
 
@@ -499,6 +520,13 @@ async function openHealthCheckForm(person, existing) {
     ...CHECK_TYPES.map(t => el('option', { value: t, text: t })),
   ]);
   if (isEdit) checkTypeInput.value = existing.checkType || '';
+  const labInput = el('input', { type: 'text', placeholder: 'e.g. SRL Diagnostics' });
+  if (isEdit) labInput.value = existing.lab || '';
+  const medicineInput = el('input', { type: 'checkbox' });
+  if (isEdit) medicineInput.checked = !!existing.medicineTaken;
+  const medicineField = el('label', { style: 'display: flex; align-items: center; gap: 10px; margin: 4px 2px 18px; cursor: pointer;' }, [
+    medicineInput, 'Medicine taken while testing',
+  ]);
   const notesInput = el('textarea', { placeholder: 'Notes (optional)' });
   if (isEdit) notesInput.value = existing.notes || '';
 
@@ -523,6 +551,8 @@ async function openHealthCheckForm(person, existing) {
       date,
       ym: date.slice(0, 7),
       checkType: checkTypeInput.value,
+      lab: labInput.value.trim(),
+      medicineTaken: medicineInput.checked,
       notes: notesInput.value.trim(),
       parameters,
     };
@@ -546,6 +576,8 @@ async function openHealthCheckForm(person, existing) {
       el('h2', { text: isEdit ? 'Edit Health Check' : 'Add Health Check' }),
       field('Date', dateInput),
       field('Check type', checkTypeInput),
+      field('Lab', labInput),
+      medicineField,
       ...paramFields,
       field('Notes', notesInput),
     ]),

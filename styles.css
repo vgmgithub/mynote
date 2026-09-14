@@ -3084,6 +3084,8 @@ textarea.vault-notes:focus { outline: none; border-color: var(--accent); }
 .hc-selected { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
 .hc-selected-name { font-size: 1.2rem; font-weight: 700; }
 .hc-selected-age { font-size: 0.82rem; color: var(--muted); }
+.hc-filter-btn { flex-shrink: 0; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--muted); font-size: 0.78rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.hc-filter-btn.active { background: var(--warn); color: #1a1200; border-color: var(--warn); }
 .hc-empty { padding: 48px 20px; text-align: center; color: var(--muted); }
 .hc-empty-cta { margin-top: 14px; padding: 11px 22px; background: var(--good); color: #fff; border: none; border-radius: 10px; cursor: pointer; font-weight: 700; font-size: 0.95rem; }
 html[data-theme="light"] .hc-empty-cta { color: #fff; }
@@ -3103,8 +3105,11 @@ html[data-theme="light"] .hc-empty-cta { color: #fff; }
 .hc-cal { width: 52px; flex-shrink: 0; border-radius: 7px; overflow: hidden; text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,0.18); }
 .hc-cal-top { color: #fff; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.02em; padding: 4px 0; text-transform: uppercase; }
 .hc-cal-year { background: var(--card); color: var(--muted); font-size: 0.6rem; padding: 2px 0; }
-.hc-entry-value { flex: 1; min-width: 0; text-align: right; font-weight: 700; font-size: 0.98rem; padding-right: 2px; }
+.hc-entry-meta { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.hc-entry-value { flex-shrink: 0; text-align: right; font-weight: 700; font-size: 0.98rem; padding-right: 2px; white-space: nowrap; }
 .hc-type-badge { display: inline-block; flex-shrink: 0; padding: 2px 8px; border-radius: 999px; font-size: 0.66rem; font-weight: 700; white-space: nowrap; }
+.hc-lab-tag { font-size: 0.66rem; color: var(--muted); background: var(--bg-2); padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.hc-med-pill { font-size: 0.9rem; line-height: 1; }
 .hc-entry-status { display: flex; flex-direction: column; align-items: center; gap: 3px; flex-shrink: 0; }
 .hc-more-caption { font-size: 0.6rem; color: var(--muted); font-weight: 600; white-space: nowrap; }
 .hc-trend { height: 42px; display: flex; align-items: flex-end; gap: 6px; padding: 6px 8px 5px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px; }
