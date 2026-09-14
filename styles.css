@@ -3085,13 +3085,13 @@ textarea.vault-notes:focus { outline: none; border-color: var(--accent); }
 .hc-tabs::-webkit-scrollbar { display: none; }
 .hc-tab { padding: 9px 16px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--muted); cursor: pointer; white-space: nowrap; font-weight: 500; font-size: 0.9rem; display: inline-flex; align-items: center; gap: 6px; }
 .hc-tab.active { background: var(--accent); color: #0e1726; border-color: var(--accent); font-weight: 700; }
-/* Family Health isn't a person, so its badge deliberately runs the other
-   person tabs' fill/outline relationship in reverse: solid violet at rest
-   (every person tab is dim until picked), softening to an outline once
-   selected (every person tab goes solid once picked) - the opposite state
-   always looks like the opposite treatment of a person tab in that state. */
-.hc-tab.hc-tab-family { background: #8b5cf6; color: #fff; border-color: #8b5cf6; font-weight: 700; }
-.hc-tab.hc-tab-family.active { background: rgba(139, 92, 246, 0.18); color: #8b5cf6; border-color: rgba(139, 92, 246, 0.4); }
+/* Family Health isn't a person, so its badge literally inverts a selected
+   person tab's own colors (background var(--accent) / text #0e1726) rather
+   than borrowing a different hue - black background, blue text - and, like
+   before, runs the fill/outline relationship in reverse too: solid at
+   rest, softening to an outline once selected. */
+.hc-tab.hc-tab-family { background: #0e1726; color: var(--accent); border-color: #0e1726; font-weight: 700; }
+.hc-tab.hc-tab-family.active { background: rgba(14, 23, 38, 0.35); color: var(--accent); border-color: var(--accent); }
 /* Selected person, shown below the badge row - emoji + name + age. */
 .hc-selected { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; position: sticky; top: 0; z-index: 15; background: var(--bg); padding: 10px 0; }
 .hc-selected-name { font-size: 1.2rem; font-weight: 700; }

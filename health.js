@@ -46,22 +46,26 @@ function calcAge(dob) {
 }
 
 // Age/gender -> avatar, so people aren't asked to pick their own emoji.
-// Falls back to a neutral figure whenever either input is missing. Returns
-// an asset key (icons/emoji/<key>.svg) rather than a Unicode character -
-// system emoji fonts render this differently on every device, so the same
-// Twemoji-style set used everywhere else is bundled locally instead, to
-// look the same on every device rather than however each one's own emoji
-// font happens to draw it.
+// Five brackets (baby 0-4, child 5-12, teen 13-24, adult 25-50, old 51+),
+// each split Male/Female - ten fixed assets, no neutral fallback, so an
+// unset gender defaults to the male half of whichever bracket the age
+// falls in (matching the app's earlier default before this became
+// gender-specific). Returns an asset key (icons/emoji/<key>.svg) rather
+// than a Unicode character - system emoji fonts render the same character
+// differently on every device, so a bundled, medium-skin-toned set is used
+// instead, to look the same everywhere rather than however each device's
+// own emoji font happens to draw it.
+const AVATAR_MALE = { baby: 'baby-boy', child: 'child-boy', teen: 'teen-boy', adult: 'adult-man', old: 'old-man' };
+const AVATAR_FEMALE = { baby: 'baby-girl', child: 'child-girl', teen: 'teen-girl', adult: 'adult-woman', old: 'old-woman' };
 function personAvatarKey(age, gender) {
-  const male = gender === 'Male';
-  const female = gender === 'Female';
-  if (age != null) {
-    if (age < 3) return 'baby';
-    if (age < 13) return male ? 'boy' : female ? 'girl' : 'child';
-    if (age < 60) return male ? 'man' : female ? 'woman' : 'person';
-    return male ? 'old-man' : female ? 'old-woman' : 'older-person';
-  }
-  return male ? 'man' : female ? 'woman' : 'person';
+  let bracket;
+  if (age == null) bracket = 'adult';
+  else if (age <= 4) bracket = 'baby';
+  else if (age <= 12) bracket = 'child';
+  else if (age <= 24) bracket = 'teen';
+  else if (age <= 50) bracket = 'adult';
+  else bracket = 'old';
+  return gender === 'Female' ? AVATAR_FEMALE[bracket] : AVATAR_MALE[bracket];
 }
 
 function avatarImg(key, size) {

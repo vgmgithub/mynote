@@ -1,4 +1,4 @@
-const CACHE = 'mynote-stocks-v437';
+const CACHE = 'mynote-stocks-v438';
 const ASSETS = [
   './',
   './index.html',
@@ -28,16 +28,16 @@ const ASSETS = [
   './icons/gold-bars.png',
   './icons/health-fab.png',
   './icons/health-card.png',
-  './icons/emoji/baby.svg',
-  './icons/emoji/boy.svg',
-  './icons/emoji/child.svg',
-  './icons/emoji/girl.svg',
-  './icons/emoji/man.svg',
-  './icons/emoji/woman.svg',
+  './icons/emoji/baby-boy.svg',
+  './icons/emoji/baby-girl.svg',
+  './icons/emoji/child-boy.svg',
+  './icons/emoji/child-girl.svg',
+  './icons/emoji/teen-boy.svg',
+  './icons/emoji/teen-girl.svg',
+  './icons/emoji/adult-man.svg',
+  './icons/emoji/adult-woman.svg',
   './icons/emoji/old-man.svg',
   './icons/emoji/old-woman.svg',
-  './icons/emoji/older-person.svg',
-  './icons/emoji/person.svg',
   './icons/emoji/family.png',
 ];
 
