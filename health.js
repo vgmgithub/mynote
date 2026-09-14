@@ -182,8 +182,8 @@ async function renderHealthCheck() {
   let shown = 0;
   params.forEach(p => {
     const entries = personChecks
-      .filter(c => c.parameters && c.parameters[p.id] !== undefined && c.parameters[p.id] !== null && c.parameters[p.id] !== '')
-      .map(c => ({ date: c.date, checkType: c.checkType, value: c.parameters[p.id], lab: c.lab, medicineTaken: c.medicineTaken }));
+      .filter(c => c.parameters && c.parameters[p.id] && c.parameters[p.id].value != null && c.parameters[p.id].value !== '')
+      .map(c => ({ date: c.date, checkType: c.checkType, value: c.parameters[p.id].value, lab: c.lab, medicineTaken: c.parameters[p.id].medicineTaken }));
     if (!entries.length) return;
     if (_hcFilterOutOfRange && getParamStatus(entries[0].value, p) === 'good') return;
     shown++;
@@ -240,10 +240,15 @@ function renderEntryRow(entry, param, opts) {
     opts.moreCount ? el('div', { class: 'hc-more-caption', text: opts.moreCount + ' more' }) : null,
   ].filter(Boolean);
 
+  // Check type sits on its own line beside the date; the lab (plus a pill
+  // if medicine was on board for this specific reading) sits on the line
+  // below it, rather than all three crowding one row.
   const meta = [
     checkTypeBadge(entry.checkType),
-    entry.lab ? el('span', { class: 'hc-lab-tag', text: entry.lab }) : null,
-    entry.medicineTaken ? el('span', { class: 'hc-med-pill', title: 'Medicine taken while testing', text: '💊' }) : null,
+    (entry.lab || entry.medicineTaken) ? el('div', { class: 'hc-entry-sub' }, [
+      entry.lab ? el('span', { class: 'hc-lab-tag', text: entry.lab }) : null,
+      entry.medicineTaken ? el('span', { class: 'hc-med-pill', title: 'Medicine taken for this test', text: '💊' }) : null,
+    ].filter(Boolean)) : null,
   ].filter(Boolean);
 
   const row = el('div', { class: 'hc-entry-row' + (opts.onClick ? ' clickable' : '') }, [
@@ -522,20 +527,26 @@ async function openHealthCheckForm(person, existing) {
   if (isEdit) checkTypeInput.value = existing.checkType || '';
   const labInput = el('input', { type: 'text', placeholder: 'e.g. SRL Diagnostics' });
   if (isEdit) labInput.value = existing.lab || '';
-  const medicineInput = el('input', { type: 'checkbox' });
-  if (isEdit) medicineInput.checked = !!existing.medicineTaken;
-  const medicineField = el('label', { style: 'display: flex; align-items: center; gap: 10px; margin: 4px 2px 18px; cursor: pointer;' }, [
-    medicineInput, 'Medicine taken while testing',
-  ]);
   const notesInput = el('textarea', { placeholder: 'Notes (optional)' });
   if (isEdit) notesInput.value = existing.notes || '';
 
+  // Whether medicine was on board varies test to test (e.g. a fasting
+  // panel vs one taken alongside a regular dose), so it's asked per
+  // parameter rather than once for the whole visit.
   const paramInputs = {};
+  const paramMedInputs = {};
   const paramFields = params.map(p => {
+    const existingP = isEdit && existing.parameters && existing.parameters[p.id];
     const input = el('input', { type: 'number', inputmode: 'decimal', step: 'any', placeholder: paramRangeLabel(p) + (p.unit ? ' ' + p.unit : '') });
-    if (isEdit && existing.parameters && existing.parameters[p.id] != null) input.value = existing.parameters[p.id];
+    if (existingP && existingP.value != null) input.value = existingP.value;
+    const medInput = el('input', { type: 'checkbox' });
+    if (existingP) medInput.checked = !!existingP.medicineTaken;
     paramInputs[p.id] = input;
-    return field(p.label + (p.unit ? ' (' + p.unit + ')' : ''), input);
+    paramMedInputs[p.id] = medInput;
+    return el('div', {}, [
+      field(p.label + (p.unit ? ' (' + p.unit + ')' : ''), input),
+      el('label', { style: 'display: flex; align-items: center; gap: 8px; margin: -4px 2px 16px; font-size: 0.85rem; color: var(--muted); cursor: pointer;' }, [medInput, '💊 Medicine taken']),
+    ]);
   });
 
   const save = async () => {
@@ -543,7 +554,7 @@ async function openHealthCheckForm(person, existing) {
     const parameters = {};
     params.forEach(p => {
       const v = paramInputs[p.id].value;
-      if (v !== '' && v != null) parameters[p.id] = num(v);
+      if (v !== '' && v != null) parameters[p.id] = { value: num(v), medicineTaken: paramMedInputs[p.id].checked };
     });
     if (!Object.keys(parameters).length) { toast('Enter at least one parameter'); return; }
     const rec = {
@@ -552,7 +563,6 @@ async function openHealthCheckForm(person, existing) {
       ym: date.slice(0, 7),
       checkType: checkTypeInput.value,
       lab: labInput.value.trim(),
-      medicineTaken: medicineInput.checked,
       notes: notesInput.value.trim(),
       parameters,
     };
@@ -577,7 +587,6 @@ async function openHealthCheckForm(person, existing) {
       field('Date', dateInput),
       field('Check type', checkTypeInput),
       field('Lab', labInput),
-      medicineField,
       ...paramFields,
       field('Notes', notesInput),
     ]),
