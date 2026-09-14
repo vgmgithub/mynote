@@ -65,6 +65,16 @@ async function getHealthParams() {
   return params;
 }
 
+// A saved check's parameters[id] is `{ value, medicineTaken }` as of the
+// per-test medicine change, but older records (saved before that change)
+// stored the raw number directly - normalize both shapes here so neither
+// the listing nor the edit form silently drops pre-existing entries.
+function normalizeParamEntry(raw) {
+  if (raw == null) return null;
+  if (typeof raw === 'object') return { value: raw.value, medicineTaken: !!raw.medicineTaken };
+  return { value: raw, medicineTaken: false };
+}
+
 function paramRangeLabel(param) {
   if (param.intervalType === 'range') return param.min + '-' + param.max;
   if (param.intervalType === 'below') return '<' + param.max;
@@ -182,8 +192,8 @@ async function renderHealthCheck() {
   let shown = 0;
   params.forEach(p => {
     const entries = personChecks
-      .filter(c => c.parameters && c.parameters[p.id] && c.parameters[p.id].value != null && c.parameters[p.id].value !== '')
-      .map(c => ({ date: c.date, checkType: c.checkType, value: c.parameters[p.id].value, lab: c.lab, medicineTaken: c.parameters[p.id].medicineTaken }));
+      .map(c => { const n = c.parameters && normalizeParamEntry(c.parameters[p.id]); return n && n.value != null && n.value !== '' ? { date: c.date, checkType: c.checkType, value: n.value, lab: c.lab, medicineTaken: n.medicineTaken } : null; })
+      .filter(Boolean);
     if (!entries.length) return;
     if (_hcFilterOutOfRange && getParamStatus(entries[0].value, p) === 'good') return;
     shown++;
@@ -536,16 +546,23 @@ async function openHealthCheckForm(person, existing) {
   const paramInputs = {};
   const paramMedInputs = {};
   const paramFields = params.map(p => {
-    const existingP = isEdit && existing.parameters && existing.parameters[p.id];
+    const existingP = isEdit && existing.parameters && normalizeParamEntry(existing.parameters[p.id]);
     const input = el('input', { type: 'number', inputmode: 'decimal', step: 'any', placeholder: paramRangeLabel(p) + (p.unit ? ' ' + p.unit : '') });
     if (existingP && existingP.value != null) input.value = existingP.value;
     const medInput = el('input', { type: 'checkbox' });
     if (existingP) medInput.checked = !!existingP.medicineTaken;
     paramInputs[p.id] = input;
     paramMedInputs[p.id] = medInput;
-    return el('div', {}, [
+    // Value on the left half, medicine toggle on the right - .field-row's
+    // existing 50/50 flex split (used elsewhere in the app) does the work;
+    // the checkbox side just needs to match the value field's height and
+    // sit at its bottom so the two line up beside each other.
+    const medWrap = el('div', { style: 'flex: 1; display: flex; flex-direction: column; justify-content: flex-end;' }, [
+      el('label', { style: 'display: flex; align-items: center; gap: 8px; padding-bottom: 12px; font-size: 0.85rem; color: var(--muted); cursor: pointer;' }, [medInput, '💊 Medicine taken']),
+    ]);
+    return el('div', { class: 'field-row' }, [
       field(p.label + (p.unit ? ' (' + p.unit + ')' : ''), input),
-      el('label', { style: 'display: flex; align-items: center; gap: 8px; margin: -4px 2px 16px; font-size: 0.85rem; color: var(--muted); cursor: pointer;' }, [medInput, '💊 Medicine taken']),
+      medWrap,
     ]);
   });
 
