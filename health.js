@@ -163,16 +163,25 @@ async function renderHealthCheck() {
   const person = people.find(p => p.id === _healthPerson) || people[0];
   if (!person.id) _healthPerson = people[0].id;
 
+  // renderHealthCheck() rebuilds this whole row from scratch, so a fresh
+  // .hc-tabs always starts scrolled to its left edge - without restoring
+  // it, picking a person scrolled out of view snaps the row straight back
+  // to the first badge on every tap instead of staying where it was.
+  const selectTab = (setState) => {
+    const sx = personTabs.scrollLeft;
+    setState();
+    renderHealthCheck().then(() => { const t = document.querySelector('.hc-tabs'); if (t) t.scrollLeft = sx; });
+  };
   const personTabs = el('div', { class: 'hc-tabs' }, [
     el('button', {
       class: 'hc-tab' + (_hcView === 'family' ? ' active' : ''),
       text: '👪 Family Health',
-      onclick: () => { _hcView = 'family'; renderHealthCheck(); },
+      onclick: () => selectTab(() => { _hcView = 'family'; }),
     }),
     ...people.map(p => el('button', {
       class: 'hc-tab' + (_hcView !== 'family' && _healthPerson === p.id ? ' active' : ''),
       text: p.name,
-      onclick: () => { _hcView = null; _healthPerson = p.id; renderHealthCheck(); }
+      onclick: () => selectTab(() => { _hcView = null; _healthPerson = p.id; })
     })),
   ]);
 
