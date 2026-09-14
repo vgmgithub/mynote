@@ -393,11 +393,28 @@ function renderEntryRow(entry, param, opts) {
   return row;
 }
 
+// "3 months ago" / "2 years ago" for how stale the latest reading is -
+// most useful exactly where the Out of Range filter puts a parameter in
+// front of you: it answers "is this old news or did I just check?"
+// without opening the entry itself.
+function timeAgoLabel(dateStr) {
+  const then = new Date(dateStr);
+  if (isNaN(then.getTime())) return '';
+  const now = new Date();
+  let months = (now.getFullYear() - then.getFullYear()) * 12 + (now.getMonth() - then.getMonth());
+  if (now.getDate() < then.getDate()) months--;
+  if (months <= 0) return 'This month';
+  if (months < 12) return months + (months === 1 ? ' month ago' : ' months ago');
+  const years = Math.floor(months / 12);
+  return years + (years === 1 ? ' year ago' : ' years ago');
+}
+
 // A small bar-per-reading trend strip, oldest to newest left-to-right so the
 // bars read the same direction time does. Bar height reflects the value's
 // position within this parameter's own min/max seen so far (not the healthy
 // range) - the goal is "is it moving", not a second copy of the status color,
-// which each bar also carries via its fill.
+// which each bar also carries via its fill. A "N months/years ago" badge
+// sits at the box's trailing edge, dated off the latest (first) entry.
 function renderTrendGraph(param, entries) {
   const chrono = entries.slice().reverse();
   const values = chrono.map(e => parseFloat(e.value)).filter(v => !isNaN(v));
@@ -416,7 +433,10 @@ function renderTrendGraph(param, entries) {
     });
   });
 
-  return el('div', { class: 'hc-trend' }, bars);
+  return el('div', { class: 'hc-trend' }, [
+    el('div', { class: 'hc-trend-bars' }, bars),
+    el('div', { class: 'hc-trend-ago', text: timeAgoLabel(entries[0].date) }),
+  ]);
 }
 
 function getParamStatus(value, param) {

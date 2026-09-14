@@ -3137,8 +3137,10 @@ html[data-theme="light"] .hc-empty-cta { color: #fff; }
 .hc-med-pill { font-size: 0.9rem; line-height: 1; }
 .hc-entry-status { display: flex; flex-direction: column; align-items: center; gap: 3px; flex-shrink: 0; }
 .hc-more-caption { font-size: 0.6rem; color: var(--muted); font-weight: 600; white-space: nowrap; }
-.hc-trend { height: 42px; display: flex; align-items: flex-end; gap: 6px; padding: 6px 8px 5px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px; }
+.hc-trend { display: flex; align-items: flex-end; gap: 8px; padding: 6px 8px 5px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px; }
+.hc-trend-bars { flex: 1; min-width: 0; height: 42px; display: flex; align-items: flex-end; gap: 6px; }
 .hc-trend-bar { flex: 1; max-width: 18px; border-radius: 3px 3px 0 0; min-height: 4px; }
+.hc-trend-ago { flex-shrink: 0; align-self: center; font-size: 0.66rem; color: var(--muted); background: var(--card); border: 1px solid var(--line); padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
 
 /* Gear icon's action sheet */
 .hc-settings-btn { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px 16px; text-align: left; background: var(--card-2); border: 1px solid var(--line); border-radius: 12px; font-size: 0.98rem; font-weight: 600; color: var(--text); cursor: pointer; }
