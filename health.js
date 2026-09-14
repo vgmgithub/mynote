@@ -46,17 +46,30 @@ function calcAge(dob) {
 }
 
 // Age/gender -> avatar, so people aren't asked to pick their own emoji.
-// Falls back to a neutral figure whenever either input is missing.
-function personEmoji(age, gender) {
+// Falls back to a neutral figure whenever either input is missing. Returns
+// an asset key (icons/emoji/<key>.svg) rather than a Unicode character -
+// system emoji fonts render this differently on every device, so the same
+// Twemoji-style set used everywhere else is bundled locally instead, to
+// look the same on every device rather than however each one's own emoji
+// font happens to draw it.
+function personAvatarKey(age, gender) {
   const male = gender === 'Male';
   const female = gender === 'Female';
   if (age != null) {
-    if (age < 3) return '👶';
-    if (age < 13) return male ? '👦' : female ? '👧' : '🧒';
-    if (age < 60) return male ? '👨' : female ? '👩' : '🧑';
-    return male ? '👴' : female ? '👵' : '🧓';
+    if (age < 3) return 'baby';
+    if (age < 13) return male ? 'boy' : female ? 'girl' : 'child';
+    if (age < 60) return male ? 'man' : female ? 'woman' : 'person';
+    return male ? 'old-man' : female ? 'old-woman' : 'older-person';
   }
-  return male ? '👨' : female ? '👩' : '🧑';
+  return male ? 'man' : female ? 'woman' : 'person';
+}
+
+function avatarImg(key, size) {
+  return el('img', { src: 'icons/emoji/' + key + '.svg', alt: '', style: 'width: ' + (size || '1em') + '; height: ' + (size || '1em') + '; display: inline-block; vertical-align: middle; flex-shrink: 0;' });
+}
+
+function personAvatarImg(age, gender, size) {
+  return avatarImg(personAvatarKey(age, gender), size);
 }
 
 async function getHealthParams() {
@@ -174,8 +187,8 @@ async function renderHealthCheck() {
   };
   const personTabs = el('div', { class: 'hc-tabs' }, [
     el('button', {
-      class: 'hc-tab' + (_hcView === 'family' ? ' active' : ''),
-      text: '👪 Family Health',
+      class: 'hc-tab hc-tab-family' + (_hcView === 'family' ? ' active' : ''),
+      text: 'Family Health',
       onclick: () => selectTab(() => { _hcView = 'family'; }),
     }),
     ...people.map(p => el('button', {
@@ -203,9 +216,13 @@ async function renderHealthCheck() {
   // and sticks to the top once scrolled there, same as the app header
   // above it, so it's still clear who/what a card further down belongs to.
   const selected = el('div', { class: 'hc-selected' }, [
-    el('div', { class: 'hc-avatar', text: isFamily ? '👪' : personEmoji(age, person.gender) }),
+    el('div', { class: 'hc-avatar' }, [
+      isFamily
+        ? el('img', { src: 'icons/emoji/family.png', alt: '', style: 'width: 1.3em; height: 1.3em; display: inline-block; vertical-align: middle;' })
+        : personAvatarImg(age, person.gender, '1.3em'),
+    ]),
     el('div', { style: 'flex: 1;' }, [
-      el('div', { class: 'hc-selected-name', text: isFamily ? 'Family Health' : person.name }),
+      el('div', { class: 'hc-selected-name', text: isFamily ? 'Family Health of ' + people.length + ' members' : person.name }),
       (!isFamily && age != null) ? el('div', { class: 'hc-selected-age', text: age + 'y' }) : null,
     ].filter(Boolean)),
     isFamily ? null : el('button', {
@@ -268,7 +285,7 @@ async function renderFamilyTable(people, params) {
 
   const headerRow = el('tr', {}, [
     el('th', { text: 'Parameter' }),
-    ...people.map(p => el('th', { text: (p.emoji ? p.emoji + ' ' : '') + p.name })),
+    ...people.map(p => el('th', {}, [personAvatarImg(calcAge(p.dob), p.gender, '1.1em'), ' ' + p.name])),
   ]);
 
   const bodyRows = params.map(p => {
@@ -466,7 +483,7 @@ async function openHealthPeopleManager(activeTab, editing) {
     ? el('div', {}, people.map(p => {
         const age = calcAge(p.dob);
         return el('div', { class: 'hc-list-row' }, [
-          el('div', { style: 'font-size: 1.3rem;', text: personEmoji(age, p.gender) }),
+          el('div', { style: 'width: 26px;' }, [personAvatarImg(age, p.gender, '1.3em')]),
           el('div', { style: 'flex: 1;', text: p.name + (age != null ? ' · ' + age + 'y' : '') + (p.gender ? ' · ' + p.gender : '') }),
           el('button', { class: 'hc-icon-btn', 'aria-label': 'Health records', title: 'Health records', text: '📋', onclick: () => { closeModal(); openHealthRecordsManager(p); } }),
           el('button', { class: 'hc-icon-btn', 'aria-label': 'Edit', title: 'Edit', text: '✏️', onclick: () => { closeModal(); openHealthPeopleManager('add', p); } }),
@@ -489,7 +506,7 @@ async function openHealthPeopleManager(activeTab, editing) {
   let gender = (isEdit && editing.gender) || null;
 
   const avatarPreview = el('div', { style: 'width: 48px; height: 48px; border-radius: 50%; background: var(--card); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; font-size: 1.6rem;' });
-  const paintAvatar = () => { avatarPreview.textContent = personEmoji(calcAge(dobInput.value), gender); };
+  const paintAvatar = () => { avatarPreview.innerHTML = ''; avatarPreview.appendChild(personAvatarImg(calcAge(dobInput.value), gender, '1.6em')); };
 
   const maleBtn = el('button', { type: 'button', text: '👨 Male', onclick: () => { gender = 'Male'; paintGender(); paintAvatar(); } });
   const femaleBtn = el('button', { type: 'button', text: '👩 Female', onclick: () => { gender = 'Female'; paintGender(); paintAvatar(); } });

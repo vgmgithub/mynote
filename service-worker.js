@@ -1,4 +1,4 @@
-const CACHE = 'mynote-stocks-v435';
+const CACHE = 'mynote-stocks-v436';
 const ASSETS = [
   './',
   './index.html',
@@ -27,6 +27,18 @@ const ASSETS = [
   './icons/icon-maskable-512.png',
   './icons/gold-bars.png',
   './icons/health-fab.png',
+  './icons/health-card.png',
+  './icons/emoji/baby.svg',
+  './icons/emoji/boy.svg',
+  './icons/emoji/child.svg',
+  './icons/emoji/girl.svg',
+  './icons/emoji/man.svg',
+  './icons/emoji/woman.svg',
+  './icons/emoji/old-man.svg',
+  './icons/emoji/old-woman.svg',
+  './icons/emoji/older-person.svg',
+  './icons/emoji/person.svg',
+  './icons/emoji/family.png',
 ];
 
 // Precache fresh copies (bypass the HTTP cache so we never bake in a stale file).
