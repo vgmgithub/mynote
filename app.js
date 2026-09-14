@@ -6516,8 +6516,8 @@ async function renderVault() {
     search,
     el('button', { class: 'icon-btn vault-lock', type: 'button', title: 'Lock the vault',
       'aria-label': 'Lock the vault', text: '\ud83d\udd12', onclick: () => lockVault(false) }),
-    el('button', { class: 'icon-btn', type: 'button', title: 'Vault options',
-      'aria-label': 'Vault options', text: '\u2699', onclick: () => openVaultOptions(mod, meta) }),
+    el('button', { class: 'icon-btn gear-btn', type: 'button', title: 'Vault options',
+      'aria-label': 'Vault options', text: '\u2699\ufe0f', onclick: () => openVaultOptions(mod, meta) }),
   ]));
 
   if (failed) {

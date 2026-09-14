@@ -78,6 +78,11 @@ body {
   cursor: pointer;
 }
 .icon-btn:active { background: var(--card); }
+/* A gear icon-btn gets a quick quarter-turn on press instead of just the
+   background flash every other icon-btn gets - a small "it's a settings
+   dial" cue, snapping back once released rather than spinning freely. */
+.gear-btn { transition: transform 0.3s ease; }
+.gear-btn:active { transform: rotate(75deg); }
 
 .portfolio-tabs {
   display: flex;

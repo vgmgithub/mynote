@@ -173,7 +173,7 @@ async function renderHealthCheck() {
   // of people signals "there's more" without a hard cut against the gear.
   const topRow = el('div', { class: 'hc-toprow' }, [
     el('div', { class: 'hc-tabs-wrap' }, [personTabs]),
-    el('button', { class: 'icon-btn hc-gear', text: '⚙️', onclick: () => openHealthSettingsMenu() }),
+    el('button', { class: 'icon-btn hc-gear gear-btn', text: '⚙️', onclick: () => openHealthSettingsMenu() }),
   ]);
 
   const age = calcAge(person.dob);
