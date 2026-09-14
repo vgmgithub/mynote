@@ -206,6 +206,12 @@ async function renderHealthCheck() {
     }),
   ].filter(Boolean));
   host.appendChild(selected);
+  // CSS doesn't auto-stack sticky siblings - two elements both pinned at
+  // top:0 just overlap, with the app header (the higher z-index) covering
+  // this one entirely. Push it down by the header's actual rendered height
+  // so it sticks directly beneath the header instead of behind it.
+  const appHeader = document.querySelector('.app-header');
+  if (appHeader) selected.style.top = appHeader.offsetHeight + 'px';
 
   if (isFamily) {
     fab.classList.add('hidden');
@@ -271,7 +277,7 @@ async function renderFamilyTable(people, params) {
       ]);
     });
     return el('tr', {}, [
-      el('td', { class: 'hc-family-param', text: p.label + (p.unit ? ' (' + p.unit + ')' : '') }),
+      el('td', { class: 'hc-family-param', text: p.label }),
       ...cells,
     ]);
   });
