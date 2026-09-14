@@ -82,6 +82,24 @@ function paramRangeLabel(param) {
   return '';
 }
 
+// A param normally carries one reference range (intervalType/min/max) at
+// its top level - old records only ever have that, and this returns the
+// param itself unchanged for them. A param can optionally add a Male and/or
+// Female override (same intervalType, different numbers); when one exists
+// for the given gender this returns a range-shaped object built from it
+// instead, otherwise it falls straight back to the param's own range.
+function effectiveRange(param, gender) {
+  if (param.genderSpecific) {
+    if (gender === 'Male' && (param.maleMin != null || param.maleMax != null)) {
+      return { intervalType: param.intervalType, min: param.maleMin, max: param.maleMax };
+    }
+    if (gender === 'Female' && (param.femaleMin != null || param.femaleMax != null)) {
+      return { intervalType: param.intervalType, min: param.femaleMin, max: param.femaleMax };
+    }
+  }
+  return param;
+}
+
 const CHECK_TYPES = ['Annual Check-up', 'Periodic Check-up'];
 const MONTH_ABBR = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 // One fixed color per calendar month, shared by every entry that falls in
@@ -195,9 +213,9 @@ async function renderHealthCheck() {
       .map(c => { const n = c.parameters && normalizeParamEntry(c.parameters[p.id]); return n && n.value != null && n.value !== '' ? { date: c.date, checkType: c.checkType, value: n.value, lab: c.lab, medicineTaken: n.medicineTaken } : null; })
       .filter(Boolean);
     if (!entries.length) return;
-    if (_hcFilterOutOfRange && getParamStatus(entries[0].value, p) === 'good') return;
+    if (_hcFilterOutOfRange && getParamStatus(entries[0].value, effectiveRange(p, person.gender)) === 'good') return;
     shown++;
-    sections.appendChild(renderParamSection(p, entries));
+    sections.appendChild(renderParamSection(p, entries, person.gender));
   });
   if (_hcFilterOutOfRange && !shown) {
     sections.appendChild(el('div', { class: 'hc-empty', text: 'Nothing out of range for the latest check of each parameter.' }));
@@ -210,9 +228,16 @@ async function renderHealthCheck() {
 // "N more"/"Hide" row - only a small caption under the latest row's status
 // icon while collapsed. Only one parameter is expanded at a time: expanding
 // another closes this one, since they all share _expandedParamId.
-function renderParamSection(param, entries) {
+function renderParamSection(param, entries, gender) {
   const [latest, ...older] = entries;
   const isExpanded = _expandedParamId === param.id;
+
+  // Resolve once: a param without a gender override just gets its own
+  // min/max back unchanged (see effectiveRange), so this is a no-op for
+  // every existing parameter and only kicks in where Male/Female ranges
+  // were actually set.
+  const range = effectiveRange(param, gender);
+  const resolved = range === param ? param : { ...param, min: range.min, max: range.max };
 
   // renderHealthCheck() rebuilds the whole view, which otherwise leaves the
   // page at the top - restore the scroll position once the rebuild (and its
@@ -227,17 +252,17 @@ function renderParamSection(param, entries) {
   const children = [
     el('div', { class: 'hc-card-head' }, [
       el('div', { class: 'hc-card-title', text: param.label + (param.unit ? ' (' + param.unit + ')' : '') }),
-      el('div', { class: 'hc-card-range', text: paramRangeLabel(param) }),
+      el('div', { class: 'hc-card-range', text: paramRangeLabel(resolved) }),
     ]),
-    renderEntryRow(latest, param, {
+    renderEntryRow(latest, resolved, {
       onClick: older.length ? toggle : null,
       moreCount: (!isExpanded && older.length) ? older.length : 0,
     }),
   ];
 
-  if (isExpanded) older.forEach(e => children.push(renderEntryRow(e, param)));
+  if (isExpanded) older.forEach(e => children.push(renderEntryRow(e, resolved)));
 
-  if (entries.length > 1) children.push(renderTrendGraph(param, entries));
+  if (entries.length > 1) children.push(renderTrendGraph(resolved, entries));
 
   return el('div', { class: 'hc-card' }, children);
 }
@@ -447,7 +472,10 @@ async function openHealthParamsManager(activeTab, editing) {
         el('div', { style: 'flex: 1;' }, [
           el('div', { style: 'font-weight: 600;', text: p.label + (p.unit ? ' (' + p.unit + ')' : '') }),
           el('div', { style: 'font-size: 0.8rem; color: var(--muted);', text: paramRangeLabel(p) }),
-        ]),
+          p.genderSpecific ? el('div', { style: 'font-size: 0.76rem; color: var(--muted);' }, [
+            '♂ ' + paramRangeLabel(effectiveRange(p, 'Male')) + '  ·  ♀ ' + paramRangeLabel(effectiveRange(p, 'Female')),
+          ]) : null,
+        ].filter(Boolean)),
         el('button', { class: 'hc-icon-btn', 'aria-label': 'Edit', title: 'Edit', text: '✏️', onclick: () => { closeModal(); openHealthParamsManager('add', p); } }),
         el('button', {
           class: 'hc-icon-btn danger', 'aria-label': 'Delete', title: 'Delete', text: '🗑️',
@@ -471,19 +499,48 @@ async function openHealthParamsManager(activeTab, editing) {
   const maxInput = el('input', { type: 'number', inputmode: 'decimal', step: 'any', placeholder: 'Max' });
   const minField = field('Min', minInput);
   const maxField = field('Max', maxInput);
+
+  // Some parameters (Haemoglobin, HDL, ...) have different normal ranges
+  // for men and women. Off by default - a param with nothing entered here
+  // behaves exactly as before, using the one range above for everyone.
+  const genderSpecificInput = el('input', { type: 'checkbox' });
+  const genderSpecificField = el('label', { style: 'display: flex; align-items: center; gap: 10px; margin: 4px 2px 16px; cursor: pointer;' }, [
+    genderSpecificInput, 'Different reference range for Male / Female',
+  ]);
+  const maleMinInput = el('input', { type: 'number', inputmode: 'decimal', step: 'any', placeholder: 'Male min' });
+  const maleMaxInput = el('input', { type: 'number', inputmode: 'decimal', step: 'any', placeholder: 'Male max' });
+  const femaleMinInput = el('input', { type: 'number', inputmode: 'decimal', step: 'any', placeholder: 'Female min' });
+  const femaleMaxInput = el('input', { type: 'number', inputmode: 'decimal', step: 'any', placeholder: 'Female max' });
+  const maleField = field('♂ Male min', maleMinInput);
+  const maleMaxField = field('♂ Male max', maleMaxInput);
+  const femaleField = field('♀ Female min', femaleMinInput);
+  const femaleMaxField = field('♀ Female max', femaleMaxInput);
+  const maleRow = el('div', { class: 'field-row' }, [maleField, maleMaxField]);
+  const femaleRow = el('div', { class: 'field-row' }, [femaleField, femaleMaxField]);
+
   if (isEdit) {
     labelInput.value = editing.label || '';
     unitInput.value = editing.unit || '';
     typeInput.value = editing.intervalType || 'range';
     minInput.value = editing.min != null ? editing.min : '';
     maxInput.value = editing.max != null ? editing.max : '';
+    genderSpecificInput.checked = !!editing.genderSpecific;
+    maleMinInput.value = editing.maleMin != null ? editing.maleMin : '';
+    maleMaxInput.value = editing.maleMax != null ? editing.maleMax : '';
+    femaleMinInput.value = editing.femaleMin != null ? editing.femaleMin : '';
+    femaleMaxInput.value = editing.femaleMax != null ? editing.femaleMax : '';
   }
 
   const syncFields = () => {
     minField.style.display = typeInput.value === 'below' ? 'none' : '';
     maxField.style.display = typeInput.value === 'above' ? 'none' : '';
+    maleField.style.display = femaleField.style.display = typeInput.value === 'below' ? 'none' : '';
+    maleMaxField.style.display = femaleMaxField.style.display = typeInput.value === 'above' ? 'none' : '';
+    const showGender = genderSpecificInput.checked;
+    maleRow.style.display = femaleRow.style.display = showGender ? '' : 'none';
   };
   typeInput.addEventListener('change', syncFields);
+  genderSpecificInput.addEventListener('change', syncFields);
   syncFields();
 
   const save = async () => {
@@ -495,7 +552,14 @@ async function openHealthParamsManager(activeTab, editing) {
     if (intervalType === 'range' && (min == null || max == null)) { toast('Enter both min and max'); return; }
     if (intervalType === 'below' && max == null) { toast('Enter the max limit'); return; }
     if (intervalType === 'above' && min == null) { toast('Enter the min limit'); return; }
-    const rec = { label, unit: unitInput.value.trim(), intervalType, min, max };
+    const rec = { label, unit: unitInput.value.trim(), intervalType, min, max, genderSpecific: false, maleMin: null, maleMax: null, femaleMin: null, femaleMax: null };
+    if (genderSpecificInput.checked) {
+      rec.genderSpecific = true;
+      rec.maleMin = num(maleMinInput.value);
+      rec.maleMax = num(maleMaxInput.value);
+      rec.femaleMin = num(femaleMinInput.value);
+      rec.femaleMax = num(femaleMaxInput.value);
+    }
     if (isEdit) rec.id = editing.id;
     await DB.put('healthParams', rec);
     closeModal(); toast(isEdit ? 'Updated' : 'Added'); openHealthParamsManager('list');
@@ -507,6 +571,9 @@ async function openHealthParamsManager(activeTab, editing) {
     field('Type', typeInput),
     minField,
     maxField,
+    genderSpecificField,
+    maleRow,
+    femaleRow,
   ]);
 
   openModal(el('div', { class: 'sheet has-fixed-footer' }, [
@@ -547,7 +614,7 @@ async function openHealthCheckForm(person, existing) {
   const paramMedInputs = {};
   const paramFields = params.map(p => {
     const existingP = isEdit && existing.parameters && normalizeParamEntry(existing.parameters[p.id]);
-    const input = el('input', { type: 'number', inputmode: 'decimal', step: 'any', placeholder: paramRangeLabel(p) + (p.unit ? ' ' + p.unit : '') });
+    const input = el('input', { type: 'number', inputmode: 'decimal', step: 'any', placeholder: paramRangeLabel(effectiveRange(p, person.gender)) + (p.unit ? ' ' + p.unit : '') });
     if (existingP && existingP.value != null) input.value = existingP.value;
     const medInput = el('input', { type: 'checkbox' });
     if (existingP) medInput.checked = !!existingP.medicineTaken;
