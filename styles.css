@@ -2856,6 +2856,11 @@ input.milk-amt:focus { outline: none; }
 .trk-heat td.h-hi1  { background: rgba(248,113,113,0.18); }
 .trk-heat td.h-hi2  { background: rgba(248,113,113,0.4); color: var(--text); font-weight: 700; }
 
+.trk-heat-avg { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; margin-top: 14px; padding: 10px 12px; background: var(--card-2); border: 1px solid var(--line); border-radius: 10px; }
+.trk-heat-avg-lbl { font-size: 0.8rem; font-weight: 700; }
+.trk-heat-avg-val { font-size: 0.95rem; font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; }
+.trk-heat-avg-note { font-size: 0.66rem; color: var(--muted); margin-left: auto; }
+
 .trk-heat-key { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
 .trk-heat-key-lbl { font-size: 0.58rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin-right: 3px; }
 .trk-heat-swatch { padding: 2px 7px; border-radius: 6px; font-size: 0.58rem; font-weight: 700; color: var(--text); }

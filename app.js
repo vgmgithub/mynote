@@ -6300,6 +6300,30 @@ function _trkHeatmapGrid(host, yms, byYm, allocs, efLoans, thisYm, mod, now) {
   park();
   requestAnimationFrame(park);
 
+  // Rent is fixed and doesn't move the way the rest of the kitty does, so
+  // lumping it into "average spend" answers a different question than the one
+  // usually asked: what does the household actually get through in a normal
+  // month. This is a single lifetime figure - the same across every month on
+  // screen - which is why it lives once below the whole table rather than
+  // repeated into the per-month Insights panel on each individual month.
+  //
+  // Computed as the average of (month total − that month's Rent), not as
+  // (average total) − (average Rent): the two only agree if both sides divide
+  // by the same number of months, and a month with nothing under Rent - before
+  // it was tracked, or paid in cash that month - would otherwise drop out of
+  // the Rent average's denominator and quietly inflate it. Reuses the Rent
+  // row's own per-month map (catByYm) rather than re-scanning byYm.
+  const rentAvgCols = cols.filter((k) => totalOf(k) > 0);
+  if (rentAvgCols.length >= 2) {
+    const rentByYm = catByYm.get('Rent') || new Map();
+    const nonRentAvg = round2(rentAvgCols.reduce((s, k) => s + (totalOf(k) - (rentByYm.get(k) || 0)), 0) / rentAvgCols.length);
+    host.appendChild(el('div', { class: 'trk-heat-avg' }, [
+      el('span', { class: 'trk-heat-avg-lbl', text: '🏠 Apart from Rent' }),
+      el('span', { class: 'trk-heat-avg-val', text: '~' + fmtSheetCur(nonRentAvg) + ' / month' }),
+      el('span', { class: 'trk-heat-avg-note', text: 'avg of ' + rentAvgCols.length + ' months' }),
+    ]));
+  }
+
   host.appendChild(el('div', { class: 'trk-heat-key' }, [
     el('span', { class: 'trk-heat-key-lbl', text: 'vs its own usual' }),
     el('span', { class: 'trk-heat-swatch h-low2', text: 'well under' }),
@@ -8250,33 +8274,6 @@ function _trackerInsights(ym, timelineYms, byYm, byCat, spent, totalOf) {
         sub: fmtSheetCur(top[1].total) + ' of ' + fmtSheetCur(grossOut) + ' went there.',
       });
     }
-  }
-
-  // ---- 5. What the kitty spends apart from Rent ----
-  //
-  // Rent is fixed and doesn't move the way the rest of the kitty does, so
-  // lumping it into "average spend" answers a different question than the one
-  // usually being asked: what does the HOUSEHOLD actually get through in a
-  // normal month. Averaged over every month with any spend logged, not just
-  // the ones before the month on screen — this is a lifetime figure, not a
-  // comparison against it.
-  //
-  // Computed as the average of (month total − that month's Rent), not as
-  // (average total) − (average Rent): the two only agree if both sides divide
-  // by the same number of months, and a month with nothing under Rent — before
-  // it was tracked, or paid in cash that month — would otherwise drop out of
-  // the Rent average's denominator and quietly inflate it.
-  const historyYms = timelineYms.filter((k) => totalOf(k) > 0);
-  if (historyYms.length >= 2) {
-    const rentOf = (k) => round2((byYm.get(k) || [])
-      .filter((r) => (r.category || '') === 'Rent')
-      .reduce((a, r) => a + (Number(r.amount) || 0), 0));
-    const nonRentAvg = round2(historyYms.reduce((s, k) => s + (totalOf(k) - rentOf(k)), 0) / historyYms.length);
-    out.push({
-      icon: '🏠', tone: '',
-      head: 'Apart from Rent, ~' + fmtSheetCur(nonRentAvg) + ' a month',
-      sub: 'Averaged over ' + historyYms.length + ' months with spends logged, Rent taken out of each.',
-    });
   }
 
   return out;
