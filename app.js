@@ -45,9 +45,19 @@ let _cachedUsdInr = null;
 // Wraps fmtCur: for a USD figure with the toggle on and a known rate,
 // converts and formats as ₹ instead. Every other currency/portfolio passes
 // straight through untouched - this only ever intercepts that one combination.
+//
+// Rounds to the whole dollar BEFORE converting, not after - fmtCur's own USD
+// formatting already rounds to 0 decimals for display (this app shows no
+// paise/cents anywhere), so the $ figure on screen is already a rounded
+// number. Converting the un-rounded underlying value instead multiplies out
+// to something that doesn't match what's visibly on screen - e.g. a stock
+// priced at $269.19 displays as "$269" but was converting to ₹269.19×rate,
+// which reads as a bug ("269 × 95.67 should be ₹25,735, not ₹25,753") even
+// though neither number was wrong on its own. Rounding first means the two
+// displayed figures always multiply out exactly.
 function _fmtCurUS(n, cur) {
   if (cur === 'USD' && _usShowInr && _cachedUsdInr > 0) {
-    return fmtCur((Number(n) || 0) * _cachedUsdInr, 'INR');
+    return fmtCur(Math.round(Number(n) || 0) * _cachedUsdInr, 'INR');
   }
   return fmtCur(n, cur);
 }
@@ -3995,8 +4005,13 @@ async function openFdForm(existing) {
 // ⓘ breakdown sheet are always computed from the same pass and can't drift.
 //
 // Each exclusion below is deliberate:
-//   • Stocks — only the Me · India portfolio. Wife · India and Me · US are
-//     separate books and don't roll into this personal total.
+//   • Stocks — Me · India (native ₹) + Me · US, converted to ₹ at the Home
+//     strip's own live USD→INR rate (2026-09-15 onward - previously Me · US
+//     was left out entirely). Wife · India stays excluded regardless: it's a
+//     separate book (hers, not this personal total), which is a different
+//     reason than the currency and unaffected by adding the US conversion.
+//     The US leg silently contributes 0 if no rate has ever been cached (open
+//     Home once) rather than guessing one.
 //   • Stocks — SGB gold bonds are skipped here and counted under Metals
 //     instead (they're gold), so the same money isn't counted twice.
 //   • Sold stocks and redeemed funds — that capital is no longer at work.
@@ -4030,7 +4045,16 @@ async function homeInvestedBreakdown() {
     // Invested (active principal) and Earned (closed-bond interest) describe
     // DIFFERENT bonds, so interest ÷ active-principal isn't a real return; the
     // matching denominator is the principal that actually earned that interest.
-    parts.push({ label, note, invested: invested || 0, value: value || 0, count: count || 0, pctBasis: (opts && opts.pctBasis != null) ? opts.pctBasis : null });
+    // count2 is a SECOND count shown as its own badge beside `count` (Stocks
+    // only, for now) - Me · India and Me · US are one combined row (one sum,
+    // one % return), but the two portfolios' holding counts are still worth
+    // seeing apart, so they get two small badges on one row instead of two
+    // separate rows that would double-list the same "Stocks" money.
+    parts.push({
+      label, note, invested: invested || 0, value: value || 0, count: count || 0,
+      count2: (opts && opts.count2) || 0,
+      pctBasis: (opts && opts.pctBasis != null) ? opts.pctBasis : null,
+    });
     totalInvested += invested || 0;
     totalValue += value || 0;
   };
@@ -4038,18 +4062,37 @@ async function homeInvestedBreakdown() {
   // repeated per-row - each row's own description only says what IS in it.
   const skipped = { sgb: 0, fd: 0, bond: 0, ef: 0 };
   try {
-    // Stocks — Me-India only (holdings, not sold). SGB gold bonds excluded here -
-    // they're tracked under Metals surface.
-    const meInStocks = (await DB.byPortfolio('stocks', 'me-in')) || [];
+    // Stocks — Me-India (holdings, not sold; SGB gold bonds excluded, tracked
+    // under Metals instead) + Me-US, converted to ₹ at the live USD→INR rate
+    // and folded into the SAME row (one combined Invested/Value/% - the money
+    // is one "Stocks" total regardless of which market it sits in). The two
+    // portfolios' counts stay visible as two badges (count / count2) rather
+    // than collapsing into one number.
+    const [meInStocks, meUsStocks, liveRatesRow] = await Promise.all([
+      DB.byPortfolio('stocks', 'me-in').catch(() => []),
+      DB.byPortfolio('stocks', 'me-us').catch(() => []),
+      DB.get('meta', 'homeLiveRates').catch(() => null),
+    ]);
+    const usdInr = liveRatesRow && liveRatesRow.value && liveRatesRow.value.usdInr
+      ? Number(liveRatesRow.value.usdInr) : 0;
     let sInv = 0, sVal = 0, sN = 0;
-    for (const s of meInStocks) {
+    for (const s of (meInStocks || [])) {
       if (s.status !== 'holding') continue;
       if (isSgb(s)) { skipped.sgb++; continue; }
       sInv += Number(s.units || 0) * Number(s.buyPrice || 0);
       sVal += Number(s.units || 0) * Number(s.currentPrice || 0);
       sN++;
     }
-    add('Stocks', 'Me · India holdings', sInv, sVal, sN);
+    let usInv = 0, usVal = 0, usN = 0;
+    if (usdInr > 0) {
+      for (const s of (meUsStocks || [])) {
+        if (s.status !== 'holding') continue;
+        usInv += Number(s.units || 0) * Number(s.buyPrice || 0) * usdInr;
+        usVal += Number(s.units || 0) * Number(s.currentPrice || 0) * usdInr;
+        usN++;
+      }
+    }
+    add('Stocks', 'Me · India' + (usN ? ' + Me · US, converted to ₹' : ' holdings'), sInv + usInv, sVal + usVal, sN, { count2: usN });
 
     // Mutual Funds — Investing only (exclude Sold)
     const funds = await DB.byIndex('funds', 'owner', 'me') || [];
@@ -4150,7 +4193,11 @@ function openInvestedBreakdown(bd) {
       el('div', { class: 'brk-main' }, [
         el('div', { class: 'brk-name' }, [
           p.label,
-          p.count ? el('span', { class: 'brk-count', text: String(p.count) }) : null,
+          p.count ? el('span', { class: 'brk-count', title: p.count2 ? 'Me · India' : '', text: String(p.count) }) : null,
+          // Me · US's own count, shown blue right beside India's - only ever
+          // set on the Stocks row (count2 in add()), so this is a no-op for
+          // every other row.
+          p.count2 ? el('span', { class: 'brk-count brk-count-us', title: 'Me · US', text: String(p.count2) }) : null,
         ].filter(Boolean)),
         el('div', { class: 'brk-note', text: p.note }),
       ]),
@@ -4174,7 +4221,7 @@ function openInvestedBreakdown(bd) {
   if (sk.fd) skipBits.push(sk.fd + ' FD' + (sk.fd > 1 ? 's' : '') + ' still running or renewed');
   if (sk.bond) skipBits.push(sk.bond + ' matured/sold bond' + (sk.bond > 1 ? 's' : '') + ' whose principal has been returned');
   if (sk.ef) skipBits.push(sk.ef + ' holding' + (sk.ef > 1 ? 's' : '') + ' linked to the Emergency Fund (tracked on its own page)');
-  const footNote = 'Not counted: Wife · India and Me · US stocks (separate books), sold stocks and redeemed funds' +
+  const footNote = 'Not counted: Wife · India stocks (a separate book), sold stocks and redeemed funds' +
     (skipBits.length ? ', ' + skipBits.join(', ') : '') +
     ' - that money is either tracked elsewhere, still locked in, or already back in hand.';
   openModal(el('div', { class: 'sheet' }, [
