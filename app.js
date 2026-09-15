@@ -6914,6 +6914,12 @@ async function _vaultLoad(mod) {
 async function _vaultPut(mod, rec) {
   const body = {};
   mod.VAULT_FIELDS.forEach((f) => { body[f] = rec[f] == null ? '' : String(rec[f]); });
+  // Deliberately NOT in VAULT_FIELDS - that list also drives CSV export/
+  // import (vault.js's parseCsv), and a JSON blob of old passwords has no
+  // business becoming a spreadsheet column. Carried through here instead;
+  // decryptJson returns the whole stored object rather than one filtered to
+  // VAULT_FIELDS, so this still survives the round trip untouched.
+  body.passwordHistory = Array.isArray(rec.passwordHistory) ? rec.passwordHistory : [];
   const env = await mod.encryptJson(_vaultKey, body);
   const row = Object.assign({ updatedAt: new Date().toISOString() }, env);
   if (rec.id != null) row.id = rec.id;
@@ -7225,6 +7231,37 @@ function openVaultDetail(mod, r) {
       eye.setAttribute('aria-label', eye.title);
     });
     line('Password', pwVal, [eye, _vaultCopyBtn('Password', () => r.password)]);
+  }
+
+  // Up to the last TWO superseded passwords, each dated to when it stopped
+  // being current (set in openVaultForm's save, on an actual change to a
+  // password that was already something) - masked the same way the current
+  // one is, each with its own reveal, not one toggle for the whole list.
+  if (Array.isArray(r.passwordHistory) && r.passwordHistory.length) {
+    const histRows = r.passwordHistory.map((h) => {
+      const pass = String(h.password || '');
+      const dots = '•'.repeat(Math.min(14, Math.max(6, pass.length)));
+      const val = el('span', { class: 'vd-value vd-pw vd-pw-old', text: dots });
+      const eye = el('button', { class: 'icon-btn vault-eye', type: 'button',
+        text: '👁', title: 'Show this password', 'aria-label': 'Show this password' });
+      let shown = false;
+      eye.addEventListener('click', () => {
+        shown = !shown;
+        val.textContent = shown ? pass : dots;
+        val.classList.toggle('is-open', shown);
+        eye.textContent = shown ? '🙈' : '👁';
+        eye.title = shown ? 'Hide this password' : 'Show this password';
+        eye.setAttribute('aria-label', eye.title);
+      });
+      return el('div', { class: 'vd-pw-old-row' }, [
+        el('div', { class: 'vd-pw-old-when', text: h.changedAt ? new Date(h.changedAt).toLocaleString() : 'Unknown date' }),
+        el('div', { class: 'vd-pw-old-line' }, [val, eye, _vaultCopyBtn('Old password', () => pass)]),
+      ]);
+    });
+    rows.push(el('div', { class: 'vd-row vd-notes-row' }, [
+      el('div', { class: 'vd-notes-head' }, [el('div', { class: 'vd-label', text: 'Password history' })]),
+      el('div', { class: 'vd-pw-history' }, histRows),
+    ]));
   }
 
   if (r.url) {
@@ -7907,11 +7944,21 @@ async function openVaultForm(mod, existing) {
 
   const save = async () => {
     if (!title.value.trim()) { toast('Give it a title'); return; }
+    // A changed password is worth remembering, not just overwritten - the
+    // superseded value goes on the front of the history, dated to when it
+    // stopped being current, kept to the last TWO. Only fires on an actual
+    // edit to a password that was already something; adding one for the
+    // first time isn't a "change" with a prior value to keep.
+    let passwordHistory = (existing && existing.passwordHistory) || [];
+    if (editing && existing.password && pw.value !== existing.password) {
+      passwordHistory = [{ password: existing.password, changedAt: new Date().toISOString() }, ...passwordHistory].slice(0, 2);
+    }
     await _vaultPut(mod, {
       id: editing ? existing.id : undefined,
       title: title.value.trim(), account: account.value.trim(), username: username.value.trim(),
       password: pw.value, url: url.value.trim(), notes: notes.value,
       category: chosenCat, icon: chosenIcon, person: chosenPerson,
+      passwordHistory,
     });
     closeModal();
     toast(editing ? 'Updated' : 'Saved');
