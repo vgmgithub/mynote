@@ -11796,6 +11796,37 @@ async function renderMetalSgb(host) {
     ]));
     return;
   }
+
+  // ---- Overview: every SGB summed into one figure, same shape as the Gold/
+  // Silver ledger's own summary card above the per-bond list below it.
+  let totGrams = 0, totInv = 0, totVal = 0;
+  sgbs.forEach((s) => {
+    const grams = Number(s.units) || 0;
+    totGrams += grams;
+    totInv += grams * (Number(s.buyPrice) || 0);
+    totVal += grams * (Number(s.currentPrice) || 0);
+  });
+  const totPl = totVal - totInv;
+  // Aggregate return (total P/L over total invested), not an average of each
+  // bond's own % - a ₹50,000 SGB and a ₹5,000 SGB shouldn't count equally
+  // toward the headline the way a plain average of percentages would.
+  const totPlPct = totInv > 0 ? (totPl / totInv) * 100 : null;
+  host.appendChild(el('section', { class: 'summary' }, [
+    el('div', { class: 'row-between' }, [
+      el('span', { class: 'label', text: 'SGB holdings' }),
+      totPlPct != null
+        ? el('span', { class: 'badge ' + (totPl >= 0 ? 'good' : 'bad'), text: fmtPct(totPlPct) })
+        : el('span', { class: 'badge muted', text: 'no invested amount' }),
+    ]),
+    el('div', { class: 'big', text: totVal > 0 ? fmtCur(totVal, 'INR') : (totInv > 0 ? fmtCur(totInv, 'INR') : '-') }),
+    el('div', { class: 'grid' }, [
+      _mfCell('Grams', _gramsShort(totGrams) + ' g'),
+      _mfCell('Invested', fmtCur(totInv, 'INR')),
+      _mfCell('Profit / Loss', (totPl >= 0 ? '+' : '') + fmtCur(totPl, 'INR'), totPl >= 0 ? 'pos' : 'neg'),
+      _mfCell('SGBs', String(sgbs.length)),
+    ]),
+  ]));
+
   const wrap = el('section', { class: 'stock-list' });
   sgbs.forEach((s) => {
     const grams = Number(s.units) || 0;
