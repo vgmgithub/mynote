@@ -131,6 +131,8 @@ See [ocr.md](ocr.md) for the full list. Top three:
 
 **Adding a store is otherwise safe:** every block in `onupgradeneeded` is guarded by `if (!db.objectStoreNames.contains(...))`, so existing stores are untouched and no migration is needed. But the new store must be added to **`exportAll()` AND `importAll()`** by hand — both enumerate stores explicitly, so a new one is silently left out of backups.
 
+**This actually happened, not just theoretically.** `healthPeople`/`healthChecks`/`healthParams` (v18–19) were added without the `exportAll()`/`importAll()` step — found 2026-09-15 while writing [health-check.md](health-check.md). Folder-based Backup & Restore currently drops all Health Check data silently; not yet fixed in code. **Check both functions in `db.js` immediately after adding any new store, before moving on to anything else.**
+
 ---
 
 ## OCR `_findStockMatch` returns the best match, NOT null

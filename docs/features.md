@@ -4,8 +4,18 @@ This is the inventory. Each entry: **what** + **where** + **why it's that way**.
 
 ## Home screen
 
-- **Hero + summary** (Total Invested / Total Earned, with the ⓘ breakdown sheet), then the three
-  section cards: **Investment · Savings · Expense**.
+**Two levels of navigation, not one.** The true top-level Home shows **six** section cards —
+**💼 Investment · 🏦 Savings · 💳 Expense · 👛 Personal Finance · 🩺 Health Check · 🔐 My Passwords**
+— and tapping **Investment** or **Savings** opens a SECOND launcher with its own card grid (Stocks /
+Mutual Funds / Fixed Deposits / Metals / Bonds / Dividends under Investment; Emergency Fund / Bank
+Savings under Savings). Several of the feature docs below (bonds.md, fixed-deposits.md,
+mutual-funds.md, emergency-fund.md) were written when that second level *was* Home, and still say
+"Home screen shows a Bonds card" etc. — read that as "the Investment/Savings launcher," which is
+what it now is; nothing about those docs' card layout itself is wrong. Expense/Personal
+Finance/Health Check/My Passwords go straight to their own tabbed surface with no second card layer.
+
+- **Hero + summary** (Total Invested / Total Earned, with the ⓘ breakdown sheet), then the six
+  section cards.
 - **⏰ Coming Up** — a horizontally-scrolling strip of money/attention *arriving* soon, sitting
   between the summary and the section cards. `_homeUpcomingStrip()` in app.js. Three sources share
   one rail:
@@ -236,10 +246,76 @@ See [emergency-fund.md](emergency-fund.md) for the full design. Summary:
   Emergency Fund's idle cash and Dividends.
 - Own `bankSavings` IndexedDB store (v10), in `exportAll`/`importAll` for backup.
 
-## Expense section (3rd Home section)
+## Metals (Investment launcher)
 
-Tabs on `#expBottomNav`: **Credit Card | Allocation | Expense**. The **+** FAB only appears on Credit
-Card (adding a card is the only add-action here). Allocation and Expense are placeholders for now.
+Gold/silver ledger, `metal.js` (lazy-loaded). Sovereign Gold Bonds are deliberately **not** tracked
+here — they live in the `stocks` store and are only *listed* on the Metals surface's SGB tab
+(counted as gold "since end of the day it's gold").
+
+- **`metals` store** (v7, indexed by `metal`): one row per transaction — `metal` (gold/silver), `date`,
+  `grams` (negative on a sell), `amount` (always stored positive; sign comes from `type`), `via`
+  (Aura/Sify/Physical/free text), `type` (buy/sell/interest), note.
+- **Average-cost basis** (`rollup()`): a sell removes both the grams and their proportional cost
+  basis, so a partial sale doesn't leave the remaining holding looking like a paper loss — same
+  approach `mf.js` uses for a mutual fund redemption. An `interest` row adds free grams at no cost.
+- **Tabs**: Gold | Silver (ledger + a by-source breakdown + a manually-set ₹/gram price — no live
+  fetch) | Overview (combined totals, allocation bars, and a Gold-vs-Silver table where the Gold row
+  **includes SGB grams** priced at the gold rate) | SGB (read-only, points back at the Stocks tab to
+  edit).
+- **Folds into Home's Total Invested/Earned** — one of the contributing buckets in
+  `homeInvestedBreakdown()`, unlike Dividends and Bank Savings (see below).
+
+## Dividends (Investment launcher)
+
+Per-stock dividend tracking, `dividend.js` (lazy-loaded).
+
+- **`dividends` store** (v6, indexed by `market`): one row per tracked stock — `months` (historical
+  payout months) + one entry per `year` (India: `units`/`perUnit`/`perMonth`; US: `perMonth`, older
+  rows may carry a flat `amount`). India (₹) and US ($) are never summed together.
+- **Membership tracks a stock's own `divAvailable` toggle live**, not a manual add/delete list — every
+  render re-joins eligible holdings against this store; toggling a stock off *hides* its record rather
+  than deleting it, so re-enabling later restores the history.
+- **YoY analysis** (`annualAnalysis`) only lists a year that actually has a figure recorded — "a year
+  nobody entered a figure for is not a year of no dividend, it is a year with nothing to say" — and
+  always compares against the nearest *earlier year with a figure*, not literally year−1.
+- **Home's "DIV" upcoming-strip reminder** (see the Home section above) fires per calendar month, per
+  stock, only when that stock has historically paid in this month **and** nothing is logged against
+  *this specific month* yet (`isMonthPending` — deliberately per-month rather than per-year, since a
+  quarterly payer would otherwise vanish from reminders for the rest of the year after its first
+  payout). India and US produce **separate** reminder cards.
+- **Excluded from Home's Total Invested/Earned** — same treatment class as Emergency Fund holdings and
+  Bank Savings: the money is reported on one surface only.
+
+## Personal Finance (Home card)
+
+The user's own Card/UPI spend, deliberately kept separate from the household Tracker. Lives entirely
+in `app.js` (no dedicated module). See [personal-finance.md](personal-finance.md) for the full design
+— data model (`personalSpends`, v16), the Spends/Limits/Review/Card check/Tags tabs, how a Card
+allowance is read live from the Allocation tab, and how it reconciles against the Credit Card tab
+without ever writing back to it.
+
+## Health Check (Home card)
+
+Family medical records — people, user-editable parameters with gender-specific reference ranges,
+trend graphs, a Family Health comparison table. `health.js` (lazy-loaded). See
+[health-check.md](health-check.md) for the full design and **a real backup gap**: `healthPeople` /
+`healthChecks` / `healthParams` are not yet in `exportAll()`/`importAll()`, so folder-based Backup &
+Restore currently drops all Health Check data.
+
+## My Passwords / Vault (Home card)
+
+An encrypted password manager with its own master password, independent of the App Lock PIN.
+`vault.js` (lazy-loaded). See [vault.md](vault.md) for the full design — AES-GCM + PBKDF2 (200k
+iterations), the never-stored key, the auto-relock-on-backgrounding behaviour, and why the master
+password is unrecoverable by design.
+
+## Expense section (💳 Home card)
+
+Five tabs on `#expBottomNav`: **Credit Card | Expense | Tracker | Review | Allocation**. The **+** FAB
+appears on Credit Card (add a card) and Tracker (add a household spend) only. See
+[expense.md](expense.md) for the full design of all five tabs — this section covers Credit Card in
+depth since it predates the others; Allocation, the Expense sheet, the Tracker (with its insights
+panel and All-Months heatmap) and Review are documented there instead of here.
 
 ### Credit Card tab
 
@@ -247,25 +323,35 @@ Reproduces the source sheet's `credit` tab (columns A:AB — the label column pl
 `credit.js` for the record shape and the math.
 
 - **Add a card**: name, issuing bank (free text + datalist of common Indian issuers), optional credit
-  limit, notes. Tap a card to edit or delete it.
-- **Per-card month ledger** on the form's **Months** tab: one row per statement month with **Billed**
-  (statement total) and **Paid** (what actually left the account). `+ Add month` pre-fills the month
-  after the newest one logged, so filling a card in needs no date typing. Duplicate months are deduped
-  last-wins by `normaliseMonths()`; fully-empty rows are dropped rather than creating a phantom month.
-- **Billed vs Paid are tracked separately on purpose** — a statement total is *not* what leaves the
-  bank that month (EMIs, partial payments, carried balances), and the source sheet's own "to be PAID"
-  row is visibly ≠ its "Total" row. Outstanding is then derived, not guessed.
-- **Month-by-month grid**: one row per card, one column per month, with **Total / vs last month / Paid
-  / To be paid** summary rows underneath — the same four the sheet carries. Scrolls horizontally inside
-  its own container with a sticky first column (reuses the Heatmap's `.heatmap-scroll` mechanics); 27
-  months can't fit a phone screen and shrinking them would make the figures unreadable.
-- **"vs last month"** compares against the previous month *that has data*, not the previous calendar
-  month — a gap month would otherwise show the whole total as a spending spike that never happened.
-  Colours are **deliberately inverted** vs. the rest of the app: a falling card bill is the good
-  direction, so down is green.
-- **Utilisation badge** per card = latest statement ÷ credit limit, warn-coloured at ≥30% (the point it
-  starts affecting a credit score). A card with no limit on record gets **no badge** rather than a
-  misleading 0%.
+  limit, billing-cycle start/end day, notes. Tap a card to edit or delete it.
+- **Per-card month ledger** on the form's **Months** tab (`buildCcMonthEditor`): one row per statement
+  month — a **Billed ₹** figure and a status dropdown (**Unpaid / Ontime / Late Payment**), not a typed
+  "paid ₹" amount. `paidOn` stamps automatically the moment status first moves off Unpaid. `+ Add
+  month` pre-fills the month after the newest one logged, so filling a card in needs no date typing.
+  Duplicate months are deduped last-wins by `normaliseMonths()`; fully-empty rows are dropped rather
+  than creating a phantom month.
+- **Reimbursement is a single combined figure per MONTH, not per card** (`ccReimbursements` store, v13,
+  keyed by `ym`) — set once below the card list, shared across every card billed that month. It
+  represents household/personal spend logged elsewhere that will come back as a credit, which was
+  never naturally splittable by card in the first place; it can be auto-derived from what's actually
+  logged against cards that month, or overridden by hand (`_reimbMap` — a typed figure always wins
+  over the derived one, "since a correction that a recount quietly undid would be worthless").
+- **`toBePaid = billed − reimbursed`** (`credit.js`'s `computeCredit`), floored at zero. "vs last
+  month" (`m.diff`) compares **To be paid** against the previous *entry in the series*, not the raw
+  billed total and not the previous calendar month — a reimbursement changes what's actually still
+  owed, so that's the figure that should move. Colours are **deliberately inverted** vs. the rest of
+  the app: a falling bill is the good direction, so down is green.
+- **Month-by-month grid**: one row per card, one column per month (billed figure, struck through once
+  marked Ontime/Late — red-tinted if Late), with **Total / To be paid** summary rows underneath, the
+  latter heat-coloured and bold-green once every card billed that month has a status set. Scrolls
+  horizontally with a sticky first column (reuses the Heatmap's `.heatmap-scroll` mechanics); 27 months
+  can't fit a phone screen and shrinking them would make the figures unreadable.
+- **Summary grid** above the cards: Cards count, **Avg / month** (`g.averagePerMonth` — the average
+  *To be paid* across every month any card has billed or been reimbursed; this already answers "what
+  does the wallet cost in a typical month," see [expense.md](expense.md)), Total billed, Total
+  reimbursed.
+- **Utilisation** per card = latest statement ÷ credit limit. A card with no limit on record gets
+  **no badge** rather than a misleading 0%.
 - **Nothing here counts toward Home's Total Invested** — card bills are money going out.
 - Own `creditCards` IndexedDB store (v11), in `exportAll`/`importAll` for backup. Stored per-card with
   its own `months[]` array rather than column-per-month, so a new month never needs a schema change.
@@ -287,7 +373,7 @@ These came up in conversation and the user explicitly deferred or rejected them:
 
 - **Live prices / market data APIs** — "let it be offline".
 - **Multi-broker per portfolio** — each portfolio is one broker; that's why OCR dispatch is per-portfolio.
-- **Mutual funds as a separate concept** — currently lives inside the same `stocks` store (e.g. "SBI MF - SBI Gol" in wife's Groww). No special MF handling.
-- **Dividends** — deferred ("leave those for now").
 - **Tax reports** — deferred but on the radar; see [future.md](future.md).
-- **Native APK** — PWA only.
+- **Native APK** — PWA only; explicitly re-deferred by the user on 2026-09-15 ("leave it as of now") when asked whether to scaffold one — if it comes up again, Android Studio was the discussed toolchain (bundles JDK+SDK+Gradle) over a headless install, since the machine had no prior Android/JVM tooling.
+
+Two items that were on this list have since been **built** and now have their own docs — remove them from any future "not built" mental model: **Mutual funds as a separate concept** (now the `funds` store + its own surface, see [mutual-funds.md](mutual-funds.md)) and **Dividends** (see the Dividends section above).

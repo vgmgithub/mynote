@@ -7,8 +7,8 @@ C:\Apache24\htdocs\mynote\
 ├── index.html              ← PWA shell, also has ?reset=1 SW-killer
 ├── manifest.webmanifest    ← PWA install metadata
 ├── service-worker.js       ← stale-while-revalidate, auto-reload-on-update
-├── styles.css              ← light + dark themes, all UI styles
-├── app.js                  ← UI, state, wiring (BIGGEST FILE, ~1600 lines)
+├── styles.css              ← light + dark themes, all UI styles (~3,200 lines)
+├── app.js                  ← UI, state, wiring (BIGGEST FILE, ~17,000 lines)
 ├── core.js                 ← pure calculations (no DOM, no IO)
 ├── db.js                   ← IndexedDB layer
 ├── csv.js                  ← X-MyNotes sheet import (lazy-loaded)
@@ -23,11 +23,16 @@ C:\Apache24\htdocs\mynote\
 ├── dividend.js             ← per-stock dividend / yearly + YoY analysis (lazy-loaded)
 ├── emergency.js            ← Emergency Fund logic (loan interest, target ladder) (lazy-loaded)
 ├── credit.js               ← credit-card logic (month grid, utilisation, averages) (lazy-loaded)
+├── vault.js                ← password vault: crypto + data layer (lazy-loaded)
+├── health.js               ← Health Check: rendering + forms + avatar/status logic (lazy-loaded, see health-check.md)
 ├── icons/
-│   ├── icon-192.png
-│   └── icon-512.png
+│   ├── icon-192.png / icon-512.png / icon-maskable-512.png / icon-180.png
+│   ├── health-card.png, health-fab.png, gold-bars.png
+│   └── emoji/               ← 10-icon Health Check avatar set + family.png (see health-check.md)
 └── docs/                   ← these docs
 ```
+
+**Personal Finance** (the user's own Card/UPI spend) and the whole **Expense section** (Credit Card / Allocation / Expense-sheet / Tracker / Review) have no dedicated module — both live entirely inside `app.js`. See [expense.md](expense.md).
 
 ## Module dependencies
 
@@ -69,14 +74,44 @@ state = {
 
 ## IndexedDB schema
 
-Database: `mynote-stocks`, version `11`.
+Database: `mynote-stocks`, version `19`.
 
 Stores, and the version each was added in: `stocks` / `snapshots` / `meta` / `monthly` (v1–2),
 `feed` (v3), `funds` (v4), `fds` (v5), `dividends` (v6), `metals` (v7), `bonds` (v8),
-`emergency` (v9), `bankSavings` (v10), `creditCards` (v11). Every upgrade block is guarded by
-`if (!db.objectStoreNames.contains(...))`, so a bump never touches existing stores and no migration
-is needed. **A new store must also be added to `exportAll()` AND `importAll()`** — both list every
-store explicitly, so it would otherwise be silently missing from backups.
+`emergency` (v9), `bankSavings` (v10), `creditCards` (v11), `allocations` (v12),
+`ccReimbursements` (v13), `monthlySheet` (v14), `spends` (v15), `personalSpends` (v16),
+`vault` (v17), `healthPeople` + `healthChecks` (v18), `healthParams` (v19). Every upgrade block
+is guarded by `if (!db.objectStoreNames.contains(...))`, so a bump never touches existing stores
+and no migration is needed. **A new store must also be added to `exportAll()` AND `importAll()`**
+(both in `db.js`) — both list every store explicitly, so it would otherwise be silently missing
+from backups. ⚠️ **This was missed for `healthPeople`/`healthChecks`/`healthParams`** — see
+[health-check.md](health-check.md#️-not-in-backup--exportallimportall-gap) for the gap; folder-based
+Backup & Restore currently drops all Health Check data.
+
+| Store | Added | Key | Holds |
+|---|---|---|---|
+| `stocks` | v1 | `id` auto, idx `portfolio` | Stock holdings, 3 portfolios |
+| `snapshots` | v1 | `id` auto, idx `portfolio` | Unused — legacy, kept for export/import compat |
+| `meta` | v1 | `key` | Free-form settings (lock config, category lists, API keys, feature flags...) |
+| `monthly` | v2 | `${portfolio}\|${ym}` | Per-portfolio monthly snapshots (value/invested/P&L/Nifty) |
+| `feed` | v3 | `${portfolio}\|${stockId}` | Cached news + recommendation per stock |
+| `funds` | v4 | `id` auto, idx `owner` | Mutual funds — see [mutual-funds.md](mutual-funds.md) |
+| `fds` | v5 | `id` auto, idx `owner` | Fixed deposits — see [fixed-deposits.md](fixed-deposits.md) |
+| `dividends` | v6 | `id` auto, idx `market` | Per-stock dividend tracking, by calendar year |
+| `metals` | v7 | `id` auto, idx `metal` | Gold/silver ledger transactions |
+| `bonds` | v8 | `id` auto, idx `owner` | Retail bonds — see [bonds.md](bonds.md) |
+| `emergency` | v9 | `id` auto, idx `kind` | Emergency Fund — 3 logical tables in 1 store, see [emergency-fund.md](emergency-fund.md) |
+| `bankSavings` | v10 | `id` auto | Flat bank-account balance list |
+| `creditCards` | v11 | `id` auto | One row per card, own `months[]` ledger — see [expense.md](expense.md) |
+| `allocations` | v12 | `id` auto, idx `year` (unique) | One row per year, per-category ₹ allocation |
+| `ccReimbursements` | v13 | `ym` | One combined household reimbursement per month |
+| `monthlySheet` | v14 | `ym` | Expense-sheet fields that can't be derived elsewhere (virtual bal, loan outgo, spend) |
+| `spends` | v15 | `id` auto, idx `ym` | Household spend log (Tracker tab) — see [expense.md](expense.md) |
+| `personalSpends` | v16 | `id` auto, idx `ym` | Personal Finance's own Card/UPI spend log |
+| `vault` | v17 | `id` auto | Encrypted password-manager entries |
+| `healthPeople` | v18 | `id` auto | Health Check family members — see [health-check.md](health-check.md) |
+| `healthChecks` | v18 | `id` auto, idx `personId`+`ym` | Health Check visit records |
+| `healthParams` | v19 | `id` auto | Health Check user-editable parameter definitions |
 
 ### `stocks` store
 - Key: `id` (auto-increment).
