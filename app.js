@@ -4521,29 +4521,37 @@ function _shortDayMon(iso) {
 // gram, and the USD→INR rate. Two free, no-key APIs: gold-api.com for XAU/XAG
 // spot (USD per troy ounce), open.er-api.com for the forex rate.
 //
-// Gold/silver are the INTERNATIONAL (LBMA-style) spot price, not a domestic
-// Indian retail quote - a jeweller's or a digital-gold app's own rate runs
-// noticeably higher (roughly 10-18%, on IBJA's own published figures) once
-// import duty, GST and a dealer/platform margin are added on top. A real
-// India-domestic feed (IBJA) was tried and dropped: the one free mirror of it
-// has no CORS headers, so a browser fetch to it is blocked outright (confirmed
-// via a live console error, not a guess), and IBJA's own official API is
-// paid-only. Rather than fake a domestic figure with a guessed premium
-// percentage - the same kind of invented-precision this app avoids elsewhere
-// (FD/bond interest use real receipts over formulas once any exist) - this
-// stays honestly labelled as a spot reference.
+// gold-api.com/gold-api.com's XAU/XAG figure is the INTERNATIONAL (LBMA-style)
+// spot price, not a domestic Indian retail quote - a jeweller's or a
+// digital-gold app's own rate runs noticeably higher once import duty, GST
+// and a dealer/platform margin are added on top. A real India-domestic feed
+// (IBJA) was tried and dropped: the one free mirror of it has no CORS
+// headers, so a browser fetch to it is blocked outright (confirmed via a live
+// console error, not a guess), and IBJA's own official API is paid-only.
 //
-// USD→INR is open.er-api.com's mid-market rate. What Google/a bank/a card
-// network shows at the same moment can differ by a few paise to half a rupee
-// even when both sides are working correctly - different providers snapshot
-// at different instants and from different panels of banks, and the gap
-// moves day to day and can flip sign. There is deliberately no "correction
-// constant" added on top of it for the same reason: it would just be wrong
-// again within a day or two.
+// So the domestic figure shown as the MAIN number is spot marked up by a
+// fixed percentage instead - GOLD_DOMESTIC_PREMIUM_PCT / SILVER_..., set by
+// the user on 2026-09-15 against that day's actual India price vs this same
+// spot feed. Unlike the USD→INR gap below, this premium is structural (duty +
+// GST + dealer margin), not pure bid/ask noise, so a fixed percentage is a
+// reasonable stand-in between real domestic-feed reads - but it IS a
+// snapshot, not something the API recomputes, so if the user ever reports it
+// drifting, ask what today's real domestic figure is and rederive the
+// percentage rather than nudging it blind. The untouched spot figure is kept
+// alongside it (goldSpot/silverSpot) and shown as the smaller secondary line
+// in each box specifically so the raw number stays checkable.
 //
-// Neither figure feeds the Metals tab's own manual ₹/gram price
-// (meta.metalPrices) - the two stay independent on purpose, so a flaky fetch
-// here can never silently move what the Metals ledger values a holding at.
+// USD→INR is left as pure open.er-api.com mid-market, no markup. What
+// Google/a bank/a card network shows at the same moment can differ by a few
+// paise to half a rupee even when both sides are working correctly -
+// different providers snapshot at different instants and from different
+// panels of banks, and the gap moves day to day and can flip sign, unlike the
+// gold/silver premium above. Confirmed with the user 2026-09-15: leave it be.
+//
+// The Metals tab's own ₹/gram price (metalPortfolio(), renderMetalLedger())
+// reads this SAME cached value (2026-09-15 onward) rather than a separate
+// manually-typed figure - the two used to be independent stores that could
+// silently disagree; now there's one live number, shown two places.
 //
 // Cached in meta.homeLiveRates and refreshed at most once a day, silently in
 // the background - open.er-api.com's own feed only updates daily, and
@@ -4551,6 +4559,19 @@ function _shortDayMon(iso) {
 // paints instantly; a slow or failed fetch never blocks Home.
 const TROY_OZ_GRAMS = 31.1034768;
 const LIVE_RATES_STALE_MS = 24 * 60 * 60 * 1000;
+// Defaults only - the user's own figures (meta.metalDomesticPremium) always
+// win once set. See openMetalPremiumSettings.
+const GOLD_DOMESTIC_PREMIUM_PCT = 13.8;
+const SILVER_DOMESTIC_PREMIUM_PCT = 14.6;
+
+async function _metalPremiumPct() {
+  const row = await DB.get('meta', 'metalDomesticPremium').catch(() => null);
+  const v = row && row.value;
+  return {
+    gold: v && v.gold != null ? Number(v.gold) : GOLD_DOMESTIC_PREMIUM_PCT,
+    silver: v && v.silver != null ? Number(v.silver) : SILVER_DOMESTIC_PREMIUM_PCT,
+  };
+}
 
 async function _fetchLiveRates() {
   const [xauR, xagR, fxR] = await Promise.all([
@@ -4567,15 +4588,76 @@ async function _fetchLiveRates() {
   const goldOz = xau ? Number(xau.price) : null;
   const silverOz = xag ? Number(xag.price) : null;
   if (!(usdInr > 0) || !(goldOz > 0) || !(silverOz > 0)) return null;
+  const goldSpot = round2((goldOz / TROY_OZ_GRAMS) * usdInr);
+  const silverSpot = round2((silverOz / TROY_OZ_GRAMS) * usdInr);
+  const pct = await _metalPremiumPct();
   const value = {
-    gold: round2((goldOz / TROY_OZ_GRAMS) * usdInr),
-    silver: round2((silverOz / TROY_OZ_GRAMS) * usdInr),
+    gold: round2(goldSpot * (1 + pct.gold / 100)),
+    goldSpot,
+    silver: round2(silverSpot * (1 + pct.silver / 100)),
+    silverSpot,
+    premiumPct: pct,
     usdInr: round2(usdInr),
-    source: 'spot',
+    source: 'spot+premium',
     asOf: new Date().toISOString(),
   };
   await DB.put('meta', { key: 'homeLiveRates', value }).catch(() => {});
   return value;
+}
+
+// Re-applies the (possibly just-edited) premium % to the LAST FETCHED spot
+// price, with no network call - editing the % should feel instant, not
+// trigger a round trip to two APIs for a number that hasn't itself changed.
+// Falls back to a real fetch only if nothing has ever been cached yet.
+async function _recomputeLiveRatesPremium() {
+  const cached = await DB.get('meta', 'homeLiveRates').catch(() => null);
+  const v = cached && cached.value;
+  if (!v || v.goldSpot == null || v.silverSpot == null) return _fetchLiveRates();
+  const pct = await _metalPremiumPct();
+  const value = Object.assign({}, v, {
+    gold: round2(v.goldSpot * (1 + pct.gold / 100)),
+    silver: round2(v.silverSpot * (1 + pct.silver / 100)),
+    premiumPct: pct,
+  });
+  await DB.put('meta', { key: 'homeLiveRates', value }).catch(() => {});
+  return value;
+}
+
+// Shared by the Home strip's % button and the Metals tab's "Edit %" button -
+// one settings surface, since both read the same meta.metalDomesticPremium.
+// `onSaved(freshValue)` lets each caller repaint just its own UI rather than
+// this function knowing about either screen.
+async function openMetalPremiumSettings(onSaved) {
+  const pct = await _metalPremiumPct();
+  const goldIn = el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: pct.gold });
+  const silverIn = el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: pct.silver });
+
+  const save = async () => {
+    const g = num(goldIn.value), s = num(silverIn.value);
+    await DB.put('meta', {
+      key: 'metalDomesticPremium',
+      value: {
+        gold: g != null ? g : GOLD_DOMESTIC_PREMIUM_PCT,
+        silver: s != null ? s : SILVER_DOMESTIC_PREMIUM_PCT,
+        updatedAt: new Date().toISOString(),
+      },
+    });
+    closeModal();
+    const fresh = await _recomputeLiveRatesPremium().catch(() => null);
+    toast('Saved');
+    if (typeof onSaved === 'function') onSaved(fresh);
+  };
+
+  openModal(el('div', { class: 'sheet' }, [
+    el('h2', { text: 'India price estimate' }),
+    el('p', { class: 'hint', text: 'Gold/silver on Home and the Metals tab are international spot plus this fixed percentage, approximating a jeweller/digital-gold rate (import duty + GST + dealer margin). Adjust either % if what you actually see quoted has drifted from this estimate.' }),
+    field('Gold premium (%)', goldIn),
+    field('Silver premium (%)', silverIn),
+    el('div', { class: 'btn-row' }, [
+      el('button', { class: 'btn primary', text: 'Save', onclick: save }),
+      el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }),
+    ]),
+  ]));
 }
 
 const _homeRateFmt = (v) => v != null ? '₹' + v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
@@ -4592,38 +4674,57 @@ function _liveRatesAsOfLabel(iso) {
   return Math.round(hours / 24) + 'd ago';
 }
 
-function _liveRateBox(label, val) {
+// `sub`, when given, is the raw spot figure - shown smaller, under the main
+// (marked-up) value, so the untouched number stays checkable at a glance
+// instead of only living in a tooltip or a separate screen.
+function _liveRateBox(label, val, sub) {
   return el('div', { class: 'home-rate-box' }, [
     el('div', { class: 'home-rate-lbl', text: label }),
     el('div', { class: 'home-rate-val', text: _homeRateFmt(val) }),
+    el('div', { class: 'home-rate-sub', text: sub != null ? 'Spot ' + _homeRateFmt(sub) : '' }),
   ]);
 }
 
 // Names the basis gold/silver are on - see the block comment above
-// _fetchLiveRates for why this stays international spot rather than a guessed
-// domestic figure.
-const _liveRatesSourceLabel = (source) => source === 'spot' ? 'Intl spot, not IBJA/jeweller rate' : '';
+// _fetchLiveRates for why the main figure is spot + a fixed India premium
+// rather than a live domestic feed. Reads the ACTUAL % that produced this
+// particular cached value (falls back to the defaults for a value cached
+// before premiumPct existed), not the current setting - so an old cached
+// figure never claims a % it wasn't computed with.
+const _liveRatesSourceLabel = (rates) => {
+  if (!rates || rates.source !== 'spot+premium') return '';
+  const pct = rates.premiumPct || { gold: GOLD_DOMESTIC_PREMIUM_PCT, silver: SILVER_DOMESTIC_PREMIUM_PCT };
+  return '+' + pct.gold + '%/+' + pct.silver + '% India est.';
+};
 
 async function _homeLiveRatesStrip() {
   const cached = await DB.get('meta', 'homeLiveRates').catch(() => null);
   const rates = cached && cached.value ? cached.value : null;
 
-  const goldBox = _liveRateBox('Gold 24K/g*', rates ? rates.gold : null);
-  const silverBox = _liveRateBox('Silver 999/g*', rates ? rates.silver : null);
+  const goldBox = _liveRateBox('Gold 24K/g', rates ? rates.gold : null, rates ? rates.goldSpot : null);
+  const silverBox = _liveRateBox('Silver 999/g', rates ? rates.silver : null, rates ? rates.silverSpot : null);
   const usdBox = _liveRateBox('1 USD', rates ? rates.usdInr : null);
   const asOfEl = el('div', {
     class: 'home-rate-asof',
-    text: rates ? _liveRatesSourceLabel(rates.source) + ' · ' + _liveRatesAsOfLabel(rates.asOf) : 'Fetching…',
+    text: rates ? _liveRatesSourceLabel(rates) + ' · ' + _liveRatesAsOfLabel(rates.asOf) : 'Fetching…',
   });
   const refreshBtn = el('button', { type: 'button', class: 'home-rate-refresh', title: 'Refresh', text: '↻' });
+  const settingsBtn = el('button', { type: 'button', class: 'home-rate-settings', title: 'Edit India %', text: '%' });
 
   const paint = (v) => {
-    goldBox.querySelector('.home-rate-val').textContent = _homeRateFmt(v && v.gold);
-    silverBox.querySelector('.home-rate-val').textContent = _homeRateFmt(v && v.silver);
-    usdBox.querySelector('.home-rate-val').textContent = _homeRateFmt(v && v.usdInr);
+    // Falls back to the ORIGINAL cache read, not the attempted-and-failed
+    // fetch, so a refresh tap that fails offline keeps showing the last known
+    // good figures instead of blanking them to em-dashes.
     const shown = v || rates;
-    asOfEl.textContent = shown ? _liveRatesSourceLabel(shown.source) + ' · ' + _liveRatesAsOfLabel(shown.asOf) : 'Unavailable offline';
+    goldBox.querySelector('.home-rate-val').textContent = _homeRateFmt(shown && shown.gold);
+    goldBox.querySelector('.home-rate-sub').textContent = shown && shown.goldSpot != null ? 'Spot ' + _homeRateFmt(shown.goldSpot) : '';
+    silverBox.querySelector('.home-rate-val').textContent = _homeRateFmt(shown && shown.silver);
+    silverBox.querySelector('.home-rate-sub').textContent = shown && shown.silverSpot != null ? 'Spot ' + _homeRateFmt(shown.silverSpot) : '';
+    usdBox.querySelector('.home-rate-val').textContent = _homeRateFmt(shown && shown.usdInr);
+    asOfEl.textContent = shown ? _liveRatesSourceLabel(shown) + ' · ' + _liveRatesAsOfLabel(shown.asOf) : 'Unavailable offline';
   };
+
+  settingsBtn.onclick = () => openMetalPremiumSettings((fresh) => paint(fresh));
 
   const refresh = async () => {
     refreshBtn.classList.add('spinning');
@@ -4637,7 +4738,7 @@ async function _homeLiveRatesStrip() {
 
   return el('div', { class: 'home-rates' }, [
     el('div', { class: 'home-rates-row' }, [goldBox, silverBox, usdBox]),
-    el('div', { class: 'home-rates-foot' }, [asOfEl, refreshBtn]),
+    el('div', { class: 'home-rates-foot' }, [asOfEl, settingsBtn, refreshBtn]),
   ]);
 }
 
@@ -10557,13 +10658,18 @@ let _allocYear = new Date().getFullYear();
 // two never drift. SGB grams count as gold ("end of the day it's gold").
 async function metalPortfolio() {
   const mod = await import('./metal.js');
-  const [txns, pricesMeta, stocks] = await Promise.all([
+  let [txns, liveMeta, stocks] = await Promise.all([
     DB.all('metals').catch(() => []),
-    DB.get('meta', 'metalPrices').catch(() => null),
+    DB.get('meta', 'homeLiveRates').catch(() => null),
     DB.all('stocks').catch(() => []),
   ]);
-  const prices = (pricesMeta && pricesMeta.value) || {};
-  const goldPrice = Number(prices.gold) || 0, silverPrice = Number(prices.silver) || 0;
+  // The manual "Set price" flow is gone (superseded by the Home strip's live
+  // fetch, 2026-09-15) - if nothing has EVER been fetched yet (a fresh
+  // install opened straight to Metals before Home got a chance to), fetch it
+  // now rather than valuing every holding at ₹0.
+  let live = (liveMeta && liveMeta.value) || null;
+  if (!live) live = await _fetchLiveRates().catch(() => null) || {};
+  const goldPrice = Number(live.gold) || 0, silverPrice = Number(live.silver) || 0;
   const gd = mod.summary(txns, 'gold', goldPrice);      // digital gold only
   const silver = mod.summary(txns, 'silver', silverPrice);
   const sgbs = stocks.filter(isSgb);
@@ -10576,7 +10682,7 @@ async function metalPortfolio() {
   };
   gold.pl = gold.value - gold.invested;
   gold.plPct = gold.invested > 0 ? (gold.pl / gold.invested) * 100 : null;
-  return { gold, silver, prices, hasTxns: (txns || []).length > 0 };
+  return { gold, silver, live, hasTxns: (txns || []).length > 0 };
 }
 const _gramsShort = (x) => String(Math.round((Number(x) || 0) * 100) / 100);
 
@@ -11331,8 +11437,6 @@ async function openMetal() {
           await DB.put('metals', Object.assign({}, t, { seed: true, createdAt: nowIso, updatedAt: nowIso }));
         }
       }
-      const havePrices = await DB.get('meta', 'metalPrices').catch(() => null);
-      if (!havePrices) await DB.put('meta', { key: 'metalPrices', value: { gold: 14532.4, silver: 229.45, source: 'sheet', updatedAt: new Date().toISOString() } });
       await DB.put('meta', { key: 'metalSeededV2', value: true });
       await DB.put('meta', { key: 'metalSeeded', value: true });
     }
@@ -11354,12 +11458,16 @@ async function renderMetal() {
 // ---- Gold / Silver tab: summary + price control + transaction ledger ----
 async function renderMetalLedger(host, metal) {
   const mod = await import('./metal.js');
-  const [txns, pricesMeta] = await Promise.all([
+  let [txns, liveMeta] = await Promise.all([
     DB.byIndex('metals', 'metal', metal).catch(() => []),
-    DB.get('meta', 'metalPrices').catch(() => null),
+    DB.get('meta', 'homeLiveRates').catch(() => null),
   ]);
-  const prices = (pricesMeta && pricesMeta.value) || {};
-  const price = Number(prices[metal]) || 0;
+  // Same first-open fallback as metalPortfolio() - fetch once if Home hasn't
+  // populated the cache yet, rather than valuing this metal at ₹0.
+  let live = (liveMeta && liveMeta.value) || null;
+  if (!live) live = await _fetchLiveRates().catch(() => null) || {};
+  const price = Number(live[metal]) || 0;
+  const spot = Number(live[metal + 'Spot']) || 0;
   const s = mod.summary(txns || [], metal, price);
   const gramsTxt = (Math.round(s.grams * 10000) / 10000) + ' g';
 
@@ -11368,7 +11476,7 @@ async function renderMetalLedger(host, metal) {
       el('span', { class: 'label', text: (metal === 'gold' ? 'Gold' : 'Silver') + ' holdings' }),
       s.plPct != null
         ? el('span', { class: 'badge ' + (s.pl >= 0 ? 'good' : 'bad'), text: fmtPct(s.plPct) })
-        : el('span', { class: 'badge muted', text: 'set price' }),
+        : el('span', { class: 'badge muted', text: 'fetching price' }),
     ]),
     el('div', { class: 'big', text: s.value > 0 ? fmtCur(s.value, 'INR') : '-' }),
     el('div', { class: 'grid' }, [
@@ -11379,11 +11487,15 @@ async function renderMetalLedger(host, metal) {
     ]),
   ]));
 
+  // Price is no longer typed in here - it's the same live India-estimate
+  // figure the Home strip shows (spot + a fixed %), read straight from
+  // meta.homeLiveRates so the two can never disagree. "Edit %" opens the one
+  // settings sheet shared with Home's own % button.
   host.appendChild(el('div', { class: 'metal-price-row' }, [
     el('span', { class: 'hint', text: price > 0
-      ? `${metal === 'gold' ? 'Gold' : 'Silver'} ${fmtCur(price, 'INR')}/g` + (prices.source === 'intl-spot' ? ' · intl estimate' : '')
-      : 'No price set' }),
-    el('button', { class: 'btn ghost small', type: 'button', text: 'Set price', onclick: () => openMetalPrice() }),
+      ? `${metal === 'gold' ? 'Gold' : 'Silver'} ${fmtCur(price, 'INR')}/g` + (spot > 0 ? ' · spot ' + fmtCur(spot, 'INR') : '')
+      : 'Fetching live price…' }),
+    el('button', { class: 'btn ghost small', type: 'button', text: 'Edit %', onclick: () => openMetalPremiumSettings(() => renderMetal()) }),
   ]));
 
   // By-source composition (Aura / Sify / Interest …) — only when there's a mix.
@@ -11451,7 +11563,7 @@ async function renderMetalOverview(host) {
       el('span', { class: 'label', text: 'Gold + Silver' }),
       totPlPct != null
         ? el('span', { class: 'badge ' + (totPl >= 0 ? 'good' : 'bad'), text: fmtPct(totPlPct) })
-        : el('span', { class: 'badge muted', text: 'set price' }),
+        : el('span', { class: 'badge muted', text: 'fetching price' }),
     ]),
     el('div', { class: 'big', text: totVal > 0 ? fmtCur(totVal, 'INR') : '-' }),
     el('div', { class: 'grid' }, [
@@ -11599,36 +11711,6 @@ async function openMetalTxn(existing) {
       hint,
     ]),
     el('div', { class: 'sheet-footer' }, [el('div', { class: 'btn-row', style: 'flex-wrap:wrap' }, btns)]),
-  ]));
-}
-
-// ---- Set gold/silver ₹/gram prices (manual entry only) ----
-async function openMetalPrice() {
-  const pricesMeta = await DB.get('meta', 'metalPrices').catch(() => null);
-  const prices = (pricesMeta && pricesMeta.value) || {};
-  const numInput = (val, ph) => el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: val != null && val !== '' ? val : '', placeholder: ph });
-  const gold = numInput(prices.gold, '₹ / gram');
-  const silver = numInput(prices.silver, '₹ / gram');
-
-  const save = async () => {
-    const g = num(gold.value), s = num(silver.value);
-    const value = Object.assign({}, prices, {
-      gold: g || 0, silver: s || 0,
-      source: 'manual', updatedAt: new Date().toISOString(),
-    });
-    delete value.premium;
-    await DB.put('meta', { key: 'metalPrices', value });
-    closeModal(); toast('Prices saved'); renderMetal();
-  };
-  openModal(el('div', { class: 'sheet' }, [
-    el('h2', { text: 'Set metal prices' }),
-    el('p', { class: 'hint', text: 'Enter the ₹/gram you see (e.g. on Aura) — this values your holdings.' }),
-    field('Gold (₹/gram)', gold),
-    field('Silver (₹/gram)', silver),
-    el('div', { class: 'btn-row' }, [
-      el('button', { class: 'btn primary', text: 'Save', onclick: save }),
-      el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }),
-    ]),
   ]));
 }
 
