@@ -6405,22 +6405,31 @@ async function renderExpenseSheet(host, token) {
 // months were unlike the others, which is the only way an eye finds the one
 // that went wrong.
 //
-// Each row is scaled against ITS OWN median rather than a figure shared across
-// the grid. Rent would otherwise be red in every column simply for being the
+// Each row is scaled against ITS OWN figures rather than one shared across the
+// grid. Rent would otherwise be red in every column simply for being the
 // biggest line in the house, and the milk would never be anything but green -
 // neither of which says a thing about whether a month was unusual.
+//
+// Each cell is judged against the nearest EARLIER month that has an entry for
+// that same category (see the call site below) - a plain month-over-month
+// comparison, not the row's median. Green = down from last time, red = up.
+// This was a median-vs-the-row comparison originally ("usually costs X"), but
+// that reads a month as "normal" (grey) whenever it lands close to the middle
+// of its own history even if it swung hard against the one month right next
+// to it - which is exactly the comparison a reader's eye is actually making
+// when it scans left to right. Changed 2026-09-15.
 const HEAT_BANDS = [
-  [0.60, 'h-low2'],   // well under what this line usually costs
+  [0.60, 'h-low2'],   // well under what this line cost last time
   [0.85, 'h-low1'],
-  [1.15, 'h-mid'],    // about normal
+  [1.15, 'h-mid'],    // about the same as last time
   [1.50, 'h-hi1'],
   [Infinity, 'h-hi2'],
 ];
-const _heatBand = (amount, median) => {
+const _heatBand = (amount, prev) => {
   if (amount < 0) return 'h-refund';   // money came back - a different fact than "spent little"
   if (!(amount > 0)) return 'h-none';
-  if (!(median > 0)) return 'h-mid';
-  const r = amount / median;
+  if (!(prev > 0)) return 'h-mid';     // nothing earlier to compare against - neutral, not a verdict
+  const r = amount / prev;
   return (HEAT_BANDS.find(([lim]) => r <= lim) || HEAT_BANDS[HEAT_BANDS.length - 1])[1];
 };
 
@@ -6580,19 +6589,28 @@ function _trkHeatmapGrid(host, yms, byYm, allocs, efLoans, thisYm, mod, now) {
 
   ordered.forEach((name) => {
     const per = catByYm.get(name);
-    const vals = cols.map((k) => per.get(k) || 0).filter((v) => v > 0);
-    const med = _median(vals);
-    row(name, '', cols.map((k) => {
+    row(name, '', cols.map((k, i) => {
       const v = per.get(k) || 0;
+      // Compared against the nearest EARLIER month that actually has an
+      // entry, not the row's overall median and not strictly the column
+      // right before it - a gap month (nothing bought that category) would
+      // otherwise either wash out a real comparison or read as a spike/drop
+      // that never happened. Same "skip the gap" rule the Credit Card tab's
+      // own "vs last month" already uses.
+      let prevVal = 0;
+      for (let j = i - 1; j >= 0; j--) {
+        const pv = per.get(cols[j]) || 0;
+        if (pv > 0) { prevVal = pv; break; }
+      }
       // Only a cell that actually holds something opens - an empty cell
       // ("—") has nothing to show, so it stays inert rather than
       // offering a tap that lands on nothing.
       const recs = v !== 0 ? (byYm.get(k) || []).filter((r) => (r.category || 'Prev Bill Bal / Misc') === name) : null;
       return {
         text: money(v),
-        cls: _heatBand(v, med),
-        title: v > 0 && med > 0
-          ? name + ' ' + mod.monthLabel(k) + ': ' + fmtSheetCur(v) + ' · usually ' + fmtIntCur(med)
+        cls: _heatBand(v, prevVal),
+        title: v > 0 && prevVal > 0
+          ? name + ' ' + mod.monthLabel(k) + ': ' + fmtSheetCur(v) + ' · was ' + fmtIntCur(prevVal) + ' before'
           : '',
         onclick: recs && recs.length
           ? () => _openHeatmapCatModal(name, mod.monthLabel(k), recs, k, _groupByCategory(byYm.get(k)), mod)
@@ -6677,20 +6695,22 @@ function _trkHeatmapGrid(host, yms, byYm, allocs, efLoans, thisYm, mod, now) {
   }
 
   host.appendChild(el('div', { class: 'trk-heat-key' }, [
-    el('span', { class: 'trk-heat-key-lbl', text: 'vs its own usual' }),
+    el('span', { class: 'trk-heat-key-lbl', text: 'vs the month before' }),
     el('span', { class: 'trk-heat-swatch h-low2', text: 'well under' }),
     el('span', { class: 'trk-heat-swatch h-low1', text: 'under' }),
-    el('span', { class: 'trk-heat-swatch h-mid', text: 'normal' }),
+    el('span', { class: 'trk-heat-swatch h-mid', text: 'about the same' }),
     el('span', { class: 'trk-heat-swatch h-hi1', text: 'over' }),
     el('span', { class: 'trk-heat-swatch h-hi2', text: 'well over' }),
   ]));
   host.appendChild(explainRow('About the heatmap', [
     'One row per category, one column per month. Every row is coloured against '
-      + 'ITS OWN usual month, not against the other rows - otherwise rent would be red in every '
+      + 'ITS OWN history, not against the other rows - otherwise rent would be red in every '
       + 'column for being the biggest line in the house, and milk green in every column for being '
       + 'the smallest, and neither would tell you anything.',
-    '"Usual" is the median of the months that category appears in, so one heavy month does not '
-      + 'move the bar it is being judged against.',
+    'Each cell is compared against the NEAREST EARLIER month that actually has an entry for that '
+      + 'category - a gap month with nothing bought is skipped over rather than counted as a drop to '
+      + 'zero. A month with nothing earlier to compare against (the first one logged) reads neutral, '
+      + 'not red or green - there is nothing yet to call it against.',
     'Kitty is what went in that month. Spent, Left and Per day are read against it. Days left and '
       + 'Per day only apply to the month in progress - a closed month has no days still to spend.',
   ], 'How the colours are worked out'));
