@@ -76,14 +76,18 @@ async function _usCurToggleClick() {
   render();
 }
 
+// A compact iOS-style switch, not a text pill - the thumb itself carries the
+// current symbol ($ default/off, ₹ when on) rather than spelling out
+// "USD"/"INR", since the symbol alone is unambiguous here (this only ever
+// appears next to a portfolio that's already $ by default).
 function _usCurToggle() {
   return el('button', {
     type: 'button',
-    class: 'us-cur-toggle' + (_usShowInr ? ' active' : ''),
+    class: 'us-cur-switch' + (_usShowInr ? ' active' : ''),
     title: _usShowInr ? 'Showing ₹ - tap for $' : 'Showing $ - tap for ₹',
-    text: _usShowInr ? '₹ INR' : '$ USD',
+    'aria-pressed': String(_usShowInr),
     onclick: _usCurToggleClick,
-  });
+  }, [el('span', { class: 'us-cur-thumb', text: _usShowInr ? '₹' : '$' })]);
 }
 
 // Mutual-fund view state (only used inside the MF surface).
@@ -4045,14 +4049,13 @@ async function homeInvestedBreakdown() {
     // Invested (active principal) and Earned (closed-bond interest) describe
     // DIFFERENT bonds, so interest ÷ active-principal isn't a real return; the
     // matching denominator is the principal that actually earned that interest.
-    // count2 is a SECOND count shown as its own badge beside `count` (Stocks
-    // only, for now) - Me · India and Me · US are one combined row (one sum,
-    // one % return), but the two portfolios' holding counts are still worth
-    // seeing apart, so they get two small badges on one row instead of two
-    // separate rows that would double-list the same "Stocks" money.
+    // badges are EXTRA small pills beside the label, each independently
+    // coloured (opts.badges: [{text, cls}]) - Stocks uses two for its India/US
+    // holding counts, Metals two for its gold/silver gram totals. `count`
+    // stays the plain single-badge case every other row still uses.
     parts.push({
       label, note, invested: invested || 0, value: value || 0, count: count || 0,
-      count2: (opts && opts.count2) || 0,
+      badges: (opts && opts.badges) || [],
       pctBasis: (opts && opts.pctBasis != null) ? opts.pctBasis : null,
     });
     totalInvested += invested || 0;
@@ -4092,7 +4095,12 @@ async function homeInvestedBreakdown() {
         usN++;
       }
     }
-    add('Stocks', 'Me · India' + (usN ? ' + Me · US, converted to ₹' : ' holdings'), sInv + usInv, sVal + usVal, sN, { count2: usN });
+    add('Stocks', 'Me · India' + (usN ? ' + Me · US, converted to ₹' : ' holdings'), sInv + usInv, sVal + usVal, 0, {
+      badges: [
+        sN ? { text: String(sN), title: 'Me · India' } : null,
+        usN ? { text: String(usN), cls: 'brk-count-us', title: 'Me · US' } : null,
+      ].filter(Boolean),
+    });
 
     // Mutual Funds — Investing only (exclude Sold)
     const funds = await DB.byIndex('funds', 'owner', 'me') || [];
@@ -4134,7 +4142,12 @@ async function homeInvestedBreakdown() {
     const metalData = await metalPortfolio();
     const mInv = (metalData.gold.invested || 0) + (metalData.silver.invested || 0);
     const mVal = (metalData.gold.value || 0) + (metalData.silver.value || 0);
-    add('Metals', 'Digital gold & silver' + (metalData.gold.sgbCount ? ' + SGB (as gold)' : ''), mInv, mVal, 0);
+    add('Metals', 'Digital gold & silver' + (metalData.gold.sgbCount ? ' + SGB (as gold)' : ''), mInv, mVal, 0, {
+      badges: [
+        metalData.gold.grams ? { text: _gramsShort(metalData.gold.grams) + 'g', cls: 'brk-count-gold', title: 'Gold' } : null,
+        metalData.silver.grams ? { text: _gramsShort(metalData.silver.grams) + 'g', cls: 'brk-count-silver', title: 'Silver' } : null,
+      ].filter(Boolean),
+    });
 
     // Bonds — active principal as invested; realised interest from closed
     // (matured + sold) bonds as earned. Opposite basis from FDs above, on
@@ -4193,11 +4206,8 @@ function openInvestedBreakdown(bd) {
       el('div', { class: 'brk-main' }, [
         el('div', { class: 'brk-name' }, [
           p.label,
-          p.count ? el('span', { class: 'brk-count', title: p.count2 ? 'Me · India' : '', text: String(p.count) }) : null,
-          // Me · US's own count, shown blue right beside India's - only ever
-          // set on the Stocks row (count2 in add()), so this is a no-op for
-          // every other row.
-          p.count2 ? el('span', { class: 'brk-count brk-count-us', title: 'Me · US', text: String(p.count2) }) : null,
+          p.count ? el('span', { class: 'brk-count', text: String(p.count) }) : null,
+          ...p.badges.map((b) => el('span', { class: 'brk-count ' + (b.cls || ''), title: b.title || '', text: b.text })),
         ].filter(Boolean)),
         el('div', { class: 'brk-note', text: p.note }),
       ]),
@@ -6660,7 +6670,7 @@ function _trkHeatmapGrid(host, yms, byYm, allocs, efLoans, thisYm, mod, now) {
     const rentByYm = catByYm.get('Rent') || new Map();
     const nonRentAvg = round2(rentAvgCols.reduce((s, k) => s + (totalOf(k) - (rentByYm.get(k) || 0)), 0) / rentAvgCols.length);
     host.appendChild(el('div', { class: 'trk-heat-avg' }, [
-      el('span', { class: 'trk-heat-avg-lbl', text: '🏠 Apart from Rent' }),
+      el('span', { class: 'trk-heat-avg-lbl', text: '🏠 House Average Expense' }),
       el('span', { class: 'trk-heat-avg-val', text: '~' + fmtSheetCur(nonRentAvg) + ' / month' }),
       el('span', { class: 'trk-heat-avg-note', text: 'avg of ' + rentAvgCols.length + ' months' }),
     ]));

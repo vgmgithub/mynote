@@ -1315,6 +1315,9 @@ body.locked { overflow: hidden; }
   background: var(--card-2); border: 1px solid var(--line); border-radius: 999px; padding: 1px 6px; }
 /* Me · US's own count on the Stocks row - blue, right beside India's badge. */
 .brk-count-us { color: #fff; background: #3b82f6; border-color: #3b82f6; }
+/* Metals row - gold/silver gram totals, same pill shape as brk-count-us. */
+.brk-count-gold { color: #3a2a00; background: #d4a017; border-color: #d4a017; }
+.brk-count-silver { color: #1f2937; background: #c0c7d1; border-color: #c0c7d1; }
 .brk-note { font-size: 0.7rem; color: var(--muted); margin-top: 3px; line-height: 1.35; }
 .brk-nums { text-align: right; flex: 0 0 auto; }
 .brk-inv { font-size: 0.95rem; font-weight: 700; display: flex; align-items: baseline; justify-content: flex-end; gap: 6px; }
@@ -3195,10 +3198,20 @@ html[data-theme="light"] .hc-empty-cta { color: #fff; }
 .hc-icon-btn.danger { color: var(--bad); }
 .hc-list-empty { color: var(--muted); text-align: center; padding: 30px 10px; }
 
-/* Me·US Holdings/Trend/Overview - $→₹ display toggle (see _usCurToggle in app.js) */
-.us-cur-toggle {
-  flex: 0 0 auto; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line);
-  background: var(--card-2); color: var(--muted); font-size: 0.68rem; font-weight: 800;
-  cursor: pointer; margin: 0 8px;
+/* Me·US Holdings/Trend/Overview - $→₹ display switch (see _usCurToggle in app.js).
+   iOS-style: a pill track with a round thumb that slides right and carries
+   the active currency symbol - $ off/default (left), ₹ on (right). */
+.us-cur-switch {
+  flex: 0 0 auto; position: relative; width: 34px; height: 20px; margin: 0 8px;
+  padding: 0; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--card-2); cursor: pointer;
 }
-.us-cur-toggle.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.us-cur-switch.active { background: var(--accent); border-color: var(--accent); }
+.us-cur-thumb {
+  position: absolute; top: 1px; left: 1px; width: 16px; height: 16px; border-radius: 50%;
+  background: #fff; color: var(--text); font-size: 0.62rem; font-weight: 800; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.35); transition: left 0.15s ease;
+}
+.us-cur-switch.active .us-cur-thumb { left: 15px; color: var(--accent); }
+@media (prefers-reduced-motion: reduce) { .us-cur-thumb { transition: none; } }
