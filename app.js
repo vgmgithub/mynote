@@ -8252,6 +8252,33 @@ function _trackerInsights(ym, timelineYms, byYm, byCat, spent, totalOf) {
     }
   }
 
+  // ---- 5. What the kitty spends apart from Rent ----
+  //
+  // Rent is fixed and doesn't move the way the rest of the kitty does, so
+  // lumping it into "average spend" answers a different question than the one
+  // usually being asked: what does the HOUSEHOLD actually get through in a
+  // normal month. Averaged over every month with any spend logged, not just
+  // the ones before the month on screen — this is a lifetime figure, not a
+  // comparison against it.
+  //
+  // Computed as the average of (month total − that month's Rent), not as
+  // (average total) − (average Rent): the two only agree if both sides divide
+  // by the same number of months, and a month with nothing under Rent — before
+  // it was tracked, or paid in cash that month — would otherwise drop out of
+  // the Rent average's denominator and quietly inflate it.
+  const historyYms = timelineYms.filter((k) => totalOf(k) > 0);
+  if (historyYms.length >= 2) {
+    const rentOf = (k) => round2((byYm.get(k) || [])
+      .filter((r) => (r.category || '') === 'Rent')
+      .reduce((a, r) => a + (Number(r.amount) || 0), 0));
+    const nonRentAvg = round2(historyYms.reduce((s, k) => s + (totalOf(k) - rentOf(k)), 0) / historyYms.length);
+    out.push({
+      icon: '🏠', tone: '',
+      head: 'Apart from Rent, ~' + fmtSheetCur(nonRentAvg) + ' a month',
+      sub: 'Averaged over ' + historyYms.length + ' months with spends logged, Rent taken out of each.',
+    });
+  }
+
   return out;
 }
 
