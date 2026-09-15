@@ -2878,7 +2878,11 @@ input.milk-amt:focus { outline: none; }
 .trk-heat td.h-refund { background: rgba(52,211,153,0.16); color: var(--good); font-weight: 700; }
 .trk-heat td.h-low2 { background: rgba(52,211,153,0.34); color: var(--text); }
 .trk-heat td.h-low1 { background: rgba(52,211,153,0.16); }
-.trk-heat td.h-mid  { background: transparent; }
+/* Neutral, not invisible: a cell with a real value AND a real median to judge
+   it against should always show SOME tint - "about normal" is still a result,
+   not the same thing as "nothing to compare" (h-none, below, which has no
+   background at all). Matches the summary rows' own h-mid tint exactly. */
+.trk-heat td.h-mid  { background: rgba(148,163,184,0.22); }
 .trk-heat td.h-hi1  { background: rgba(248,113,113,0.18); }
 .trk-heat td.h-hi2  { background: rgba(248,113,113,0.4); color: var(--text); font-weight: 700; }
 
