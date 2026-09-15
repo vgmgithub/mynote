@@ -231,7 +231,7 @@ export const DB = (function () {
       // `feed` is best-effort: very old backups (v2 export) won't have it, and
       // the store may not exist if the user is mid-upgrade. Don't fail the
       // whole export over a missing store.
-      const [stocks, snapshots, monthly, meta, feed, funds, fds, dividends, metals, bonds, emergency, bankSavings, creditCards, allocations, ccReimbursements, monthlySheet, spends, personalSpends, vault] = await Promise.all([
+      const [stocks, snapshots, monthly, meta, feed, funds, fds, dividends, metals, bonds, emergency, bankSavings, creditCards, allocations, ccReimbursements, monthlySheet, spends, personalSpends, vault, healthPeople, healthChecks, healthParams] = await Promise.all([
         this.all('stocks'),
         this.all('snapshots'),
         this.all('monthly'),
@@ -251,6 +251,12 @@ export const DB = (function () {
         this.all('spends').catch(() => []),
         this.all('personalSpends').catch(() => []),
         this.all('vault').catch(() => []),
+        // Added v18-19, but missed here until 2026-09-15 — every store must be
+        // listed explicitly in BOTH exportAll and importAll, or it's silently
+        // dropped from every backup. See gotchas.md.
+        this.all('healthPeople').catch(() => []),
+        this.all('healthChecks').catch(() => []),
+        this.all('healthParams').catch(() => []),
       ]);
       return {
         app: 'mynote-stocks',
@@ -277,6 +283,9 @@ export const DB = (function () {
         // Encrypted. A backup carries the vault without carrying the
         // passwords: without the master password these rows are noise.
         vault,
+        healthPeople,
+        healthChecks,
+        healthParams,
       };
     },
     // Replace all data with the contents of a previously exported object.
@@ -304,6 +313,9 @@ export const DB = (function () {
         this.clear('spends').catch(() => {}),
         this.clear('personalSpends').catch(() => {}),
         this.clear('vault').catch(() => {}),
+        this.clear('healthPeople').catch(() => {}),
+        this.clear('healthChecks').catch(() => {}),
+        this.clear('healthParams').catch(() => {}),
       ]);
       const tasks = [];
       (data.stocks || []).forEach((s) => tasks.push(this.put('stocks', s)));
@@ -326,6 +338,9 @@ export const DB = (function () {
       (data.spends || []).forEach((r) => tasks.push(this.put('spends', r).catch(() => {})));
       (data.personalSpends || []).forEach((r) => tasks.push(this.put('personalSpends', r).catch(() => {})));
       (data.vault || []).forEach((r) => tasks.push(this.put('vault', r).catch(() => {})));
+      (data.healthPeople || []).forEach((r) => tasks.push(this.put('healthPeople', r).catch(() => {})));
+      (data.healthChecks || []).forEach((r) => tasks.push(this.put('healthChecks', r).catch(() => {})));
+      (data.healthParams || []).forEach((r) => tasks.push(this.put('healthParams', r).catch(() => {})));
       await Promise.all(tasks);
     },
   };
