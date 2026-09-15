@@ -4219,6 +4219,13 @@ async function renderHome() {
   const healthCard = _homeCard(el('img', { src: 'icons/health-card.png', alt: '', style: 'width: 30px; height: 30px; display: block;' }), 'Health Check', 'Medical records · Family history', () => setAppMode('health'));
   const vaultCard = _homeCard('\ud83d\udd10', 'My Passwords', 'Locked · encrypted on this device', () => setAppMode('vault'));
   host.appendChild(el('div', { class: 'home-cards' }, [investmentCard, savingsCard, expenseCard, personalCard, healthCard, vaultCard]));
+
+  // Wrapped like the upcoming strip above - three boxes hitting two external
+  // APIs must never be the reason Home fails to render.
+  try {
+    host.appendChild(await _homeLiveRatesStrip());
+  } catch (_) {}
+
   host.appendChild(el('p', { class: 'hint home-foot', text: 'Backup covers everything - open the ⋮ menu → Backup & Restore.' }));
 
   // Per-day room on the two cards that have a budget behind them. Wrapped, and
@@ -4506,6 +4513,107 @@ async function _homeUpcomingStrip() {
 function _shortDayMon(iso) {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
   return m ? +m[3] + ' ' + _FD_MONS[+m[2] - 1] : '';
+}
+
+// ---------- Home: live Gold/Silver/USD→INR strip ----------
+//
+// Three read-only boxes below the section cards - 24K gold and 999 silver per
+// gram, and the USD→INR rate. Two free, no-key, CORS-enabled APIs (same bar
+// mfapi.in already clears for the Mutual Funds NAV fetch): gold-api.com for
+// XAU/XAG spot (USD per troy ounce), open.er-api.com for the forex rate.
+//
+// Both are INTERNATIONAL spot, not a domestic Indian retail quote - a
+// jeweller's or a digital-gold app's own rate typically runs a few percent
+// higher once import duty, GST and a platform margin are added on top. This
+// strip is a reference figure, not a receipt, and doesn't feed the Metals
+// tab's own manual ₹/gram price (meta.metalPrices) - the two are independent
+// on purpose, so a flaky fetch here can never silently move what the Metals
+// ledger values a holding at.
+//
+// Cached in meta.homeLiveRates and refreshed at most once a day, silently in
+// the background - open.er-api.com's own forex feed only updates daily, and
+// hammering either API on every Home open buys nothing. The cached value
+// paints instantly; a slow or failed fetch never blocks Home.
+const TROY_OZ_GRAMS = 31.1034768;
+const LIVE_RATES_STALE_MS = 24 * 60 * 60 * 1000;
+
+async function _fetchLiveRates() {
+  const [xauR, xagR, fxR] = await Promise.all([
+    fetch('https://api.gold-api.com/price/XAU').catch(() => null),
+    fetch('https://api.gold-api.com/price/XAG').catch(() => null),
+    fetch('https://open.er-api.com/v6/latest/USD').catch(() => null),
+  ]);
+  const [xau, xag, fx] = await Promise.all([
+    xauR && xauR.ok ? xauR.json().catch(() => null) : null,
+    xagR && xagR.ok ? xagR.json().catch(() => null) : null,
+    fxR && fxR.ok ? fxR.json().catch(() => null) : null,
+  ]);
+  const usdInr = fx && fx.rates ? Number(fx.rates.INR) : null;
+  const goldOz = xau ? Number(xau.price) : null;
+  const silverOz = xag ? Number(xag.price) : null;
+  if (!(usdInr > 0) || !(goldOz > 0) || !(silverOz > 0)) return null;
+  const value = {
+    gold: round2((goldOz / TROY_OZ_GRAMS) * usdInr),
+    silver: round2((silverOz / TROY_OZ_GRAMS) * usdInr),
+    usdInr: round2(usdInr),
+    asOf: new Date().toISOString(),
+  };
+  await DB.put('meta', { key: 'homeLiveRates', value }).catch(() => {});
+  return value;
+}
+
+const _homeRateFmt = (v) => v != null ? '₹' + v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
+
+// "3h ago" / "2d ago" - short, since this sits under three number boxes.
+function _liveRatesAsOfLabel(iso) {
+  const then = iso ? new Date(iso).getTime() : NaN;
+  if (!then) return '';
+  const mins = Math.round((Date.now() - then) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return mins + 'm ago';
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return hours + 'h ago';
+  return Math.round(hours / 24) + 'd ago';
+}
+
+function _liveRateBox(label, val) {
+  return el('div', { class: 'home-rate-box' }, [
+    el('div', { class: 'home-rate-lbl', text: label }),
+    el('div', { class: 'home-rate-val', text: _homeRateFmt(val) }),
+  ]);
+}
+
+async function _homeLiveRatesStrip() {
+  const cached = await DB.get('meta', 'homeLiveRates').catch(() => null);
+  const rates = cached && cached.value ? cached.value : null;
+
+  const goldBox = _liveRateBox('Gold 24K/g', rates ? rates.gold : null);
+  const silverBox = _liveRateBox('Silver 999/g', rates ? rates.silver : null);
+  const usdBox = _liveRateBox('1 USD', rates ? rates.usdInr : null);
+  const asOfEl = el('div', { class: 'home-rate-asof', text: rates ? _liveRatesAsOfLabel(rates.asOf) : 'Fetching…' });
+  const refreshBtn = el('button', { type: 'button', class: 'home-rate-refresh', title: 'Refresh', text: '↻' });
+
+  const paint = (v) => {
+    goldBox.querySelector('.home-rate-val').textContent = _homeRateFmt(v && v.gold);
+    silverBox.querySelector('.home-rate-val').textContent = _homeRateFmt(v && v.silver);
+    usdBox.querySelector('.home-rate-val').textContent = _homeRateFmt(v && v.usdInr);
+    asOfEl.textContent = v ? _liveRatesAsOfLabel(v.asOf) : (rates ? _liveRatesAsOfLabel(rates.asOf) : 'Unavailable offline');
+  };
+
+  const refresh = async () => {
+    refreshBtn.classList.add('spinning');
+    const v = await _fetchLiveRates().catch(() => null);
+    refreshBtn.classList.remove('spinning');
+    paint(v);
+  };
+  refreshBtn.onclick = refresh;
+
+  if (!rates || (Date.now() - new Date(rates.asOf).getTime()) > LIVE_RATES_STALE_MS) refresh();
+
+  return el('div', { class: 'home-rates' }, [
+    el('div', { class: 'home-rates-row' }, [goldBox, silverBox, usdBox]),
+    el('div', { class: 'home-rates-foot' }, [asOfEl, refreshBtn]),
+  ]);
 }
 
 function _homeCard(icon, title, sub, onclick) {

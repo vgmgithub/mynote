@@ -1353,6 +1353,25 @@ img.metal-bar-ico { width: 30px; height: 30px; object-fit: contain; display: blo
 .home-card-title { font-size: 1.05rem; font-weight: 700; }
 .home-card-sub { font-size: 0.76rem; color: var(--muted); }
 .home-card-arrow { flex: 0 0 auto; color: var(--muted); font-size: 1.5rem; line-height: 1; }
+.home-rates { margin-top: 14px; }
+.home-rates-row { display: flex; gap: 8px; }
+.home-rate-box {
+  flex: 1 1 0; min-width: 0; background: var(--card-2); border: 1px solid var(--line);
+  border-radius: 12px; padding: 10px 8px; text-align: center;
+}
+.home-rate-lbl { font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.home-rate-val { font-size: 0.92rem; font-weight: 800; margin-top: 3px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.home-rates-foot { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 6px; }
+.home-rate-asof { font-size: 0.64rem; color: var(--muted); }
+.home-rate-refresh {
+  flex: 0 0 auto; width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--line);
+  background: var(--card); color: var(--muted); font-size: 0.8rem; line-height: 1;
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.home-rate-refresh.spinning { animation: homeRateSpin 0.8s linear infinite; }
+@keyframes homeRateSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .home-rate-refresh.spinning { animation: none; } }
+
 .home-foot { margin-top: 20px; text-align: center; }
 
 /* Back button in the header (shown in Stocks/MF modes) */
