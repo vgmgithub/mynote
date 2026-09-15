@@ -31,6 +31,51 @@ const state = {
   months: [],
 };
 
+// Me·US only - a display-only $→₹ switch (Holdings summary card, per-stock
+// cards, the Trend chart/Months list, and Me·US's row on the cross-portfolio
+// Overview). Converts at the Home strip's own cached USD→INR rate
+// (meta.homeLiveRates.usdInr) - nothing is converted in storage, and nothing
+// here re-fetches that rate itself (see render()'s top, which refreshes
+// _cachedUsdInr from the local DB cache before any Stocks sub-view paints).
+// In-memory only, resets on reload, same as every other view toggle in this
+// file (_trkHeatmap etc).
+let _usShowInr = false;
+let _cachedUsdInr = null;
+
+// Wraps fmtCur: for a USD figure with the toggle on and a known rate,
+// converts and formats as ₹ instead. Every other currency/portfolio passes
+// straight through untouched - this only ever intercepts that one combination.
+function _fmtCurUS(n, cur) {
+  if (cur === 'USD' && _usShowInr && _cachedUsdInr > 0) {
+    return fmtCur((Number(n) || 0) * _cachedUsdInr, 'INR');
+  }
+  return fmtCur(n, cur);
+}
+
+async function _usCurToggleClick() {
+  _usShowInr = !_usShowInr;
+  if (_usShowInr) {
+    const row = await DB.get('meta', 'homeLiveRates').catch(() => null);
+    _cachedUsdInr = row && row.value && row.value.usdInr ? Number(row.value.usdInr) : null;
+    if (!(_cachedUsdInr > 0)) {
+      _usShowInr = false;
+      toast('No USD→INR rate cached yet — open Home once to fetch it.');
+      return;
+    }
+  }
+  render();
+}
+
+function _usCurToggle() {
+  return el('button', {
+    type: 'button',
+    class: 'us-cur-toggle' + (_usShowInr ? ' active' : ''),
+    title: _usShowInr ? 'Showing ₹ - tap for $' : 'Showing $ - tap for ₹',
+    text: _usShowInr ? '₹ INR' : '$ USD',
+    onclick: _usCurToggleClick,
+  });
+}
+
 // Mutual-fund view state (only used inside the MF surface).
 let _mfSort = 'ret';        // 'ret' | 'xirr' | 'inv' | 'name' (default: Return %)
 let _mfFilter = 'investing'; // 'investing' | 'sold' (holding vs redeemed - not SIP status)
@@ -394,17 +439,25 @@ function renderSummary() {
   const cur = curOf(state.portfolio);
   const s = summarize(state.stocks);
   host.innerHTML = '';
-  host.appendChild(el('div', { class: 'row-between' }, [
+  const labelRow = [
     el('span', { class: 'label', text: 'Current value' }),
+  ];
+  // Me·US only - a display-only $→₹ switch at the Home strip's cached rate.
+  // Nothing is converted in storage; toggling just changes what fmtCur is
+  // asked to show across this card, the stock list below it, the Overview
+  // tab's per-portfolio card, and Trend.
+  if (cur === 'USD') labelRow.push(_usCurToggle());
+  labelRow.push(
     s.hasVal
       ? el('span', { class: 'badge ' + (s.pl >= 0 ? 'good' : 'bad'), text: fmtPct(s.plPct) })
       : el('span', { class: 'badge muted', text: 'no prices yet' }),
-  ]));
-  host.appendChild(el('div', { class: 'big', text: s.hasVal ? fmtCur(s.value, cur) : '-' }));
+  );
+  host.appendChild(el('div', { class: 'row-between' }, labelRow));
+  host.appendChild(el('div', { class: 'big', text: s.hasVal ? _fmtCurUS(s.value, cur) : '-' }));
   const grid = el('div', { class: 'grid' });
   const cells = [
-    ['Invested', s.hasVal ? fmtCur(s.invested, cur) : '-', ''],
-    ['Profit / Loss', s.hasVal ? (s.pl >= 0 ? '+' : '') + fmtCur(s.pl, cur) : '-', s.hasVal ? pctClass(s.pl) : ''],
+    ['Invested', s.hasVal ? _fmtCurUS(s.invested, cur) : '-', ''],
+    ['Profit / Loss', s.hasVal ? (s.pl >= 0 ? '+' : '') + _fmtCurUS(s.pl, cur) : '-', s.hasVal ? pctClass(s.pl) : ''],
     ['Holdings', String(s.holdings) + (s.sold ? '  ·  ' + s.sold + ' sold' : ''), ''],
     ['Up / Down', s.up + ' ▲  /  ' + s.down + ' ▼', ''],
   ];
@@ -681,11 +734,11 @@ function stockCard(s) {
     // Four independent cases, not nested ternaries - a partially-filled sold
     // stock used to render "Sold 0 @ ₹0", which reads like real data.
     const hasSp = Number(s.soldPrice) > 0;
-    if (hasSp && c.soldQty) left.appendChild(el('div', { class: 'meta-line' }, ['Sold ', b(String(c.soldQty)), ' @ ', b(fmtCur(s.soldPrice, cur))]));
-    else if (hasSp) left.appendChild(el('div', { class: 'meta-line' }, ['Sold @ ', b(fmtCur(s.soldPrice, cur))]));
+    if (hasSp && c.soldQty) left.appendChild(el('div', { class: 'meta-line' }, ['Sold ', b(String(c.soldQty)), ' @ ', b(_fmtCurUS(s.soldPrice, cur))]));
+    else if (hasSp) left.appendChild(el('div', { class: 'meta-line' }, ['Sold @ ', b(_fmtCurUS(s.soldPrice, cur))]));
     else if (c.soldQty) left.appendChild(el('div', { class: 'meta-line' }, ['Sold ', b(String(c.soldQty)), ' units']));
 
-    if (c.known) left.appendChild(el('div', { class: 'meta-line ' + (c.goodSell ? 'pos' : 'neg') }, ['Now ', b(fmtCur(s.currentPrice, cur)), ' (' + fmtPct(c.movedPct) + ')']));
+    if (c.known) left.appendChild(el('div', { class: 'meta-line ' + (c.goodSell ? 'pos' : 'neg') }, ['Now ', b(_fmtCurUS(s.currentPrice, cur)), ' (' + fmtPct(c.movedPct) + ')']));
     else left.appendChild(el('div', { class: 'meta-line flat', text: hasSp ? 'Set current price to judge' : 'Add sold price to compare' }));
 
     // Booked and If held are both P/L against the avg buy price - without one
@@ -693,32 +746,32 @@ function stockCard(s) {
     // knowable, so none of the three render.
     if (c.realised != null) {
       const r = Math.round(c.realised);
-      right.appendChild(kv('Booked', el('span', { class: 'kv-val ' + (r > 0 ? 'pos' : r < 0 ? 'neg' : ''), text: (r > 0 ? '+' : '') + fmtCur(r, cur) })));
+      right.appendChild(kv('Booked', el('span', { class: 'kv-val ' + (r > 0 ? 'pos' : r < 0 ? 'neg' : ''), text: (r > 0 ? '+' : '') + _fmtCurUS(r, cur) })));
     }
     if (c.ifHeldPl != null) {
       const p = Math.round(c.ifHeldPl);
-      right.appendChild(kv('If held', el('span', { class: 'kv-val ' + (p > 0 ? 'pos' : p < 0 ? 'neg' : ''), text: (p > 0 ? '+' : '') + fmtCur(p, cur) })));
+      right.appendChild(kv('If held', el('span', { class: 'kv-val ' + (p > 0 ? 'pos' : p < 0 ? 'neg' : ''), text: (p > 0 ? '+' : '') + _fmtCurUS(p, cur) })));
     }
     // Booked minus If held, matching the card's top-to-bottom order. Positive
     // shown green, negative shown red.
     if (c.gap != null && Math.round(c.gap) !== 0) {
       const g = Math.round(c.gap);
-      right.appendChild(kv('vs. exit', el('span', { class: 'kv-val ' + (g > 0 ? 'pos' : 'neg'), text: (g >= 0 ? '+' : '') + fmtCur(g, cur) })));
+      right.appendChild(kv('vs. exit', el('span', { class: 'kv-val ' + (g > 0 ? 'pos' : 'neg'), text: (g >= 0 ? '+' : '') + _fmtCurUS(g, cur) })));
     }
   } else {
     const dpct = displayPct(s, c);
     right.appendChild(el('div', { class: 'pct ' + (dpct != null ? pctClass(dpct) : 'flat'), text: dpct != null ? fmtPct(dpct) : '-' }));
     if (c.priced) {
-      left.appendChild(el('div', { class: 'meta-line' }, [b(String(Number(s.units) || 0)), ' @ ' + fmtCur(s.buyPrice, cur)]));
+      left.appendChild(el('div', { class: 'meta-line' }, [b(String(Number(s.units) || 0)), ' @ ' + _fmtCurUS(s.buyPrice, cur)]));
       // Per-stock "price updated" indicator was removed - the last-updated time is
       // now shown once per portfolio on the Overview tab's Portfolios card.
-      left.appendChild(el('div', { class: 'meta-line' }, ['Current price ', b(fmtCur(s.currentPrice, cur))]));
-      right.appendChild(kv('Overall return', el('span', { class: 'kv-val ' + (c.pl >= 0 ? 'pos' : 'neg'), text: (c.pl >= 0 ? '+' : '') + fmtCur(c.pl, cur) })));
-      right.appendChild(kv('Current value', el('span', { class: 'kv-val', text: fmtCur(c.value, cur) })));
+      left.appendChild(el('div', { class: 'meta-line' }, ['Current price ', b(_fmtCurUS(s.currentPrice, cur))]));
+      right.appendChild(kv('Overall return', el('span', { class: 'kv-val ' + (c.pl >= 0 ? 'pos' : 'neg'), text: (c.pl >= 0 ? '+' : '') + _fmtCurUS(c.pl, cur) })));
+      right.appendChild(kv('Current value', el('span', { class: 'kv-val', text: _fmtCurUS(c.value, cur) })));
     } else {
       const lh = latestHist(s);
       if (lh) left.appendChild(el('div', { class: 'meta-line' }, [b(String(s.history.length)), ' months · latest ', b(lh.month)]));
-      else if (Number(s.units)) left.appendChild(el('div', { class: 'meta-line' }, [b(String(Number(s.units))), ' @ ' + fmtCur(s.buyPrice, cur), ' · set price']));
+      else if (Number(s.units)) left.appendChild(el('div', { class: 'meta-line' }, [b(String(Number(s.units))), ' @ ' + _fmtCurUS(s.buyPrice, cur), ' · set price']));
       else left.appendChild(el('div', { class: 'meta-line flat', text: 'Tap to add prices' }));
     }
     // "Started (year)" from the form — also what the Dividends form uses to
@@ -888,7 +941,7 @@ function monthlyValueChart(months, cur, bname) {
   const vals = months.map((m) => (m.value != null ? Number(m.value) : null));
   drawSeries(vals, '#38bdf8', null,
     (i) => (months[i].returnPct != null && months[i].returnPct < 0 ? '#f87171' : '#34d399'),
-    (i) => ymToLabel(months[i].ym) + ': ' + fmtCur(months[i].value, cur) + (months[i].returnPct != null ? '  (' + fmtPct(months[i].returnPct) + ')' : ''));
+    (i) => ymToLabel(months[i].ym) + ': ' + _fmtCurUS(months[i].value, cur) + (months[i].returnPct != null ? '  (' + fmtPct(months[i].returnPct) + ')' : ''));
   return el('div', {}, [svg, info]);
 }
 
@@ -925,7 +978,7 @@ async function renderTrends() {
   const grid = el('div', { class: 'stats' });
   PORTFOLIOS.forEach((p) => {
     const lm = latest[p.id];
-    const valTxt = lm && lm.value != null ? fmtCur(lm.value, p.cur) : '-';
+    const valTxt = lm && lm.value != null ? _fmtCurUS(lm.value, p.cur) : '-';
     grid.appendChild(el('div', { class: 'stat' }, [
       el('div', { class: ('stat-v ' + _statSizeClass(valTxt)).trim(), text: valTxt }),
       el('div', { class: 'stat-k', text: p.label }),
@@ -1448,10 +1501,10 @@ function renderMonthly() {
     };
     head.appendChild(el('div', { class: 'stats' }, [
       stat('Months', String(months.length)),
-      stat('Avg invested / mo', n ? fmtCur(adds / n, cur) : '-'),
-      stat('Invested', last.invested != null ? fmtCur(last.invested, cur) : '-'),
-      stat('Value', last.value != null ? fmtCur(last.value, cur) : '-'),
-      stat('Total return', last.profitLoss != null ? (last.profitLoss >= 0 ? '+' : '') + fmtCur(last.profitLoss, cur) : '-', last.profitLoss != null ? pctClass(last.profitLoss) : ''),
+      stat('Avg invested / mo', n ? _fmtCurUS(adds / n, cur) : '-'),
+      stat('Invested', last.invested != null ? _fmtCurUS(last.invested, cur) : '-'),
+      stat('Value', last.value != null ? _fmtCurUS(last.value, cur) : '-'),
+      stat('Total return', last.profitLoss != null ? (last.profitLoss >= 0 ? '+' : '') + _fmtCurUS(last.profitLoss, cur) : '-', last.profitLoss != null ? pctClass(last.profitLoss) : ''),
       stat('Overall %', last.returnPct != null ? fmtPct(last.returnPct) : '-', last.returnPct != null ? pctClass(last.returnPct) : ''),
     ]));
     host.appendChild(head);
@@ -1468,17 +1521,17 @@ function renderMonthly() {
 
     // ---- insights ----
     const insights = [];
-    if (best) insights.push(['Best month', ymToLabel(best.ym) + '  ' + (best.mom >= 0 ? '+' : '') + fmtCur(best.mom, cur)]);
-    if (worst) insights.push(['Toughest month', ymToLabel(worst.ym) + '  ' + (worst.mom >= 0 ? '+' : '') + fmtCur(worst.mom, cur)]);
+    if (best) insights.push(['Best month', ymToLabel(best.ym) + '  ' + (best.mom >= 0 ? '+' : '') + _fmtCurUS(best.mom, cur)]);
+    if (worst) insights.push(['Toughest month', ymToLabel(worst.ym) + '  ' + (worst.mom >= 0 ? '+' : '') + _fmtCurUS(worst.mom, cur)]);
     if (winRate != null) insights.push(['Win rate', winRate + '% of months gained (' + wins + ' of ' + moms.length + ')']);
     if (moms.length) {
       const lm = moms[moms.length - 1];
-      insights.push(['Latest month', ymToLabel(lm.ym) + '  ' + (lm.mom >= 0 ? '+' : '') + fmtCur(lm.mom, cur) + ' vs prior']);
+      insights.push(['Latest month', ymToLabel(lm.ym) + '  ' + (lm.mom >= 0 ? '+' : '') + _fmtCurUS(lm.mom, cur) + ' vs prior']);
     }
     const peak = Math.max.apply(null, months.map((m) => Number(m.value) || 0));
     if (peak > 0 && last.value != null) {
       const dd = ((last.value - peak) / peak) * 100;
-      insights.push(['Drawdown', dd >= -0.05 ? 'At / near peak value' : Math.abs(dd).toFixed(1) + '% below peak (' + fmtCur(peak, cur) + ')']);
+      insights.push(['Drawdown', dd >= -0.05 ? 'At / near peak value' : Math.abs(dd).toFixed(1) + '% below peak (' + _fmtCurUS(peak, cur) + ')']);
     }
     if (last.invested && last.value != null) {
       insights.push(['Money multiple', (last.value / last.invested).toFixed(2) + 'x of invested']);
@@ -1520,17 +1573,17 @@ function renderMonthly() {
             class: 'badge ' + (m.profitLoss >= 0 ? 'good' : 'bad'),
             style: 'margin-left:6px; vertical-align:middle',
             title: 'This month\'s value minus invested',
-            text: (m.profitLoss >= 0 ? '+' : '') + fmtCur(m.profitLoss, cur),
+            text: (m.profitLoss >= 0 ? '+' : '') + _fmtCurUS(m.profitLoss, cur),
           })
         : document.createTextNode('');
       const sub = el('div', { class: 'sub' }, [
-        el('span', {}, ['Value ', b(m.value != null ? fmtCur(m.value, cur) : '-'), gainBadge]),
+        el('span', {}, ['Value ', b(m.value != null ? _fmtCurUS(m.value, cur) : '-'), gainBadge]),
         mom != null
-          ? el('span', { class: pctClass(mom), title: momTip }, ['MoM ', b((mom >= 0 ? '+' : '') + fmtCur(mom, cur))])
+          ? el('span', { class: pctClass(mom), title: momTip }, ['MoM ', b((mom >= 0 ? '+' : '') + _fmtCurUS(mom, cur))])
           : el('span', { class: 'flat', title: momTip, text: 'MoM -' }),
       ]);
       const line3 = el('div', { class: 'meta-line' }, [
-        'Invested ' + (m.invested != null ? fmtCur(m.invested, cur) : '-')
+        'Invested ' + (m.invested != null ? _fmtCurUS(m.invested, cur) : '-')
         + '  ·  ▲' + (m.countProfit != null ? m.countProfit : '-') + ' ▼' + (m.countLoss != null ? m.countLoss : '-')
         + (m.nifty != null ? '  ·  ' + bname + ' ' + m.nifty : ''),
       ]);
@@ -1654,6 +1707,14 @@ async function render() {
   // guard keeps a stray call from un-hiding stock sections over the home screen.
   if (state.appMode !== 'stocks') return;
   updateChromeActive();
+  // Refreshed on every render rather than cached across renders - it's a
+  // local IndexedDB read (no network), and Overview shows Me·US regardless
+  // of which portfolio tab is currently selected, so this can't be gated on
+  // state.portfolio being 'me-us'.
+  if (_usShowInr) {
+    const row = await DB.get('meta', 'homeLiveRates').catch(() => null);
+    _cachedUsdInr = row && row.value && row.value.usdInr ? Number(row.value.usdInr) : null;
+  }
   const v = state.view;
   const holdings = v === 'holdings';
   $('#summary').classList.toggle('hidden', !holdings);
