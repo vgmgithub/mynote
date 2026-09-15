@@ -4518,20 +4518,35 @@ function _shortDayMon(iso) {
 // ---------- Home: live Gold/Silver/USD→INR strip ----------
 //
 // Three read-only boxes below the section cards - 24K gold and 999 silver per
-// gram, and the USD→INR rate. Two free, no-key, CORS-enabled APIs (same bar
-// mfapi.in already clears for the Mutual Funds NAV fetch): gold-api.com for
-// XAU/XAG spot (USD per troy ounce), open.er-api.com for the forex rate.
+// gram, and the USD→INR rate. Two free, no-key APIs: gold-api.com for XAU/XAG
+// spot (USD per troy ounce), open.er-api.com for the forex rate.
 //
-// Both are INTERNATIONAL spot, not a domestic Indian retail quote - a
-// jeweller's or a digital-gold app's own rate typically runs a few percent
-// higher once import duty, GST and a platform margin are added on top. This
-// strip is a reference figure, not a receipt, and doesn't feed the Metals
-// tab's own manual ₹/gram price (meta.metalPrices) - the two are independent
-// on purpose, so a flaky fetch here can never silently move what the Metals
-// ledger values a holding at.
+// Gold/silver are the INTERNATIONAL (LBMA-style) spot price, not a domestic
+// Indian retail quote - a jeweller's or a digital-gold app's own rate runs
+// noticeably higher (roughly 10-18%, on IBJA's own published figures) once
+// import duty, GST and a dealer/platform margin are added on top. A real
+// India-domestic feed (IBJA) was tried and dropped: the one free mirror of it
+// has no CORS headers, so a browser fetch to it is blocked outright (confirmed
+// via a live console error, not a guess), and IBJA's own official API is
+// paid-only. Rather than fake a domestic figure with a guessed premium
+// percentage - the same kind of invented-precision this app avoids elsewhere
+// (FD/bond interest use real receipts over formulas once any exist) - this
+// stays honestly labelled as a spot reference.
+//
+// USD→INR is open.er-api.com's mid-market rate. What Google/a bank/a card
+// network shows at the same moment can differ by a few paise to half a rupee
+// even when both sides are working correctly - different providers snapshot
+// at different instants and from different panels of banks, and the gap
+// moves day to day and can flip sign. There is deliberately no "correction
+// constant" added on top of it for the same reason: it would just be wrong
+// again within a day or two.
+//
+// Neither figure feeds the Metals tab's own manual ₹/gram price
+// (meta.metalPrices) - the two stay independent on purpose, so a flaky fetch
+// here can never silently move what the Metals ledger values a holding at.
 //
 // Cached in meta.homeLiveRates and refreshed at most once a day, silently in
-// the background - open.er-api.com's own forex feed only updates daily, and
+// the background - open.er-api.com's own feed only updates daily, and
 // hammering either API on every Home open buys nothing. The cached value
 // paints instantly; a slow or failed fetch never blocks Home.
 const TROY_OZ_GRAMS = 31.1034768;
@@ -4556,6 +4571,7 @@ async function _fetchLiveRates() {
     gold: round2((goldOz / TROY_OZ_GRAMS) * usdInr),
     silver: round2((silverOz / TROY_OZ_GRAMS) * usdInr),
     usdInr: round2(usdInr),
+    source: 'spot',
     asOf: new Date().toISOString(),
   };
   await DB.put('meta', { key: 'homeLiveRates', value }).catch(() => {});
@@ -4583,21 +4599,30 @@ function _liveRateBox(label, val) {
   ]);
 }
 
+// Names the basis gold/silver are on - see the block comment above
+// _fetchLiveRates for why this stays international spot rather than a guessed
+// domestic figure.
+const _liveRatesSourceLabel = (source) => source === 'spot' ? 'Intl spot, not IBJA/jeweller rate' : '';
+
 async function _homeLiveRatesStrip() {
   const cached = await DB.get('meta', 'homeLiveRates').catch(() => null);
   const rates = cached && cached.value ? cached.value : null;
 
-  const goldBox = _liveRateBox('Gold 24K/g', rates ? rates.gold : null);
-  const silverBox = _liveRateBox('Silver 999/g', rates ? rates.silver : null);
+  const goldBox = _liveRateBox('Gold 24K/g*', rates ? rates.gold : null);
+  const silverBox = _liveRateBox('Silver 999/g*', rates ? rates.silver : null);
   const usdBox = _liveRateBox('1 USD', rates ? rates.usdInr : null);
-  const asOfEl = el('div', { class: 'home-rate-asof', text: rates ? _liveRatesAsOfLabel(rates.asOf) : 'Fetching…' });
+  const asOfEl = el('div', {
+    class: 'home-rate-asof',
+    text: rates ? _liveRatesSourceLabel(rates.source) + ' · ' + _liveRatesAsOfLabel(rates.asOf) : 'Fetching…',
+  });
   const refreshBtn = el('button', { type: 'button', class: 'home-rate-refresh', title: 'Refresh', text: '↻' });
 
   const paint = (v) => {
     goldBox.querySelector('.home-rate-val').textContent = _homeRateFmt(v && v.gold);
     silverBox.querySelector('.home-rate-val').textContent = _homeRateFmt(v && v.silver);
     usdBox.querySelector('.home-rate-val').textContent = _homeRateFmt(v && v.usdInr);
-    asOfEl.textContent = v ? _liveRatesAsOfLabel(v.asOf) : (rates ? _liveRatesAsOfLabel(rates.asOf) : 'Unavailable offline');
+    const shown = v || rates;
+    asOfEl.textContent = shown ? _liveRatesSourceLabel(shown.source) + ' · ' + _liveRatesAsOfLabel(shown.asOf) : 'Unavailable offline';
   };
 
   const refresh = async () => {
