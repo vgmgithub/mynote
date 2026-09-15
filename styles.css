@@ -1315,7 +1315,13 @@ body.locked { overflow: hidden; }
   background: var(--card-2); border: 1px solid var(--line); border-radius: 999px; padding: 1px 6px; }
 .brk-note { font-size: 0.7rem; color: var(--muted); margin-top: 3px; line-height: 1.35; }
 .brk-nums { text-align: right; flex: 0 0 auto; }
-.brk-inv { font-size: 0.95rem; font-weight: 700; }
+.brk-inv { font-size: 0.95rem; font-weight: 700; display: flex; align-items: baseline; justify-content: flex-end; gap: 6px; }
+/* Share of Total Invested, pinned beside the rupee figure it divides into.
+   Muted and chip-shaped so it reads as context for that amount rather than
+   competing with it or with the return % on the line below. */
+.brk-alloc { font-size: 0.66rem; font-weight: 700; color: var(--muted); background: var(--bg-2);
+  border: 1px solid var(--line); padding: 1px 7px; border-radius: 999px; white-space: nowrap;
+  font-variant-numeric: tabular-nums; }
 .brk-earn { font-size: 0.72rem; margin-top: 2px; display: flex; align-items: center; justify-content: flex-end; gap: 4px; white-space: nowrap; }
 .brk-pct { font-weight: 700; }
 .brk-pct.muted { color: var(--muted); font-weight: 400; }

@@ -4075,6 +4075,14 @@ function openInvestedBreakdown(bd) {
     const pct = (earned / basis) * 100;
     return el('span', { class: 'brk-pct ' + pctClass(pct), text: fmtPct(pct) });
   };
+  // Each source's share of Total Invested - answers "where is the money
+  // actually sitting", which the rupee figures alone make you compute in your
+  // head. One decimal throughout so a small sliver (0.4%) never rounds away to
+  // a meaningless 0%.
+  const allocPct = (invested) => {
+    if (!(bd.totalInvested > 0)) return '—';
+    return ((invested / bd.totalInvested) * 100).toFixed(1) + '%';
+  };
   const rows = bd.parts.map((p) => {
     const earned = p.value - p.invested;
     return el('div', { class: 'brk-row' }, [
@@ -4086,7 +4094,10 @@ function openInvestedBreakdown(bd) {
         el('div', { class: 'brk-note', text: p.note }),
       ]),
       el('div', { class: 'brk-nums' }, [
-        el('div', { class: 'brk-inv', text: fmtIntCur(p.invested) }),
+        el('div', { class: 'brk-inv' }, [
+          fmtIntCur(p.invested),
+          el('span', { class: 'brk-alloc', text: allocPct(p.invested) }),
+        ]),
         el('div', { class: 'brk-earn ' + pctClass(earned) }, [
           (earned >= 0 ? '+' : '') + fmtIntCur(earned) + ' ', pctRow(p.pctBasis != null ? p.pctBasis : p.invested, earned),
         ]),
@@ -4109,13 +4120,16 @@ function openInvestedBreakdown(bd) {
     el('h2', { text: 'What makes up Total Invested' }),
     el('div', { class: 'brk-head' }, [
       el('span', { text: 'Source' }),
-      el('span', { text: 'Invested · Earned · Return' }),
+      el('span', { text: 'Invested · Share · Earned · Return' }),
     ]),
     el('div', { class: 'brk-list' }, rows),
     el('div', { class: 'brk-row brk-total' }, [
       el('div', { class: 'brk-main' }, [el('div', { class: 'brk-name', text: 'Total' })]),
       el('div', { class: 'brk-nums' }, [
-        el('div', { class: 'brk-inv', text: fmtIntCur(bd.totalInvested) }),
+        el('div', { class: 'brk-inv' }, [
+          fmtIntCur(bd.totalInvested),
+          el('span', { class: 'brk-alloc', text: bd.totalInvested > 0 ? '100.0%' : '—' }),
+        ]),
         el('div', { class: 'brk-earn ' + pctClass(totalEarned) }, [
           (totalEarned >= 0 ? '+' : '') + fmtIntCur(totalEarned) + ' ', pctRow(bd.totalInvested, totalEarned),
         ]),
