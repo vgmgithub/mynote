@@ -2868,23 +2868,18 @@ input.milk-amt:focus { outline: none; }
 .trk-heat .cc-sum td.h-hi1  { background: rgba(239,68,68,0.34); }
 .trk-heat .cc-sum td.h-hi2  { background: rgba(239,68,68,0.62); color: var(--text); font-weight: 800; }
 
-/* Five bands, read against the row's own usual month. Deliberately not a
-   continuous gradient: an eye picks a band out of a grid far faster than it
-   ranks two shades of the same colour. */
+/* Category cells now colour via a continuous inline background (_heatCell in
+   app.js, scaled by % change from the month before) rather than fixed bands -
+   these three classes are the only cases that AREN'T on that scale. */
 .trk-heat td.h-none { color: var(--muted); opacity: 0.45; }
-/* Money coming back, not money going out at some rate against usual - the
-   same green the refund badge uses elsewhere in the app, so the two read as
-   one fact rather than two different colour languages. */
+/* Money coming back, not money going out at some rate against last month -
+   the same green the refund badge uses elsewhere in the app, so the two read
+   as one fact rather than two different colour languages. */
 .trk-heat td.h-refund { background: rgba(52,211,153,0.16); color: var(--good); font-weight: 700; }
-.trk-heat td.h-low2 { background: rgba(52,211,153,0.34); color: var(--text); }
-.trk-heat td.h-low1 { background: rgba(52,211,153,0.16); }
-/* Neutral, not invisible: a cell with a real value AND a real median to judge
-   it against should always show SOME tint - "about normal" is still a result,
-   not the same thing as "nothing to compare" (h-none, below, which has no
-   background at all). Matches the summary rows' own h-mid tint exactly. */
+/* Neutral, not invisible: reserved for the one case with nothing earlier to
+   compare against at all - every other real value gets a real green/red
+   shade now, never a flat "about the same" grey. */
 .trk-heat td.h-mid  { background: rgba(148,163,184,0.22); }
-.trk-heat td.h-hi1  { background: rgba(248,113,113,0.18); }
-.trk-heat td.h-hi2  { background: rgba(248,113,113,0.4); color: var(--text); font-weight: 700; }
 
 .trk-heat-avg { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; margin-top: 14px; padding: 10px 12px; background: var(--card-2); border: 1px solid var(--line); border-radius: 10px; }
 .trk-heat-avg-lbl { font-size: 0.8rem; font-weight: 700; }
@@ -2899,6 +2894,9 @@ input.milk-amt:focus { outline: none; }
 .trk-heat-swatch.h-mid  { background: var(--card-2); color: var(--muted); }
 .trk-heat-swatch.h-hi1  { background: rgba(248,113,113,0.18); }
 .trk-heat-swatch.h-hi2  { background: rgba(248,113,113,0.4); }
+/* Legend gradient bars for the continuous vs-last-month scale (see _heatCell
+   in app.js) - a border so the light end still reads against the page. */
+.trk-heat-swatch-grad { border: 1px solid var(--line); color: var(--text); }
 
 
 /* ---- My Passwords ---- */

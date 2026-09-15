@@ -6418,19 +6418,40 @@ async function renderExpenseSheet(host, token) {
 // of its own history even if it swung hard against the one month right next
 // to it - which is exactly the comparison a reader's eye is actually making
 // when it scans left to right. Changed 2026-09-15.
-const HEAT_BANDS = [
-  [0.60, 'h-low2'],   // well under what this line cost last time
-  [0.85, 'h-low1'],
-  [1.15, 'h-mid'],    // about the same as last time
-  [1.50, 'h-hi1'],
-  [Infinity, 'h-hi2'],
-];
-const _heatBand = (amount, prev) => {
-  if (amount < 0) return 'h-refund';   // money came back - a different fact than "spent little"
-  if (!(amount > 0)) return 'h-none';
-  if (!(prev > 0)) return 'h-mid';     // nothing earlier to compare against - neutral, not a verdict
-  const r = amount / prev;
-  return (HEAT_BANDS.find(([lim]) => r <= lim) || HEAT_BANDS[HEAT_BANDS.length - 1])[1];
+//
+// Grey is reserved for the ONE case with nothing to compare against at all
+// (no earlier entry for that category). Everything else gets a real verdict -
+// a small dip is still green, a small rise still red, just a lighter shade of
+// one than a month that doubled. Five fixed bands couldn't say that: two
+// swings landing in the same band (say +20% and +48%, both "over") painted
+// identically, so a genuinely bigger jump didn't read as any bigger. A
+// continuous intensity (this month's % change from last, capped) fixes both
+// complaints at once - no more grey-when-it-should-be-coloured, and a run of
+// reds or greens now visibly varies with how far each one actually moved.
+const HEAT_GREEN_RGB = '52,211,153';   // same green as --good / the old h-low2
+const HEAT_RED_RGB = '248,113,113';    // same red as --bad / the old h-hi2
+// A change at or beyond this magnitude is already "as coloured as it gets" -
+// capping keeps one huge outlier from being the only cell with real colour
+// and washing out every smaller-but-real swing sitting next to it.
+const HEAT_CAP_PCT = 0.5;
+// {cls} for the fixed cases (refund / no data / nothing to compare against),
+// {style} for everything else - a continuously-scaled inline background, the
+// same technique health.js's calendar chips already use for their own
+// continuous month-colour sweep, rather than inventing a dozen more classes
+// for what is genuinely a smooth scale.
+const _heatCell = (amount, prev) => {
+  if (amount < 0) return { cls: 'h-refund' };   // money came back - a different fact than "spent little"
+  if (!(amount > 0)) return { cls: 'h-none' };
+  if (!(prev > 0)) return { cls: 'h-mid' };      // nothing earlier to compare against - neutral, not a verdict
+  const change = (amount - prev) / prev;
+  const intensity = Math.min(1, Math.abs(change) / HEAT_CAP_PCT);
+  // Floors so even a small real change still shows SOME colour (the whole
+  // point of dropping the flat "normal" band), rising to a near-solid fill
+  // at the cap.
+  const alpha = (0.14 + intensity * 0.5).toFixed(2);
+  const rgb = change <= 0 ? HEAT_GREEN_RGB : HEAT_RED_RGB;
+  const strong = intensity > 0.55;
+  return { style: 'background: rgba(' + rgb + ',' + alpha + ');' + (strong ? ' color: var(--text); font-weight: 700;' : '') };
 };
 
 
@@ -6576,7 +6597,9 @@ function _trkHeatmapGrid(host, yms, byYm, allocs, efLoans, thisYm, mod, now) {
   const row = (label, cls, cells) => {
     const tr = el('tr', { class: cls || '' }, [el('th', { class: 'rowhead', text: label })]);
     cells.forEach((c) => {
-      const td = el('td', { class: (c.cls || '') + (c.onclick ? ' is-clickable' : ''), title: c.title || '', text: c.text });
+      // `style`, when given, is a continuously-scaled inline background (see
+      // _heatCell) - not something a fixed class list can express.
+      const td = el('td', { class: (c.cls || '') + (c.onclick ? ' is-clickable' : ''), style: c.style || '', title: c.title || '', text: c.text });
       if (c.onclick) td.onclick = c.onclick;
       tr.appendChild(td);
     });
@@ -6606,9 +6629,11 @@ function _trkHeatmapGrid(host, yms, byYm, allocs, efLoans, thisYm, mod, now) {
       // ("—") has nothing to show, so it stays inert rather than
       // offering a tap that lands on nothing.
       const recs = v !== 0 ? (byYm.get(k) || []).filter((r) => (r.category || 'Prev Bill Bal / Misc') === name) : null;
+      const heat = _heatCell(v, prevVal);
       return {
         text: money(v),
-        cls: _heatBand(v, prevVal),
+        cls: heat.cls,
+        style: heat.style,
         title: v > 0 && prevVal > 0
           ? name + ' ' + mod.monthLabel(k) + ': ' + fmtSheetCur(v) + ' · was ' + fmtIntCur(prevVal) + ' before'
           : '',
@@ -6696,11 +6721,16 @@ function _trkHeatmapGrid(host, yms, byYm, allocs, efLoans, thisYm, mod, now) {
 
   host.appendChild(el('div', { class: 'trk-heat-key' }, [
     el('span', { class: 'trk-heat-key-lbl', text: 'vs the month before' }),
-    el('span', { class: 'trk-heat-swatch h-low2', text: 'well under' }),
-    el('span', { class: 'trk-heat-swatch h-low1', text: 'under' }),
-    el('span', { class: 'trk-heat-swatch h-mid', text: 'about the same' }),
-    el('span', { class: 'trk-heat-swatch h-hi1', text: 'over' }),
-    el('span', { class: 'trk-heat-swatch h-hi2', text: 'well over' }),
+    el('span', { class: 'trk-heat-swatch h-mid', text: 'no earlier month' }),
+    // A gradient bar, not fixed steps - the actual cells scale continuously
+    // (a bigger change = a deeper shade), so a handful of discrete swatches
+    // would misrepresent the very thing this legend is explaining.
+    el('span', { class: 'trk-heat-swatch trk-heat-swatch-grad',
+      style: 'background: linear-gradient(90deg, rgba(' + HEAT_GREEN_RGB + ',0.14), rgba(' + HEAT_GREEN_RGB + ',0.7));',
+      text: 'down · less → more' }),
+    el('span', { class: 'trk-heat-swatch trk-heat-swatch-grad',
+      style: 'background: linear-gradient(90deg, rgba(' + HEAT_RED_RGB + ',0.14), rgba(' + HEAT_RED_RGB + ',0.7));',
+      text: 'up · less → more' }),
   ]));
   host.appendChild(explainRow('About the heatmap', [
     'One row per category, one column per month. Every row is coloured against '
@@ -6711,6 +6741,9 @@ function _trkHeatmapGrid(host, yms, byYm, allocs, efLoans, thisYm, mod, now) {
       + 'category - a gap month with nothing bought is skipped over rather than counted as a drop to '
       + 'zero. A month with nothing earlier to compare against (the first one logged) reads neutral, '
       + 'not red or green - there is nothing yet to call it against.',
+    'The shade scales with how big the change actually was, not a handful of fixed steps - a small '
+      + 'dip is a pale green, a month that doubled is a deep red, and two different-sized jumps no '
+      + 'longer paint identically just for landing in the same rough band.',
     'Kitty is what went in that month. Spent, Left and Per day are read against it. Days left and '
       + 'Per day only apply to the month in progress - a closed month has no days still to spend.',
   ], 'How the colours are worked out'));
