@@ -616,7 +616,7 @@ async function sharePersonImage(person) {
       let latest = null;
       for (const c of personChecks) {
         const n = c.parameters && normalizeParamEntry(c.parameters[p.id]);
-        if (n && n.value != null && n.value !== '') { latest = { date: c.date, checkType: c.checkType, value: n.value, lab: c.lab }; break; }
+        if (n && n.value != null && n.value !== '') { latest = { date: c.date, checkType: c.checkType, value: n.value, lab: c.lab, medicineTaken: n.medicineTaken }; break; }
       }
       if (!latest) return;
       const status = getParamStatus(latest.value, effectiveRange(p, person.gender));
@@ -695,17 +695,25 @@ async function sharePersonImage(person) {
       const dateStr = new Date(r.latest.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
       ctx.fillText(_canvasTruncate(ctx, dateStr + (r.latest.checkType ? ' · ' + r.latest.checkType : ''), width - pad * 2 - 90), pad + 8, y + 34);
 
-      // Lab, as the same muted pill the on-screen entry row uses (.hc-lab-tag).
+      // Lab (same muted pill the on-screen entry row uses, .hc-lab-tag) and,
+      // right after it, the medicine-taken pill emoji (.hc-med-pill) - same
+      // pairing as the on-screen sub-line in renderEntryRow.
+      let subX = pad + 8;
       if (r.latest.lab) {
         ctx.font = '600 9px ' + FONT;
-        const labText = _canvasTruncate(ctx, r.latest.lab, width - pad * 2 - 40);
+        const labText = _canvasTruncate(ctx, r.latest.lab, width - pad * 2 - 60);
         const tw = ctx.measureText(labText).width;
-        const bx = pad + 8, by = y + 42, bw = tw + 14, bh = 15;
+        const bx = subX, by = y + 42, bw = tw + 14, bh = 15;
         ctx.fillStyle = '#eef1f6';
         _canvasRoundRect(ctx, bx, by, bw, bh, 7.5);
         ctx.fill();
         ctx.fillStyle = '#6b7280';
         ctx.fillText(labText, bx + 7, by + bh / 2 + 0.5);
+        subX = bx + bw + 6;
+      }
+      if (r.latest.medicineTaken) {
+        ctx.font = '11px ' + FONT;
+        ctx.fillText('💊', subX, y + 49.5);
       }
 
       ctx.textAlign = 'right';
