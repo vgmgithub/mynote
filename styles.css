@@ -3076,13 +3076,32 @@ a.vd-link:hover { text-decoration: underline; }
 .vd-notes-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .vd-notes { white-space: pre-wrap; font-size: 0.82rem; }
 .vd-when { margin: 10px 2px 0; font-size: 0.66rem; }
-/* Password history (openVaultDetail) - up to 2 superseded passwords, each
-   dated and independently reveal/hide, same masking as the current password. */
-.vd-pw-history { display: flex; flex-direction: column; gap: 8px; }
-.vd-pw-old-row { display: flex; flex-direction: column; gap: 2px; }
-.vd-pw-old-when { font-size: 0.66rem; color: var(--muted); }
-.vd-pw-old-line { display: flex; align-items: center; gap: 2px; }
-.vd-pw-old { flex: 1; }
+/* History icon beside the current password (openVaultDetail) - opens the
+   dedicated timeline below. Back arrow on that timeline's own header. */
+.vault-history { color: var(--accent); }
+.vd-back { font-size: 1.3rem; line-height: 1; padding: 2px 8px; }
+
+/* Password history timeline (openVaultPasswordHistory) - a vertical line
+   with one dot per entry, "Current" first, superseded passwords below it in
+   the order they stopped being current. */
+.vh-timeline { position: relative; margin: 14px 4px 4px; padding-left: 20px; }
+.vh-timeline::before {
+  content: ''; position: absolute; left: 4px; top: 5px; bottom: 5px; width: 2px; background: var(--line);
+}
+.vh-item { position: relative; padding-bottom: 20px; }
+.vh-item:last-child { padding-bottom: 0; }
+.vh-dot {
+  position: absolute; left: -20px; top: 3px; width: 10px; height: 10px; border-radius: 50%;
+  background: var(--card-2); border: 2px solid var(--muted);
+}
+.vh-current .vh-dot { background: var(--accent); border-color: var(--accent); }
+.vh-when { font-size: 0.68rem; font-weight: 700; color: var(--muted); margin-bottom: 5px; }
+.vh-current-badge {
+  display: inline-block; padding: 1px 7px; border-radius: 999px; background: var(--accent);
+  color: #fff; font-size: 0.62rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.4px;
+}
+.vh-pw-row { display: flex; align-items: center; gap: 2px; }
+.vh-pw-val { flex: 1; }
 
 /* ---- Icon picker in the form ---- */
 .vault-ico-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

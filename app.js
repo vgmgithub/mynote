@@ -4976,6 +4976,20 @@ function _copyIcon() {
   return svg;
 }
 
+function _historyIcon() {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('class', 'edit-ico');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+  // A clock face with a back-turning arrow around it - "how this looked
+  // before", the same read a wall clock's hands give for "what time was it".
+  svg.innerHTML = '<path d="M12 4.5a7.5 7.5 0 1 1 -6.7 4.1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>'
+    + '<path d="M4.6 4.8v3.8h3.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>'
+    + '<path d="M12 8.2v4.1l2.8 1.7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>';
+  return svg;
+}
+
 function _editIcon() {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('viewBox', '0 0 24 24');
@@ -7230,38 +7244,15 @@ function openVaultDetail(mod, r) {
       eye.title = shown ? 'Hide the password' : 'Show the password';
       eye.setAttribute('aria-label', eye.title);
     });
-    line('Password', pwVal, [eye, _vaultCopyBtn('Password', () => r.password)]);
-  }
-
-  // Up to the last TWO superseded passwords, each dated to when it stopped
-  // being current (set in openVaultForm's save, on an actual change to a
-  // password that was already something) - masked the same way the current
-  // one is, each with its own reveal, not one toggle for the whole list.
-  if (Array.isArray(r.passwordHistory) && r.passwordHistory.length) {
-    const histRows = r.passwordHistory.map((h) => {
-      const pass = String(h.password || '');
-      const dots = '•'.repeat(Math.min(14, Math.max(6, pass.length)));
-      const val = el('span', { class: 'vd-value vd-pw vd-pw-old', text: dots });
-      const eye = el('button', { class: 'icon-btn vault-eye', type: 'button',
-        text: '👁', title: 'Show this password', 'aria-label': 'Show this password' });
-      let shown = false;
-      eye.addEventListener('click', () => {
-        shown = !shown;
-        val.textContent = shown ? pass : dots;
-        val.classList.toggle('is-open', shown);
-        eye.textContent = shown ? '🙈' : '👁';
-        eye.title = shown ? 'Hide this password' : 'Show this password';
-        eye.setAttribute('aria-label', eye.title);
-      });
-      return el('div', { class: 'vd-pw-old-row' }, [
-        el('div', { class: 'vd-pw-old-when', text: h.changedAt ? new Date(h.changedAt).toLocaleString() : 'Unknown date' }),
-        el('div', { class: 'vd-pw-old-line' }, [val, eye, _vaultCopyBtn('Old password', () => pass)]),
-      ]);
-    });
-    rows.push(el('div', { class: 'vd-row vd-notes-row' }, [
-      el('div', { class: 'vd-notes-head' }, [el('div', { class: 'vd-label', text: 'Password history' })]),
-      el('div', { class: 'vd-pw-history' }, histRows),
-    ]));
+    // History icon only appears once there IS one - a button that opens
+    // nothing is worse than no button at all.
+    const hasHistory = Array.isArray(r.passwordHistory) && r.passwordHistory.length > 0;
+    const historyBtn = hasHistory ? el('button', {
+      class: 'icon-btn vault-history', type: 'button',
+      title: 'Password history', 'aria-label': 'Password history',
+      onclick: () => { closeModal(); openVaultPasswordHistory(mod, r); },
+    }, [_historyIcon()]) : null;
+    line('Password', pwVal, [historyBtn, eye, _vaultCopyBtn('Password', () => r.password)].filter(Boolean));
   }
 
   if (r.url) {
@@ -7309,6 +7300,86 @@ function openVaultDetail(mod, r) {
         el('button', { class: 'btn ghost', text: 'Close', onclick: closeModal }),
       ]),
     ]),
+  ]));
+}
+
+// A masked value with its own reveal/copy - shared by the current-password
+// row and every history row below it, so "show" never means "show every
+// password on the timeline at once".
+function _vaultMaskedRow(pass, label) {
+  const p = String(pass || '');
+  const dots = '•'.repeat(Math.min(14, Math.max(6, p.length)));
+  const val = el('span', { class: 'vd-value vd-pw vh-pw-val', text: dots });
+  const eye = el('button', { class: 'icon-btn vault-eye', type: 'button',
+    text: '👁', title: 'Show ' + label, 'aria-label': 'Show ' + label });
+  let shown = false;
+  eye.addEventListener('click', () => {
+    shown = !shown;
+    val.textContent = shown ? p : dots;
+    val.classList.toggle('is-open', shown);
+    eye.textContent = shown ? '🙈' : '👁';
+    eye.title = (shown ? 'Hide ' : 'Show ') + label;
+    eye.setAttribute('aria-label', eye.title);
+  });
+  return el('div', { class: 'vh-pw-row' }, [val, eye, _vaultCopyBtn(label, () => p)]);
+}
+
+// ---------- Password history: a dedicated timeline, reached from the
+// history icon beside the current password on the detail page. ----------
+//
+// Broken out of the detail page rather than listed inline there (an earlier
+// version did that) because a timeline is a different shape of thing than a
+// flat field list - it reads top-to-bottom as "now, then before that, then
+// before that", which a label/value row doesn't communicate on its own.
+function openVaultPasswordHistory(mod, r) {
+  if (!_vaultKey) return;
+  const hist = Array.isArray(r.passwordHistory) ? r.passwordHistory : [];
+
+  // "Current" is the timeline's own first entry, not just a header above
+  // it - the whole point of a timeline is showing where today's password
+  // sits relative to what came before, not just listing the old ones.
+  const items = [
+    el('div', { class: 'vh-item vh-current' }, [
+      el('div', { class: 'vh-dot' }),
+      el('div', { class: 'vh-content' }, [
+        el('div', { class: 'vh-when' }, [
+          el('span', { class: 'vh-current-badge', text: 'Current' }),
+          r.updatedAt ? ' · since ' + new Date(r.updatedAt).toLocaleString() : '',
+        ]),
+        _vaultMaskedRow(r.password, 'the current password'),
+      ]),
+    ]),
+    ...hist.map((h) => el('div', { class: 'vh-item' }, [
+      el('div', { class: 'vh-dot' }),
+      el('div', { class: 'vh-content' }, [
+        el('div', { class: 'vh-when', text: h.changedAt ? new Date(h.changedAt).toLocaleString() : 'Unknown date' }),
+        _vaultMaskedRow(h.password, 'this password'),
+      ]),
+    ])),
+  ];
+
+  const back = el('button', {
+    class: 'icon-btn vd-back', type: 'button', title: 'Back to the entry', 'aria-label': 'Back to the entry',
+    onclick: () => { closeModal(); openVaultDetail(mod, r); },
+  }, ['‹']);
+
+  openModal(el('div', { class: 'sheet' }, [
+    el('div', { class: 'sheet-scroll' }, [
+      el('div', { class: 'vd-head' }, [
+        back,
+        el('div', { class: 'vd-head-text' }, [
+          el('h2', { class: 'vd-title', text: 'Password history' }),
+          el('div', { class: 'vd-cat', text: r.title || 'Untitled' }),
+        ]),
+      ]),
+      el('div', { class: 'vh-timeline' }, items),
+      el('p', { class: 'hint', text: hist.length
+        ? 'Only the last two superseded passwords are kept - an older one is dropped the next time this one changes.'
+        : 'Nothing superseded yet - this is the only password this entry has had.' }),
+    ]),
+    el('div', { class: 'sheet-footer' }, [el('div', { class: 'btn-row' }, [
+      el('button', { class: 'btn ghost', text: 'Close', onclick: closeModal }),
+    ])]),
   ]));
 }
 // ---------- The lock screen ----------
