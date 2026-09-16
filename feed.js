@@ -185,6 +185,51 @@ export async function getApiKey() {
   return (rec && rec.value) || '';
 }
 
+// Today's date in IST, for callers that need to compare against a stored
+// snapshot's own date (see diffRecommendation).
+export function todayISTDateStr(ms) {
+  return toISTDateStr(ms == null ? Date.now() : ms);
+}
+
+// ---- "Did this call change" tracking ----
+//
+// computeRecommendation() is pure and recomputed on every render, so on its
+// own it can only ever say what the call is NOW - never that it moved. This
+// keeps one snapshot per stock so a card can say "changed from Hold".
+//
+// Rolled at most once per calendar day, deliberately: comparing against the
+// user's own last visit would mean opening the app twice in an hour wipes
+// out the very change they came back to look at. `prev` stays frozen all
+// day, so the answer to "what moved" is the same at 9am and 9pm.
+//
+// Stored in `meta` (one key per stock, holding both slots) rather than a new
+// object store - this is two labels, not a growing log, and a new store
+// would mean a schema version bump for every other surface too.
+function _recSnapKey(portfolio, stockId) {
+  return 'feedRecSnap_' + portfolio + '_' + stockId;
+}
+
+export async function diffRecommendation(portfolio, stockId, rec, todayStr) {
+  const key = _recSnapKey(portfolio, stockId);
+  const row = await DB.get('meta', key).catch(() => null);
+  const stored = row && row.value;
+  const today = { label: rec.label, color: rec.color, severity: rec.severity, dateStr: todayStr };
+
+  // First time we've ever seen this stock - record a baseline, report no change.
+  if (!stored || !stored.curr) {
+    await DB.put('meta', { key, value: { prev: null, curr: today } }).catch(() => {});
+    return null;
+  }
+  // A day has passed since the last snapshot: what was current becomes the
+  // thing today is compared against, from now until the next day rolls.
+  if (stored.curr.dateStr !== todayStr) {
+    await DB.put('meta', { key, value: { prev: stored.curr, curr: today } }).catch(() => {});
+    return stored.curr;
+  }
+  // Already rolled today - keep answering with the same frozen snapshot.
+  return stored.prev || null;
+}
+
 export async function saveApiKey(key) {
   await DB.put('meta', { key: 'feedApiKey', value: key || '' });
 }

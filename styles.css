@@ -854,6 +854,36 @@ table.heatmap { border-collapse: collapse; font-size: 0.72rem; }
 .feed-section-title { font-size: 0.95rem; font-weight: 700; margin: 0; }
 .feed-section-sub { font-size: 0.68rem; color: var(--muted); }
 
+/* Every portfolio's day at a glance, above the selected one's own list. */
+.feed-cross { display: flex; gap: 8px; margin: 10px 0; flex-wrap: wrap; }
+.feed-cross-item {
+  flex: 1 1 0; min-width: 96px; display: flex; flex-direction: column; gap: 3px;
+  padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--card);
+}
+.feed-cross-item.active { border-color: var(--accent); background: var(--card-2); }
+.feed-cross-label { font-size: 0.66rem; color: var(--muted); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.feed-cross-stat { font-size: 0.7rem; color: var(--muted); }
+.feed-cross-stat.muted { opacity: 0.7; }
+.feed-cross-stat .fc-today { color: var(--text); font-weight: 700; }
+.feed-cross-stat .fc-flag { color: var(--text); font-weight: 700; }
+.feed-cross-stat .fc-flag.on { color: #f97316; }
+
+/* What moved since the last check - suppressed entirely when nothing did. */
+.feed-digest {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin: 10px 0; padding: 7px 11px; border-radius: 10px;
+  background: var(--card); border: 1px solid var(--line); font-size: 0.74rem; font-weight: 600;
+}
+.feed-digest-up { color: #16a34a; }
+.feed-digest-down { color: #ef4444; }
+.feed-digest-note { color: var(--muted); font-weight: 500; font-size: 0.68rem; }
+
+/* "was X" under a card's badge, when today's call differs from the last. */
+.feed-changed { display: flex; align-items: center; gap: 5px; font-size: 0.68rem; color: var(--muted); }
+.feed-changed .fc-arrow { font-size: 0.6rem; }
+.feed-changed.up .fc-arrow { color: #16a34a; }
+.feed-changed.down .fc-arrow { color: #ef4444; }
+
 .feed-list { display: flex; flex-direction: column; gap: 0; }
 .feed-item { display: flex; flex-direction: column; margin-bottom: 10px; }
 .feed-timeline { display: flex; align-items: center; gap: 8px; padding: 4px 14px 2px; }

@@ -1108,27 +1108,70 @@ async function renderFeed() {
 
   host.appendChild(_buildFeedHeader(mod, lastFetched, navigator.onLine ? 'online' : 'offline', portfolio));
 
+  // Whether anything happened in the OTHER portfolios is a question this tab
+  // could never answer before - it only ever showed the one that happened to
+  // be selected. Cache-only, so it costs no API calls.
+  const cross = await _buildCrossPortfolioDigest(mod, portfolio);
+  if (cross) host.appendChild(cross);
+
   if (!holdings.length) {
     host.appendChild(el('div', { class: 'feed-empty', text: 'No active holdings - Feed is empty.' }));
     return;
   }
 
-  host.appendChild(el('div', { class: 'feed-section-head' }, [
-    el('h3', { class: 'feed-section-title', text: 'Holdings · News & Recommendations' }),
-    el('span', { class: 'feed-section-sub', text: 'Tap a card for the news behind each call' }),
-  ]));
-
-  const list = el('div', { class: 'feed-list' });
+  // One pass per stock: the call, the sentiment verdict, and whether that call
+  // has moved since the last snapshot. Hoisted out of the render loop because
+  // all three also drive the ordering and the digest below - and because
+  // diffRecommendation writes, so it must run exactly once per stock.
+  const todayStr = mod.todayISTDateStr();
   let todayNewsCount = 0;
+  const enriched = [];
   for (const stock of holdings) {
     const entry = cached.get(stock.id);
     const hasToday = !!(entry && entry.todayCount > 0);
     const has7d = !!(entry && entry.days && entry.days.length > 0);
     if (hasToday) todayNewsCount++;
+    const items = entry ? (entry.items || []) : [];
+    const rec = mod.computeRecommendation(
+      stock, items, stock.history || [],
+      entry ? (entry.sentiment24h || 0) : 0,
+      entry ? (entry.sentiment7d || 0) : 0,
+      entry ? (entry.days || []) : []
+    );
+    const diff = await mod.diffRecommendation(portfolio, stock.id, rec, todayStr);
+    enriched.push({ stock, entry, hasToday, has7d, rec, verdict: _sentimentVerdict(items), diff });
+  }
+
+  // Ordered by what needs attention rather than by name: a critical event
+  // three-quarters down an alphabetical list is a critical event nobody
+  // reads. Ties break on how loud the week was, then name for stability.
+  enriched.sort((a, b) => {
+    const ra = FEED_SEVERITY_RANK[a.rec.severity] != null ? FEED_SEVERITY_RANK[a.rec.severity] : 9;
+    const rb = FEED_SEVERITY_RANK[b.rec.severity] != null ? FEED_SEVERITY_RANK[b.rec.severity] : 9;
+    if (ra !== rb) return ra - rb;
+    const sa = Math.abs(a.entry ? (a.entry.sentiment7d || 0) : 0);
+    const sb = Math.abs(b.entry ? (b.entry.sentiment7d || 0) : 0);
+    if (sa !== sb) return sb - sa;
+    return (a.stock.name || '').localeCompare(b.stock.name || '');
+  });
+
+  const digest = _buildFeedDigest(enriched);
+  if (digest) host.appendChild(digest);
+
+  host.appendChild(el('div', { class: 'feed-section-head' }, [
+    el('h3', { class: 'feed-section-title', text: 'Holdings · News & Recommendations' }),
+    el('span', { class: 'feed-section-sub', text: 'Sorted by what needs attention · tap a card for the news behind each call' }),
+  ]));
+
+  const list = el('div', { class: 'feed-list' });
+  for (const row of enriched) {
+    const { stock, entry, hasToday, has7d } = row;
 
     // --- Today's Stocks card ---
     // Built with today's articles only. Stocks with no today news get
     // data-no-today so applyFilter keeps them hidden regardless of tab switch.
+    // Computes its own call: today's articles are a narrower signal than the
+    // week's, so it is genuinely a different question from the All card's.
     const todayWrapper = el('div', { class: 'feed-item feed-item-today' });
     if (!hasToday) todayWrapper.setAttribute('data-no-today', 'true');
     const todayEntry = entry ? Object.assign({}, entry, { items: entry.todayItems || [] }) : null;
@@ -1137,8 +1180,9 @@ async function renderFeed() {
 
     // --- All tab card ---
     // Full 7-day articles + dot timeline for any stock with news in the window.
+    // Reuses the call already computed above rather than recomputing it.
     const allWrapper = el('div', { class: 'feed-item feed-item-all' });
-    allWrapper.appendChild(_buildFeedCard(stock, entry, mod));
+    allWrapper.appendChild(_buildFeedCard(stock, entry, mod, row));
     if (has7d) {
       const tl = _buildFeedTimeline(entry);
       if (tl) allWrapper.appendChild(tl);
@@ -1171,6 +1215,84 @@ async function renderFeed() {
   if (navigator.onLine && mod.shouldAutoRefresh(lastFetched, portfolio, Date.now()) && !_feedFetchInFlight) {
     refreshFeedNow(/*silent*/ true);
   }
+}
+
+// Ordering for "what needs attention first". Not a quality scale - a
+// Critical event and an averaging opportunity are both things to act on,
+// they just rank differently in how fast.
+const FEED_SEVERITY_RANK = { critical: 0, caution: 1, opportunity: 2, positive: 3, neutral: 4 };
+// Direction of travel when a call changes, for the digest only. Deliberately
+// coarse: this decides "better or worse", not how much.
+const FEED_COLOR_RANK = { red: 0, orange: 1, grey: 2, blue: 3, green: 4 };
+
+// True when today's call differs from the stored one. Checks colour as well as
+// label because the same label covers several states ("Hold" is returned for
+// no-news, mixed-signals AND a positive week) - those move the colour only.
+function _feedCallMoved(diff, rec) {
+  if (!diff || !diff.label) return false;
+  return diff.label !== rec.label || (diff.color || 'grey') !== (rec.color || 'grey');
+}
+
+// One line above the list: what actually moved since the last snapshot, so
+// the five-second version doesn't need every card read. Hidden entirely when
+// nothing changed - a row saying "0 improved, 0 worsened" is just noise.
+function _buildFeedDigest(enriched) {
+  let improved = 0, worsened = 0;
+  for (const { rec, diff } of enriched) {
+    // Colour, not just label: computeRecommendation returns "Hold" for several
+    // different states, so a grey Hold (mixed signals) turning into a green
+    // Hold (positive week) is a real move that a label-only check can't see.
+    if (!_feedCallMoved(diff, rec)) continue;
+    const prevRank = FEED_COLOR_RANK[diff.color] != null ? FEED_COLOR_RANK[diff.color] : 2;
+    const curRank = FEED_COLOR_RANK[rec.color] != null ? FEED_COLOR_RANK[rec.color] : 2;
+    if (curRank > prevRank) improved++;
+    else if (curRank < prevRank) worsened++;
+  }
+  if (!improved && !worsened) return null;
+  return el('div', { class: 'feed-digest' }, [
+    improved ? el('span', { class: 'feed-digest-up', text: '▲ ' + improved + ' improved' }) : null,
+    worsened ? el('span', { class: 'feed-digest-down', text: '▼ ' + worsened + ' worsened' }) : null,
+    el('span', { class: 'feed-digest-note', text: 'since the last check' }),
+  ].filter(Boolean));
+}
+
+// Every portfolio's day at a glance, not just the selected one. Reads only
+// what's already cached (no fetch), so it can't spend any of the free tier's
+// 100 daily requests - a stale portfolio simply reports what it last knew.
+async function _buildCrossPortfolioDigest(mod, currentPortfolio) {
+  const rows = await Promise.all(PORTFOLIOS.map(async (p) => {
+    const all = await DB.byPortfolio('stocks', p.id).catch(() => []);
+    const stocks = (all || []).filter((s) => s.status !== 'sold' && (s.category || '').toUpperCase() !== 'BONDS');
+    if (!stocks.length) return { id: p.id, label: p.label, holdings: 0, today: 0, flagged: 0 };
+    const cached = await mod.getCachedFeed(p.id).catch(() => new Map());
+    let today = 0, flagged = 0;
+    for (const s of stocks) {
+      const entry = cached.get(s.id);
+      if (entry && entry.todayCount > 0) today++;
+      const rec = mod.computeRecommendation(
+        s, entry ? (entry.items || []) : [], s.history || [],
+        entry ? (entry.sentiment24h || 0) : 0,
+        entry ? (entry.sentiment7d || 0) : 0,
+        entry ? (entry.days || []) : []
+      );
+      if (rec.severity === 'critical' || rec.severity === 'caution') flagged++;
+    }
+    return { id: p.id, label: p.label, holdings: stocks.length, today, flagged };
+  }));
+  if (!rows.some((r) => r.holdings)) return null;
+  return el('div', { class: 'feed-cross' }, rows.map((r) => el('div', {
+    class: 'feed-cross-item' + (r.id === currentPortfolio ? ' active' : ''),
+  }, [
+    el('span', { class: 'feed-cross-label', text: r.label }),
+    r.holdings
+      ? el('span', { class: 'feed-cross-stat' }, [
+          el('b', { class: 'fc-today', text: String(r.today) }),
+          el('span', { text: ' today · ' }),
+          el('b', { class: 'fc-flag' + (r.flagged ? ' on' : ''), text: String(r.flagged) }),
+          el('span', { text: ' flagged' }),
+        ])
+      : el('span', { class: 'feed-cross-stat muted', text: 'no holdings' }),
+  ])));
 }
 
 function _buildFeedHeader(mod, lastFetched, status, portfolio) {
@@ -1243,15 +1365,19 @@ function _buildFeedTimeline(entry) {
   ]);
 }
 
-function _buildFeedCard(stock, entry, mod) {
+// `pre` carries the call/verdict/diff already computed in renderFeed for the
+// All card. Omitted for the Today card, which needs its own - today's
+// articles are a narrower window than the week's.
+function _buildFeedCard(stock, entry, mod, pre) {
   const items = entry ? (entry.items || []) : [];
   const sentiment24h = entry ? (entry.sentiment24h || 0) : 0;
   const sentiment7d = entry ? (entry.sentiment7d || 0) : 0;
   // Recompute every render - cheap and ensures price-history updates take effect.
-  const rec = mod.computeRecommendation(stock, items, stock.history || [], sentiment24h, sentiment7d, entry ? (entry.days || []) : []);
+  const rec = pre ? pre.rec : mod.computeRecommendation(stock, items, stock.history || [], sentiment24h, sentiment7d, entry ? (entry.days || []) : []);
   const articleCount = items.length;
-  const verdict = _sentimentVerdict(items);
+  const verdict = pre ? pre.verdict : _sentimentVerdict(items);
   const flag = verdict.flag;
+  const diff = pre ? pre.diff : null;
 
   const card = el('div', { class: 'feed-card' });
 
@@ -1260,6 +1386,24 @@ function _buildFeedCard(stock, entry, mod) {
     el('div', { class: 'feed-stock', text: stock.name }),
     el('div', { class: 'feed-badge ' + (rec.color || 'grey'), text: rec.label }),
   ]));
+
+  // What the call was before it moved. A badge on its own says where you are;
+  // this says which way you're travelling, which is the more useful half.
+  if (_feedCallMoved(diff, rec)) {
+    const prevRank = FEED_COLOR_RANK[diff.color] != null ? FEED_COLOR_RANK[diff.color] : 2;
+    const curRank = FEED_COLOR_RANK[rec.color] != null ? FEED_COLOR_RANK[rec.color] : 2;
+    const dir = curRank > prevRank ? 'up' : curRank < prevRank ? 'down' : 'flat';
+    // Same label, different colour (e.g. a mixed-signals Hold turning into a
+    // positive-week Hold): "was Hold" would read as no change at all, so say
+    // which way it moved instead of naming a label that hasn't changed.
+    const note = diff.label !== rec.label
+      ? 'was “' + diff.label + '”'
+      : (dir === 'up' ? 'improved since the last check' : dir === 'down' ? 'weakened since the last check' : 'shifted since the last check');
+    card.appendChild(el('div', { class: 'feed-changed ' + dir }, [
+      el('span', { class: 'fc-arrow', text: dir === 'up' ? '▲' : dir === 'down' ? '▼' : '→' }),
+      el('span', { text: note }),
+    ]));
+  }
 
   // Row 2 - sentiment verdict pill + transparent count breakdown.
   // The breakdown explains the verdict so it never contradicts the articles.
