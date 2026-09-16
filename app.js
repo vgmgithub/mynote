@@ -300,7 +300,7 @@ async function selectPortfolio(id, dir) {
 // Brief directional slide so a swipe reads as "moved to the next tab" rather
 // than the content silently changing under your thumb. Cosmetic only - the class
 // is stripped on animationend so a rapid series of swipes can't stack them.
-function flashSwipeDirection(dir) {
+export function flashSwipeDirection(dir) {
   const m = $('#main');
   const cls = dir > 0 ? 'swipe-in-right' : 'swipe-in-left';
   m.classList.remove('swipe-in-right', 'swipe-in-left');
@@ -314,7 +314,7 @@ function flashSwipeDirection(dir) {
 // horizontally - the Heatmap's wide table is the real case. That element owns the
 // swipe, so stepping tabs on top of it would fight the user's actual intent.
 // Gated on scrollWidth too: a table narrow enough to fit doesn't block swiping.
-function insideHorizontalScroller(target, root) {
+export function insideHorizontalScroller(target, root) {
   for (let n = target; n && n !== root; n = n.parentElement) {
     if (n.scrollWidth > n.clientWidth + 1 && /(auto|scroll)/.test(getComputedStyle(n).overflowX)) return true;
   }

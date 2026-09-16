@@ -1,6 +1,6 @@
 // Health Check module - Medical records tracking
 import { DB } from './db.js';
-import { $, el, toast, openModal, closeModal, field } from './app.js';
+import { $, el, toast, openModal, closeModal, field, flashSwipeDirection, insideHorizontalScroller } from './app.js';
 import { todayISO, num } from './core.js';
 
 let _healthPerson = null;
@@ -15,6 +15,10 @@ let _expandedParamId = null;
 // range are listed - a parameter that has since returned to normal drops
 // out even if an older reading was abnormal.
 let _hcFilterOutOfRange = false;
+// installHealthSwipe() attaches its touch listeners once, the first time
+// Health Check renders - not once per render, since renderHealthCheck()
+// clears and rebuilds #healthView's children but never the element itself.
+let _healthSwipeInstalled = false;
 
 // Seeded once, the first time the Health Check section is opened with no
 // parameters yet defined - after that the user owns this list via the gear
@@ -175,12 +179,59 @@ function checkTypeBadge(type) {
   return el('span', { class: 'hc-type-badge', style: 'background: ' + color + '22; color: ' + color + ';', text: short });
 }
 
+// Swipe left/right anywhere on the Health Check content to step through the
+// same strip as the person-tabs row (Family, then each person in tab order) -
+// so switching who you're looking at doesn't need a reach up to the tabs.
+// Touch-only, same thresholds as the Stocks portfolio swipe (installPortfolioSwipe
+// in app.js) so the gesture feels consistent app-wide.
+function installHealthSwipe() {
+  if (_healthSwipeInstalled) return;
+  _healthSwipeInstalled = true;
+  const host = document.getElementById('healthView');
+  if (!host) return;
+  let sx = 0, sy = 0, st = 0, live = false;
+  const SWIPE_MIN_X = 55, SWIPE_OFF_AXIS = 0.6, SWIPE_MAX_MS = 700;
+
+  host.addEventListener('touchstart', (e) => {
+    live = e.touches.length === 1 && !insideHorizontalScroller(e.target, host);
+    if (!live) return;
+    sx = e.touches[0].clientX; sy = e.touches[0].clientY; st = Date.now();
+  }, { passive: true });
+  host.addEventListener('touchcancel', () => { live = false; }, { passive: true });
+
+  host.addEventListener('touchend', async (e) => {
+    if (!live) return;
+    live = false;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - sx, dy = t.clientY - sy;
+    if (Date.now() - st > SWIPE_MAX_MS) return;
+    if (Math.abs(dx) < SWIPE_MIN_X) return;
+    if (Math.abs(dy) > Math.abs(dx) * SWIPE_OFF_AXIS) return;
+    const dir = dx < 0 ? 1 : -1;
+
+    const people = await DB.all('healthPeople').catch(() => []);
+    if (!people.length) return;
+    const stripIds = ['family', ...people.map(p => p.id)];
+    const curId = _hcView === 'family' ? 'family' : _healthPerson;
+    const idx = stripIds.indexOf(curId);
+    if (idx === -1) return;
+    const nextId = stripIds[idx + dir];
+    if (nextId === undefined) return; // clamp at both ends, same as the portfolio swipe
+    if (nextId === 'family') { _hcView = 'family'; } else { _hcView = null; _healthPerson = nextId; }
+    await renderHealthCheck();
+    flashSwipeDirection(dir);
+    const activeTab = document.querySelector('.hc-tab.active');
+    if (activeTab) activeTab.scrollIntoView({ inline: 'center', block: 'nearest' });
+  }, { passive: true });
+}
+
 async function renderHealthCheck() {
   const host = document.getElementById('healthView');
   if (!host) {
     console.error('healthView element not found');
     return;
   }
+  installHealthSwipe();
   host.innerHTML = '';
 
   let people;
@@ -323,18 +374,30 @@ async function renderHealthCheck() {
   host.appendChild(sections);
 }
 
-// One row per parameter, one column per family member, each cell the
-// person's LATEST reading for that parameter (not their whole history) -
-// a quick side-by-side instead of paging through each person one at a time.
-// Blank when a person has never recorded that parameter.
+// One row per parameter, one column per family member, each cell a traffic-
+// light DOT for their LATEST reading for that parameter (not their whole
+// history, and not the value itself) - a quick side-by-side glance instead
+// of paging through each person one at a time. Blank/hollow when a person
+// has never recorded that parameter. Tapping a dot jumps to that person's
+// own page with the parameter's card expanded (see openFamilyCell below).
 async function renderFamilyTable(people, params) {
   const checks = await DB.all('healthChecks').catch(() => []);
   const byPerson = new Map(people.map(p => [p.id, checks.filter(c => c.personId === p.id).sort((a, b) => b.date.localeCompare(a.date))]));
 
   const headerRow = el('tr', {}, [
     el('th', { text: 'Parameter' }),
-    ...people.map(p => el('th', {}, [personAvatarImg(calcAge(p.dob), p.gender, '1.1em'), ' ' + p.name])),
+    ...people.map(p => el('th', {}, [personAvatarImg(calcAge(p.dob), p.gender, '1em'), ' ' + p.name])),
   ]);
+
+  const openFamilyCell = (person, param, hasEntry) => {
+    _hcView = null;
+    _healthPerson = person.id;
+    _expandedParamId = hasEntry ? param.id : null;
+    renderHealthCheck().then(() => {
+      const card = Array.from(document.querySelectorAll('.hc-card')).find(c => c.dataset.paramId === String(param.id));
+      if (card) card.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    });
+  };
 
   const bodyRows = params.map(p => {
     const cells = people.map(person => {
@@ -344,10 +407,14 @@ async function renderFamilyTable(people, params) {
         const n = c.parameters && normalizeParamEntry(c.parameters[p.id]);
         if (n && n.value != null && n.value !== '') { latest = n; break; }
       }
-      if (!latest) return el('td', {}, [el('span', { style: 'color: var(--muted);', text: '—' })]);
+      if (!latest) {
+        return el('td', { class: 'hc-dot-cell', onclick: () => openFamilyCell(person, p, false) }, [
+          el('span', { class: 'hc-dot hc-dot-blank', title: person.name + ' - ' + p.label + ': no data' }),
+        ]);
+      }
       const status = getParamStatus(latest.value, effectiveRange(p, person.gender));
-      return el('td', {}, [
-        el('span', { class: 'hc-badge', style: 'background: ' + getStatusBg(status) + '; color: ' + getStatusColor(status) + ';', text: latest.value + (p.unit ? ' ' + p.unit : '') }),
+      return el('td', { class: 'hc-dot-cell', onclick: () => openFamilyCell(person, p, true) }, [
+        el('span', { class: 'hc-dot', style: 'background: ' + getStatusColor(status) + ';', title: person.name + ' - ' + p.label + ': ' + latest.value + (p.unit ? ' ' + p.unit : '') }),
       ]);
     });
     return el('tr', {}, [
@@ -405,7 +472,9 @@ function renderParamSection(param, entries, gender) {
 
   if (entries.length > 1) children.push(renderTrendGraph(resolved, entries));
 
-  return el('div', { class: 'hc-card' }, children);
+  // data-param-id lets a tap on the Family table's indicator dot (see
+  // renderFamilyTable) jump straight here and scroll it into view.
+  return el('div', { class: 'hc-card', 'data-param-id': String(param.id) }, children);
 }
 
 function renderEntryRow(entry, param, opts) {
