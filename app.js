@@ -16201,7 +16201,7 @@ function renderHeatmap() {
         if (monthBestName[m.ym] === s.name) {
           td.appendChild(el('span', { class: 'hm-col-sticker hm-col-best', text: '🏆', title: (s.name || '') + ' — highest return in ' + shortMonth(m.label) }));
         } else if (monthWorstName[m.ym] === s.name) {
-          td.appendChild(el('span', { class: 'hm-col-sticker hm-col-worst', text: '📉', title: (s.name || '') + ' — lowest return in ' + shortMonth(m.label) }));
+          td.appendChild(el('span', { class: 'hm-col-sticker hm-col-worst', text: '🏋️', title: (s.name || '') + ' — lowest return in ' + shortMonth(m.label) }));
         }
       }
       tr.appendChild(td);

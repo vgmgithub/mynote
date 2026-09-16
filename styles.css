@@ -660,7 +660,7 @@ table.heatmap { border-collapse: collapse; font-size: 0.72rem; }
 .heatmap th.rowhead, .heatmap th.corner { position: sticky; left: 0; background: var(--bg-2); text-align: left; }
 .heatmap th.rowhead { z-index: 1; max-width: 160px; }
 .heatmap th.corner { z-index: 3; color: var(--muted); }
-.heatmap .hm-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.heatmap .hm-name { font-weight: 600; font-size: 0.66rem; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .heatmap .hm-cat { display: inline-block; margin-top: 3px; padding: 1px 6px; border-radius: 999px; background: var(--card-2); border: 1px solid var(--line); color: var(--muted); font-size: 0.5rem; }
 .hm-name-row { display: flex; align-items: center; gap: 4px; min-width: 0; }
 /* Bookmark-for-investing toggle - outline star until tapped, filled gold once
