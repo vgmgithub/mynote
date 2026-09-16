@@ -45,6 +45,31 @@ function calcAge(dob) {
   return age;
 }
 
+// Standard WHO adult bands (this app has no child-growth-chart data, so no
+// paediatric BMI adjustment is attempted). Returns null unless BOTH height
+// and weight are on record - a BMI computed from a guessed half of the pair
+// would be worse than not showing one at all.
+//
+// `deltaKg` is how many kilograms at THIS height would land exactly on the
+// nearer edge of the healthy band (18.5-24.9) - "how much", not just "which
+// band" - `null`/`deltaDir: null` once already inside it, since there is
+// nothing to move toward.
+function calcBmi(heightCm, weightKg) {
+  const h = Number(heightCm), w = Number(weightKg);
+  if (!(h > 0) || !(w > 0)) return null;
+  const m = h / 100;
+  const bmi = w / (m * m);
+  let category, cls;
+  if (bmi < 18.5) { category = 'Underweight'; cls = 'low'; }
+  else if (bmi < 25) { category = 'Healthy'; cls = 'good'; }
+  else if (bmi < 30) { category = 'Overweight'; cls = 'high'; }
+  else { category = 'Obese'; cls = 'high'; }
+  let deltaKg = null, deltaDir = null;
+  if (bmi < 18.5) { deltaKg = Math.round((18.5 * m * m) - w); deltaDir = 'gain'; }
+  else if (bmi >= 25) { deltaKg = Math.round(w - (24.9 * m * m)); deltaDir = 'lose'; }
+  return { bmi: Math.round(bmi * 10) / 10, category, cls, deltaKg, deltaDir };
+}
+
 // Age/gender -> avatar, so people aren't asked to pick their own emoji.
 // Five brackets (baby 0-4, child 5-12, teen 13-24, adult 25-50, old 51+),
 // each split Male/Female - ten fixed assets, no neutral fallback, so an
@@ -192,7 +217,11 @@ async function renderHealthCheck() {
   const personTabs = el('div', { class: 'hc-tabs' }, [
     el('button', {
       class: 'hc-tab hc-tab-family' + (_hcView === 'family' ? ' active' : ''),
-      text: 'Family Health',
+      // Short on the tab itself - it sits beside a row of first names, and
+      // "Family Health" repeated there read as a second copy of the page's
+      // own title. The full "Family Health of N members" phrasing stays on
+      // the selected-row below once this tab is actually open.
+      text: 'Family',
       onclick: () => selectTab(() => { _hcView = 'family'; }),
     }),
     ...people.map(p => el('button', {
@@ -229,6 +258,18 @@ async function renderHealthCheck() {
       el('div', { class: 'hc-selected-name', text: isFamily ? 'Family Health of ' + people.length + ' members' : person.name }),
       (!isFamily && age != null) ? el('div', { class: 'hc-selected-age', text: age + 'y' }) : null,
     ].filter(Boolean)),
+    // Only for a real person with both height AND weight on record - see
+    // calcBmi. Sits between the name/age block and Out of Range, on the
+    // same row, so the one-line summary of "who is this and are they okay"
+    // reads left to right without opening anything.
+    (!isFamily && calcBmi(person.heightCm, person.weightKg)) ? (() => {
+      const b = calcBmi(person.heightCm, person.weightKg);
+      return el('div', { class: 'hc-bmi hc-bmi-' + b.cls }, [
+        el('span', { class: 'hc-bmi-val', text: 'BMI ' + b.bmi }),
+        el('span', { class: 'hc-bmi-cat', text: b.category }),
+        b.deltaKg != null ? el('span', { class: 'hc-bmi-delta', text: (b.deltaDir === 'gain' ? '+' : '−') + b.deltaKg + 'kg to healthy' }) : null,
+      ].filter(Boolean));
+    })() : null,
     isFamily ? null : el('button', {
       class: 'hc-filter-btn' + (_hcFilterOutOfRange ? ' active' : ''),
       text: 'Out of Range',
@@ -527,6 +568,8 @@ async function openHealthPeopleManager(activeTab, editing) {
 
   const nameInput = el('input', { type: 'text', placeholder: 'Name' });
   const dobInput = el('input', { type: 'date', max: todayISO() });
+  const heightInput = el('input', { type: 'number', inputmode: 'decimal', step: 'any', placeholder: 'cm' });
+  const weightInput = el('input', { type: 'number', inputmode: 'decimal', step: 'any', placeholder: 'kg' });
   let gender = (isEdit && editing.gender) || null;
 
   const avatarPreview = el('div', { style: 'width: 48px; height: 48px; border-radius: 50%; background: var(--card); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; font-size: 1.6rem;' });
@@ -540,7 +583,11 @@ async function openHealthPeopleManager(activeTab, editing) {
   };
   paintGender();
 
-  if (isEdit) { nameInput.value = editing.name || ''; dobInput.value = editing.dob || ''; }
+  if (isEdit) {
+    nameInput.value = editing.name || ''; dobInput.value = editing.dob || '';
+    if (editing.heightCm != null) heightInput.value = editing.heightCm;
+    if (editing.weightKg != null) weightInput.value = editing.weightKg;
+  }
   paintAvatar();
   // Some mobile browsers only fire 'change' (not 'input') once a date is
   // picked via the native picker UI, so both are wired to be sure the
@@ -551,7 +598,12 @@ async function openHealthPeopleManager(activeTab, editing) {
   const save = async () => {
     const name = nameInput.value.trim();
     if (!name) { toast('Enter a name'); return; }
-    const rec = { name, dob: dobInput.value || null, gender };
+    // Both optional, and BOTH-or-neither for BMI's sake: calcBmi already
+    // requires both before it computes anything, so half a pair sitting on
+    // record would just be dead weight nobody reads.
+    const heightCm = heightInput.value === '' ? null : num(heightInput.value);
+    const weightKg = weightInput.value === '' ? null : num(weightInput.value);
+    const rec = { name, dob: dobInput.value || null, gender, heightCm, weightKg };
     if (isEdit) rec.id = editing.id;
     await DB.put('healthPeople', rec);
     closeModal(); toast(isEdit ? 'Updated' : 'Added'); openHealthPeopleManager('list');
@@ -562,6 +614,10 @@ async function openHealthPeopleManager(activeTab, editing) {
     field('Name', nameInput),
     field('Date of birth', dobInput),
     field('Gender', el('div', { style: 'display: flex; gap: 8px;' }, [maleBtn, femaleBtn])),
+    // Height + weight, side by side like the health-check form's own value
+    // fields - both optional, and only used together (see calcBmi) to show a
+    // BMI indicator on the person's own header row.
+    el('div', { class: 'field-row' }, [field('Height (cm)', heightInput), field('Weight (kg)', weightInput)]),
   ]);
 
   openModal(el('div', { class: 'sheet has-fixed-footer' }, [

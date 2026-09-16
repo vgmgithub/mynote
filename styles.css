@@ -3170,11 +3170,28 @@ textarea.vault-notes:focus { outline: none; border-color: var(--accent); }
 .hc-tab.hc-tab-family { background: #050a12; color: var(--accent); border: 1.5px solid var(--accent); font-weight: 700; }
 .hc-tab.hc-tab-family.active { background: rgba(56, 189, 248, 0.16); color: var(--accent); border: 1.5px solid var(--accent); }
 /* Selected person, shown below the badge row - emoji + name + age. */
-.hc-selected { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; position: sticky; top: 0; z-index: 15; background: var(--bg); padding: 10px 0; }
+.hc-selected { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 18px; position: sticky; top: 0; z-index: 15; background: var(--bg); padding: 10px 0; }
 .hc-selected-name { font-size: 1.2rem; font-weight: 700; }
 .hc-selected-age { font-size: 0.82rem; color: var(--muted); }
 .hc-filter-btn { flex-shrink: 0; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--muted); font-size: 0.78rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .hc-filter-btn.active { background: var(--warn); color: #1a1200; border-color: var(--warn); }
+/* BMI indicator on the person's own header row (see calcBmi in health.js) -
+   a compact pill, coloured by band, that wraps onto its own line on a narrow
+   phone rather than forcing the row to scroll sideways. */
+.hc-bmi {
+  flex: 0 1 auto; display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 6px;
+  padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--card);
+  font-size: 0.66rem; white-space: nowrap;
+}
+.hc-bmi-val { font-weight: 800; }
+.hc-bmi-cat { font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; }
+.hc-bmi-delta { color: var(--muted); }
+.hc-bmi-good { border-color: rgba(52,211,153,0.4); background: rgba(52,211,153,0.1); }
+.hc-bmi-good .hc-bmi-cat { color: var(--good); }
+.hc-bmi-low { border-color: rgba(251,191,36,0.4); background: rgba(251,191,36,0.1); }
+.hc-bmi-low .hc-bmi-cat { color: #fbbf24; }
+.hc-bmi-high { border-color: rgba(248,113,113,0.4); background: rgba(248,113,113,0.1); }
+.hc-bmi-high .hc-bmi-cat { color: var(--bad); }
 .hc-empty { padding: 48px 20px; text-align: center; color: var(--muted); }
 
 /* Family Health: one row per parameter, one column per person, each cell
