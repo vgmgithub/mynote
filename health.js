@@ -247,7 +247,7 @@ async function renderHealthCheck() {
     $('#healthAddBtn').classList.add('hidden');
     host.appendChild(el('div', { class: 'hc-empty' }, [
       el('div', { text: 'No people added yet.' }),
-      el('button', { class: 'hc-empty-cta', text: '+ Add Family Member', onclick: () => openHealthPeopleManager() }),
+      el('button', { class: 'hc-empty-cta', text: '+ Add Family Member', onclick: () => openHealthPeopleManager('add') }),
     ]));
     return;
   }
@@ -908,7 +908,11 @@ function renderManagerTabs(activeKey, addLabel, listLabel, listCount, onSwitch) 
 
 async function openHealthPeopleManager(activeTab, editing) {
   const people = await DB.all('healthPeople').catch(() => []);
-  const tab = activeTab || 'add';
+  // Opened from the Health Check gear with no explicit tab, this should
+  // land on the roster, not straight into the Add form - Add is still one
+  // tap away on its own tab. Callers that specifically want the form (the
+  // empty-state CTA, editing a row) pass 'add' themselves.
+  const tab = activeTab || 'list';
   const isEdit = !!editing;
 
   const tabs = renderManagerTabs(tab, isEdit ? 'Edit' : 'Add', 'List', people.length, (next) => { closeModal(); openHealthPeopleManager(next); });
@@ -974,8 +978,12 @@ async function openHealthPeopleManager(activeTab, editing) {
     const weightKg = weightInput.value === '' ? null : num(weightInput.value);
     const rec = { name, dob: dobInput.value || null, gender, heightCm, weightKg };
     if (isEdit) rec.id = editing.id;
-    await DB.put('healthPeople', rec);
-    closeModal(); toast(isEdit ? 'Updated' : 'Added'); openHealthPeopleManager('list');
+    rec.id = await DB.put('healthPeople', rec);
+    closeModal(); toast(isEdit ? 'Updated' : 'Added');
+    // Straight to this person's own Records page rather than back to the
+    // roster - saving a family member is almost always the first step
+    // toward logging or checking their readings, not the last one.
+    openHealthRecordsManager(rec);
   };
 
   const formBody = el('div', {}, [
