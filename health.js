@@ -323,19 +323,22 @@ async function renderHealthCheck() {
         b.deltaKg != null ? el('span', { class: 'hc-bmi-delta', text: (b.deltaDir === 'gain' ? '+' : '−') + b.deltaKg + 'kg to healthy' }) : null,
       ].filter(Boolean));
     })() : null,
-    // Segment 3: Out of Range filter on a person's page, Share on the
-    // Family table (there's nothing to filter there - it's already only
-    // latest readings).
-    isFamily
-      ? el('button', {
-          class: 'hc-share-btn', text: '📤', title: 'Share family table as an image',
-          onclick: () => shareFamilyTableImage(),
-        })
-      : el('button', {
-          class: 'hc-filter-btn' + (_hcFilterOutOfRange ? ' active' : ''),
-          text: 'Out of Range',
-          onclick: () => { _hcFilterOutOfRange = !_hcFilterOutOfRange; renderHealthCheck(); },
-        }),
+    // Segment 3: Out of Range filter (person page only) plus Share, which
+    // renders everything from this row down to the last entry into a
+    // shareable PNG - the family table on the Family page, this person's
+    // own readings on their page.
+    el('div', { class: 'hc-selected-actions' }, [
+      isFamily ? null : el('button', {
+        class: 'hc-filter-btn' + (_hcFilterOutOfRange ? ' active' : ''),
+        text: 'Out of Range',
+        onclick: () => { _hcFilterOutOfRange = !_hcFilterOutOfRange; renderHealthCheck(); },
+      }),
+      el('button', {
+        class: 'hc-share-btn',
+        title: isFamily ? 'Share family table as an image' : "Share " + person.name + "'s records as an image",
+        onclick: () => isFamily ? shareFamilyTableImage() : sharePersonImage(person),
+      }, [el('img', { src: 'icons/health-share.png', alt: '' })]),
+    ].filter(Boolean)),
   ].filter(Boolean));
   host.appendChild(selected);
   // CSS doesn't auto-stack sticky siblings - two elements both pinned at
@@ -547,27 +550,144 @@ async function shareFamilyTableImage() {
     ctx.strokeStyle = '#dfe3ea';
     ctx.strokeRect(pad, top, width - pad * 2, headH + rowH * rows.length);
 
+    await _shareCanvasImage(canvas, 'family-health.png', 'Family Health');
+  } catch (e) {
+    console.error('shareFamilyTableImage failed:', e);
+    toast('Could not create image');
+  }
+}
+
+// Shared tail end for every Health Check share button: blob the canvas, hand
+// it to the Web Share API as a PNG file so it can go straight to WhatsApp,
+// email, etc., and fall back to a plain download where file sharing isn't
+// supported (e.g. a desktop browser).
+function _shareCanvasImage(canvas, filename, shareTitle) {
+  return new Promise((resolve) => {
     canvas.toBlob(async (blob) => {
-      if (!blob) { toast('Could not create image'); return; }
-      const file = new File([blob], 'family-health.png', { type: 'image/png' });
+      if (!blob) { toast('Could not create image'); resolve(); return; }
+      const file = new File([blob], filename, { type: 'image/png' });
       try {
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          await navigator.share({ files: [file], title: 'Family Health' });
+          await navigator.share({ files: [file], title: shareTitle });
+          resolve();
           return;
         }
       } catch (e) {
-        if (e.name === 'AbortError') return; // user backed out of the share sheet
+        if (e.name === 'AbortError') { resolve(); return; } // user backed out of the share sheet
       }
-      // No file-sharing support (e.g. desktop browser) - save it instead.
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url; a.download = 'family-health.png';
+      a.href = url; a.download = filename;
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       toast('Image saved');
+      resolve();
     }, 'image/png');
+  });
+}
+
+// Redraws one person's own page - the header row (avatar, name, age, BMI)
+// down through their latest reading of every parameter they have one for,
+// same content and order as the collapsed on-screen view - onto a flat PNG
+// to share, same mechanism as shareFamilyTableImage above. Respects the
+// current Out of Range filter, so what gets shared matches what's on screen.
+async function sharePersonImage(person) {
+  try {
+    const checks = await DB.all('healthChecks').catch(() => []);
+    const personChecks = checks.filter(c => c.personId === person.id).sort((a, b) => b.date.localeCompare(a.date));
+    if (!personChecks.length) { toast('No records yet to share'); return; }
+    const params = (await getHealthParams()).slice().sort((a, b) => a.label.localeCompare(b.label));
+
+    const rows = [];
+    params.forEach(p => {
+      let latest = null;
+      for (const c of personChecks) {
+        const n = c.parameters && normalizeParamEntry(c.parameters[p.id]);
+        if (n && n.value != null && n.value !== '') { latest = { date: c.date, checkType: c.checkType, value: n.value }; break; }
+      }
+      if (!latest) return;
+      const status = getParamStatus(latest.value, effectiveRange(p, person.gender));
+      if (_hcFilterOutOfRange && status === 'good') return;
+      rows.push({ param: p, latest, status });
+    });
+    if (!rows.length) { toast('Nothing to share'); return; }
+
+    const mutedColor = getComputedStyle(document.documentElement).getPropertyValue('--muted').trim() || '#8a94a6';
+    const statusColor = (status) => { const c = getStatusColor(status); return c.startsWith('var(') ? mutedColor : c; };
+
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    const width = 360, pad = 16, headH = 60, rowH = 56;
+    const bmi = calcBmi(person.heightCm, person.weightKg);
+    const height = pad + headH + rowH * rows.length + pad;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    const FONT = '-apple-system, Segoe UI, Roboto, Arial, sans-serif';
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
+
+    // Header: initial-in-a-circle avatar (skips loading the actual emoji
+    // asset - a solid, universally-readable stand-in for a static image).
+    ctx.textBaseline = 'middle';
+    const initial = (person.name || '?').trim().charAt(0).toUpperCase();
+    ctx.fillStyle = '#eef1f6';
+    ctx.beginPath(); ctx.arc(pad + 20, pad + 20, 20, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#0e1726';
+    ctx.font = '700 17px ' + FONT;
+    ctx.textAlign = 'center';
+    ctx.fillText(initial, pad + 20, pad + 21);
+
+    ctx.textAlign = 'left';
+    ctx.font = '700 17px ' + FONT;
+    ctx.fillStyle = '#0e1726';
+    ctx.fillText(_canvasTruncate(ctx, person.name, width - pad * 2 - 50), pad + 48, pad + 14);
+
+    const age = calcAge(person.dob);
+    let subLine = age != null ? age + 'y' : '';
+    if (bmi) subLine += (subLine ? '  ·  ' : '') + 'BMI ' + bmi.bmi + ' ' + bmi.category;
+    ctx.font = '400 11px ' + FONT;
+    ctx.fillStyle = '#8a94a6';
+    ctx.fillText(subLine, pad + 48, pad + 32);
+
+    const top = pad + headH;
+    ctx.strokeStyle = '#e3e7ee';
+    ctx.beginPath(); ctx.moveTo(pad, top); ctx.lineTo(width - pad, top); ctx.stroke();
+
+    ctx.font = '600 11px ' + FONT;
+    rows.forEach((r, ri) => {
+      const y = top + rowH * ri;
+      if (ri % 2 === 1) { ctx.fillStyle = '#f7f9fc'; ctx.fillRect(pad, y, width - pad * 2, rowH); }
+
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#0e1726';
+      ctx.font = '700 12px ' + FONT;
+      ctx.fillText(_canvasTruncate(ctx, r.param.label + (r.param.unit ? ' (' + r.param.unit + ')' : ''), width - pad * 2 - 90), pad + 8, y + 18);
+
+      ctx.font = '400 10px ' + FONT;
+      ctx.fillStyle = '#8a94a6';
+      const dateStr = new Date(r.latest.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+      ctx.fillText(dateStr + (r.latest.checkType ? ' · ' + r.latest.checkType : ''), pad + 8, y + 38);
+
+      ctx.textAlign = 'right';
+      ctx.font = '700 13px ' + FONT;
+      ctx.fillStyle = '#0e1726';
+      const valText = r.latest.value + (r.param.unit ? ' ' + r.param.unit : '');
+      ctx.fillText(valText, width - pad - 16, y + rowH / 2);
+      const dotX = width - pad - 26 - ctx.measureText(valText).width;
+      ctx.fillStyle = statusColor(r.status);
+      ctx.beginPath(); ctx.arc(dotX, y + rowH / 2, 5, 0, Math.PI * 2); ctx.fill();
+
+      ctx.strokeStyle = '#e3e7ee';
+      ctx.beginPath(); ctx.moveTo(pad, y + rowH); ctx.lineTo(width - pad, y + rowH); ctx.stroke();
+    });
+
+    await _shareCanvasImage(canvas, (person.name || 'health').replace(/\s+/g, '-').toLowerCase() + '-health.png', person.name + "'s Health");
   } catch (e) {
-    console.error('shareFamilyTableImage failed:', e);
+    console.error('sharePersonImage failed:', e);
     toast('Could not create image');
   }
 }
