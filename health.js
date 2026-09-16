@@ -326,7 +326,8 @@ async function renderHealthCheck() {
     // Segment 3: Out of Range filter (person page only) plus Share, which
     // renders everything from this row down to the last entry into a
     // shareable PNG - the family table on the Family page, this person's
-    // own readings on their page.
+    // own readings on their page. Share sits below Out of Range and reads
+    // smaller on a person's page - Out of Range is the primary action there.
     el('div', { class: 'hc-selected-actions' }, [
       isFamily ? null : el('button', {
         class: 'hc-filter-btn' + (_hcFilterOutOfRange ? ' active' : ''),
@@ -334,7 +335,7 @@ async function renderHealthCheck() {
         onclick: () => { _hcFilterOutOfRange = !_hcFilterOutOfRange; renderHealthCheck(); },
       }),
       el('button', {
-        class: 'hc-share-btn',
+        class: 'hc-share-btn' + (isFamily ? '' : ' hc-share-btn-sm'),
         title: isFamily ? 'Share family table as an image' : "Share " + person.name + "'s records as an image",
         onclick: () => isFamily ? shareFamilyTableImage() : sharePersonImage(person),
       }, [el('img', { src: 'icons/health-share.png', alt: '' })]),
@@ -448,6 +449,18 @@ function _canvasTruncate(ctx, text, maxWidth) {
   let t = text;
   while (t.length > 1 && ctx.measureText(t + '…').width > maxWidth) t = t.slice(0, -1);
   return t + '…';
+}
+
+// Canvas has no built-in rounded-rect path in every supported browser -
+// traces one by hand for the lab-name badge in sharePersonImage.
+function _canvasRoundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
 }
 
 // Redraws the same Family table (parameter rows x person columns of status
@@ -603,7 +616,7 @@ async function sharePersonImage(person) {
       let latest = null;
       for (const c of personChecks) {
         const n = c.parameters && normalizeParamEntry(c.parameters[p.id]);
-        if (n && n.value != null && n.value !== '') { latest = { date: c.date, checkType: c.checkType, value: n.value }; break; }
+        if (n && n.value != null && n.value !== '') { latest = { date: c.date, checkType: c.checkType, value: n.value, lab: c.lab }; break; }
       }
       if (!latest) return;
       const status = getParamStatus(latest.value, effectiveRange(p, person.gender));
@@ -615,9 +628,9 @@ async function sharePersonImage(person) {
     const mutedColor = getComputedStyle(document.documentElement).getPropertyValue('--muted').trim() || '#8a94a6';
     const statusColor = (status) => { const c = getStatusColor(status); return c.startsWith('var(') ? mutedColor : c; };
 
-    const dpr = Math.min(window.devicePixelRatio || 1, 3);
-    const width = 360, pad = 16, headH = 60, rowH = 56;
     const bmi = calcBmi(person.heightCm, person.weightKg);
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    const width = 360, pad = 16, headH = bmi && bmi.deltaKg != null ? 76 : 60, rowH = 64;
     const height = pad + headH + rowH * rows.length + pad;
 
     const canvas = document.createElement('canvas');
@@ -651,7 +664,17 @@ async function sharePersonImage(person) {
     if (bmi) subLine += (subLine ? '  ·  ' : '') + 'BMI ' + bmi.bmi + ' ' + bmi.category;
     ctx.font = '400 11px ' + FONT;
     ctx.fillStyle = '#8a94a6';
-    ctx.fillText(subLine, pad + 48, pad + 32);
+    ctx.fillText(_canvasTruncate(ctx, subLine, width - pad - 48), pad + 48, pad + 32);
+
+    // How many kg to the healthy band - its own line under the age/BMI line,
+    // same information the on-screen BMI badge stacks (see the "hc-bmi"
+    // segment in renderHealthCheck), only shown when calcBmi has it.
+    if (bmi && bmi.deltaKg != null) {
+      ctx.font = '600 11px ' + FONT;
+      ctx.fillStyle = bmi.deltaDir === 'gain' ? '#fbbf24' : '#f87171';
+      const deltaText = (bmi.deltaDir === 'gain' ? '+' : '−') + bmi.deltaKg + 'kg to healthy';
+      ctx.fillText(_canvasTruncate(ctx, deltaText, width - pad - 48), pad + 48, pad + 48);
+    }
 
     const top = pad + headH;
     ctx.strokeStyle = '#e3e7ee';
@@ -669,8 +692,21 @@ async function sharePersonImage(person) {
 
       ctx.font = '400 10px ' + FONT;
       ctx.fillStyle = '#8a94a6';
-      const dateStr = new Date(r.latest.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
-      ctx.fillText(dateStr + (r.latest.checkType ? ' · ' + r.latest.checkType : ''), pad + 8, y + 38);
+      const dateStr = new Date(r.latest.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+      ctx.fillText(_canvasTruncate(ctx, dateStr + (r.latest.checkType ? ' · ' + r.latest.checkType : ''), width - pad * 2 - 90), pad + 8, y + 34);
+
+      // Lab, as the same muted pill the on-screen entry row uses (.hc-lab-tag).
+      if (r.latest.lab) {
+        ctx.font = '600 9px ' + FONT;
+        const labText = _canvasTruncate(ctx, r.latest.lab, width - pad * 2 - 40);
+        const tw = ctx.measureText(labText).width;
+        const bx = pad + 8, by = y + 42, bw = tw + 14, bh = 15;
+        ctx.fillStyle = '#eef1f6';
+        _canvasRoundRect(ctx, bx, by, bw, bh, 7.5);
+        ctx.fill();
+        ctx.fillStyle = '#6b7280';
+        ctx.fillText(labText, bx + 7, by + bh / 2 + 0.5);
+      }
 
       ctx.textAlign = 'right';
       ctx.font = '700 13px ' + FONT;
