@@ -3223,11 +3223,9 @@ textarea.vault-notes:focus { outline: none; border-color: var(--accent); }
 .hc-family-table th:first-child, .hc-family-table td.hc-family-param { width: 52px; text-align: left; position: sticky; left: 0; background: var(--card-2); z-index: 1; }
 .hc-family-table th:not(:first-child), .hc-family-table td.hc-dot-cell { width: 58px; }
 .hc-family-param { font-weight: 600; }
-/* (i) info icon beside a parameter's name (Add/Edit Health Check form) -
-   tap or hover shows its standard interval, since the value input's
-   placeholder is the only other place that range shows, and it disappears
-   the moment something is typed. */
-.hc-param-info { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 13px; height: 13px; border-radius: 50%; border: 1px solid var(--muted); color: var(--muted); font-size: 0.6rem; font-style: italic; font-weight: 700; line-height: 1; cursor: pointer; }
+/* (i) info icon beside a test's name on its card - tap or hover shows the
+   reference range, which used to sit on a permanent chip beside the name. */
+.hc-param-info { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; margin-left: 6px; vertical-align: 1px; border-radius: 50%; border: 1px solid var(--muted); color: var(--muted); font-size: 0.62rem; font-style: italic; font-weight: 700; line-height: 1; cursor: pointer; }
 .hc-dot-cell { cursor: pointer; }
 .hc-dot-cell:active { background: var(--bg-2); }
 .hc-dot-wrap { position: relative; display: inline-flex; }
@@ -3240,7 +3238,6 @@ html[data-theme="light"] .hc-empty-cta { color: #fff; }
 .hc-card + .hc-card { margin-top: 14px; }
 .hc-card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 10px; }
 .hc-card-title { font-weight: 700; font-size: 0.98rem; }
-.hc-card-range { font-size: 0.75rem; color: var(--muted); background: var(--bg-2); padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
 .hc-badge { display: inline-block; min-width: 26px; text-align: center; padding: 3px 9px; border-radius: 8px; font-weight: 700; font-size: 0.85rem; }
 
 /* One reading: a calendar-chip date, the value + check-type badge, and the

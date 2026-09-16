@@ -803,10 +803,25 @@ async function sharePersonImage(person) {
       const y = top + rowH * ri;
       if (ri % 2 === 1) { ctx.fillStyle = '#f7f9fc'; ctx.fillRect(pad, y, width - pad * 2, rowH); }
 
+      // Test name, then its reference range in smaller muted text right
+      // after it. On screen that range hides behind the (i) icon beside the
+      // same name (renderParamSection) - a static image has nothing to tap,
+      // so here it's spelled out.
       ctx.textAlign = 'left';
-      ctx.fillStyle = '#0e1726';
+      const nameText = r.param.label + (r.param.unit ? ' (' + r.param.unit + ')' : '');
+      const refText = paramRangeLabel(effectiveRange(r.param, person.gender));
+      ctx.font = '400 8px ' + FONT;
+      const refW = refText && refText !== '—' ? ctx.measureText(refText).width + 6 : 0;
       ctx.font = '700 12px ' + FONT;
-      ctx.fillText(_canvasTruncate(ctx, r.param.label + (r.param.unit ? ' (' + r.param.unit + ')' : ''), width - pad * 2 - 90), pad + 8, y + 18);
+      ctx.fillStyle = '#0e1726';
+      const nameTrunc = _canvasTruncate(ctx, nameText, Math.max(40, width - pad * 2 - 90 - refW));
+      ctx.fillText(nameTrunc, pad + 8, y + 18);
+      if (refW) {
+        const nameW = ctx.measureText(nameTrunc).width;
+        ctx.font = '400 8px ' + FONT;
+        ctx.fillStyle = '#8a94a6';
+        ctx.fillText(refText, pad + 8 + nameW + 6, y + 19);
+      }
 
       ctx.font = '400 10px ' + FONT;
       ctx.fillStyle = '#8a94a6';
@@ -896,10 +911,20 @@ function renderParamSection(param, entries, gender) {
     renderHealthCheck().then(() => window.scrollTo(0, y));
   };
 
+  // The reference range sits behind the (i) rather than on a permanent chip:
+  // it's the same number on every card every time, so it's reference material
+  // you check occasionally, not something worth a line of its own each time.
+  // Tap or hover (title covers desktop, the toast covers phones).
+  const intervalText = paramIntervalText(param, gender);
   const children = [
     el('div', { class: 'hc-card-head' }, [
-      el('div', { class: 'hc-card-title', text: param.label + (param.unit ? ' (' + param.unit + ')' : '') }),
-      el('div', { class: 'hc-card-range', text: paramRangeLabel(resolved) }),
+      el('div', { class: 'hc-card-title' }, [
+        param.label + (param.unit ? ' (' + param.unit + ')' : ''),
+        el('span', {
+          class: 'hc-param-info', text: 'i', title: intervalText,
+          onclick: (e) => { e.stopPropagation(); toast(intervalText); },
+        }),
+      ]),
     ]),
     renderEntryRow(latest, resolved, {
       onClick: older.length ? toggle : null,
@@ -1341,22 +1366,8 @@ async function openHealthCheckForm(person, existing) {
     const medWrap = el('div', { style: 'flex: 1; display: flex; flex-direction: column; justify-content: flex-end;' }, [
       el('label', { style: 'display: flex; align-items: center; gap: 8px; padding-bottom: 12px; font-size: 0.85rem; color: var(--muted); cursor: pointer;' }, [medInput, '💊 Medicine taken']),
     ]);
-    // Not the shared field() helper - its label is plain text, and this one
-    // also carries the (i) icon for the standard interval (paramIntervalText),
-    // still reachable once a value's typed over the input's own placeholder.
-    const intervalText = paramIntervalText(p, person.gender);
-    const valueField = el('div', { class: 'field' }, [
-      el('label', {}, [
-        p.label + (p.unit ? ' (' + p.unit + ')' : ''),
-        el('span', {
-          class: 'hc-param-info', text: 'i', title: intervalText,
-          onclick: (e) => { e.preventDefault(); e.stopPropagation(); toast(intervalText); },
-        }),
-      ]),
-      input,
-    ]);
     return el('div', { class: 'field-row' }, [
-      valueField,
+      field(p.label + (p.unit ? ' (' + p.unit + ')' : ''), input),
       medWrap,
     ]);
   });
