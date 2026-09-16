@@ -510,6 +510,22 @@ function _canvasRoundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
+// Compact "Nd/Nm/Ny ago" for the blue badge in sharePersonImage - shorter
+// than timeAgoLabel's "N months ago" since it has to fit inside a pill
+// alongside the lab badge and medicine emoji, not stand alone.
+function _canvasTimeAgo(dateStr) {
+  const then = new Date(dateStr);
+  if (isNaN(then.getTime())) return '';
+  const now = new Date();
+  const days = Math.floor((now - then) / 86400000);
+  if (days <= 0) return 'Today';
+  if (days < 30) return days + 'd ago';
+  let months = (now.getFullYear() - then.getFullYear()) * 12 + (now.getMonth() - then.getMonth());
+  if (now.getDate() < then.getDate()) months--;
+  if (months < 12) return months + 'm ago';
+  return Math.floor(months / 12) + 'y ago';
+}
+
 // Redraws the same Family table (parameter rows x person columns of status
 // dots - see renderFamilyTable above, which this deliberately mirrors) onto
 // a flat PNG, then hands it to the Web Share API so it can go to WhatsApp,
@@ -788,6 +804,22 @@ async function sharePersonImage(person) {
       if (r.latest.medicineTaken) {
         ctx.font = '11px ' + FONT;
         ctx.fillText('💊', subX, y + 49.5);
+        subX += 16;
+      }
+
+      // Blue "how long ago" badge - answers "is this old news or recent?"
+      // at a glance, same spirit as the on-screen hc-trend-ago label.
+      const ago = _canvasTimeAgo(r.latest.date);
+      if (ago) {
+        ctx.font = '600 9px ' + FONT;
+        const agoText = ago;
+        const tw2 = ctx.measureText(agoText).width;
+        const bx2 = subX, by2 = y + 42, bw2 = tw2 + 14, bh2 = 15;
+        ctx.fillStyle = 'rgba(37,99,235,0.12)';
+        _canvasRoundRect(ctx, bx2, by2, bw2, bh2, 7.5);
+        ctx.fill();
+        ctx.fillStyle = '#2563eb';
+        ctx.fillText(agoText, bx2 + 7, by2 + bh2 / 2 + 0.5);
       }
 
       ctx.textAlign = 'right';
