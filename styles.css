@@ -3108,6 +3108,10 @@ a.vd-link:hover { text-decoration: underline; }
 }
 .vh-pw-row { display: flex; align-items: center; gap: 2px; }
 .vh-pw-val { flex: 1; }
+/* The accumulating boxes' own terms (Loan..Metal, see _sheetExprBreakdown in
+   app.js) - a quieter second line under the total, not a second figure
+   fighting the main one for attention. */
+.vh-expr { font-size: 0.68rem; color: var(--muted); margin-top: 2px; font-variant-numeric: tabular-nums; }
 
 /* ---- Icon picker in the form ---- */
 .vault-ico-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

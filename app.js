@@ -4336,10 +4336,23 @@ async function renderHome() {
   // itself lists them.
   const investmentCard = _homeCard('💼', 'Investment', 'Stocks · MF · FD · Metals · Bonds · Dividends', () => setAppMode('investment'));
   const savingsCard = _homeCard('🏦', 'Savings', 'Emergency Fund · Goals', () => setAppMode('savings'));
-  // Lands straight on Balance (Available Balance), not wherever _expTab last
-  // was - this card IS the "check my funds and balance" shortcut, so it
-  // should never open on Credit Card by accident of navigation history.
-  const expenseCard = _homeCard('💳', 'Expense', 'Balance · Credit Card · Tracker', () => { _expTab = 'spend'; setAppMode('expense'); });
+  // Two different taps, two different destinations:
+  //  - the card itself (title/subtitle/chevron) opens on whichever tab was
+  //    last open there (_expTab persists across navigation, defaulting to
+  //    Credit Card - its declared initial value - the first time this is
+  //    ever opened) - the normal "go back to where I left off" behaviour.
+  //  - the 💳 ICON specifically is its own "check my funds and balance"
+  //    shortcut, always landing on Balance regardless of _expTab, since
+  //    that's the one figure worth a dedicated one-tap route to.
+  // The icon's own listener stops the click from also reaching the card's -
+  // without that, tapping the icon would fire both and Balance would win by
+  // running last, which happens to look right today but is fragile.
+  const expenseCard = _homeCard('💳', 'Expense', 'Balance · Credit Card · Tracker', () => setAppMode('expense'));
+  expenseCard.querySelector('.home-card-ico').addEventListener('click', (e) => {
+    e.stopPropagation();
+    _expTab = 'spend';
+    setAppMode('expense');
+  });
   const personalCard = _homeCard(_walletIcon(), 'Personal Finance', 'Own spends · card & UPI limits', () => setAppMode('personal'));
   const healthCard = _homeCard(el('img', { src: 'icons/health-card.png', alt: '', style: 'width: 30px; height: 30px; display: block;' }), 'Health Check', 'Medical records · Family history', () => setAppMode('health'));
   const vaultCard = _homeCard('\ud83d\udd10', 'My Passwords', 'Locked · encrypted on this device', () => setAppMode('vault'));
@@ -6244,7 +6257,12 @@ async function renderExpenseSheet(host, token) {
     const nextNum = (value == null || String(value).trim() === '') ? null : sumExpr(String(value));
     if (prevNum != null && prevNum !== nextNum) {
       const hist = Array.isArray(sheet[key + 'Hist']) ? sheet[key + 'Hist'] : [];
-      patch[key + 'Hist'] = [{ value: prevNum, changedAt: new Date().toISOString() }, ...hist].slice(0, 5);
+      // `raw` keeps the actual stored text (e.g. "2000+5000"), not just its
+      // sum - Loan through Metal are accumulating boxes, and a history that
+      // only ever showed the total would lose exactly the thing those boxes
+      // exist to keep (what was added and when). Harmless for the single-
+      // figure rows too: their raw IS just the number, so nothing extra shows.
+      patch[key + 'Hist'] = [{ value: prevNum, raw: prevRaw == null ? null : String(prevRaw), changedAt: new Date().toISOString() }, ...hist].slice(0, 5);
     }
     await DB.put('monthlySheet', Object.assign({}, sheet, patch));
     renderHomeExpense();
@@ -6253,12 +6271,15 @@ async function renderExpenseSheet(host, token) {
   // (see saveField above), never calling attention to itself, but always
   // there for "when did I change this." Opens even with nothing recorded yet
   // (shows Current only) rather than only appearing once a history exists.
-  const historyBtn = (label, key, currentVal) => el('button', {
+  // `rawCurrent`, when passed, is the box's own stored text - only the
+  // accumulating rows (Loan..Metal) have one; the rest leave it undefined and
+  // openSheetFieldHistory shows just the total for them, same as before.
+  const historyBtn = (label, key, currentVal, rawCurrent) => el('button', {
     class: 'icon-btn msheet-history', type: 'button',
     title: label + ' history', 'aria-label': label + ' history',
     onclick: (e) => {
       e.stopPropagation();
-      openSheetFieldHistory(label, currentVal, Array.isArray(sheet[key + 'Hist']) ? sheet[key + 'Hist'] : []);
+      openSheetFieldHistory(label, currentVal, rawCurrent, Array.isArray(sheet[key + 'Hist']) ? sheet[key + 'Hist'] : []);
     },
   }, [_historyIcon()]);
 
@@ -6410,7 +6431,7 @@ async function renderExpenseSheet(host, token) {
     const noteTxt = r.source != null ? r.note + ' · ' + fmtSheetCur(r.source) : r.note;
     table.appendChild(el('div', { class: 'msheet-row msheet-debit' }, [
       el('div', { class: 'msheet-label' }, [
-        el('span', {}, [r.label, historyBtn(r.label, r.key, boxVal)]),
+        el('span', {}, [r.label, historyBtn(r.label, r.key, boxVal, expr)]),
         el('span', { class: 'msheet-note', text: noteTxt }),
       ]),
       el('div', { class: 'msheet-stack' }, [
@@ -6443,6 +6464,22 @@ async function renderExpenseSheet(host, token) {
   host.appendChild(explainRow('About this sheet', 'Available Balance = (In Hand + Virtual Bal) − every red row. Each box takes a running total you can add to: type "2000+5000" and the figure above shows the sum. ↻ Fetch appends this month\'s figure (the amount after the · in a row\'s caption) as another term. In Hand starts from the Allocation salary and Monthly Expense from the Tracker balance left in the kitty — type over either for a month that differed, or clear it to follow the source again. Virtual Bal and Other Expense are lists rather than boxes: tap + to itemise them, and the row shows the total.', 'How the sheet adds up'));
 }
 
+// The accumulating boxes (Loan through Metal) store an additive EXPRESSION,
+// not a single number - "2000+5000" - and sumExpr (their own totalling
+// function) parses it by pulling out every signed number, not by splitting
+// on "+". Mirrored here rather than a naive split so a breakdown can never
+// disagree with the total shown next to it. Returns null for a plain single
+// figure (nothing to break down) or fewer than 2 terms.
+function _sheetExprBreakdown(raw) {
+  if (raw == null) return null;
+  const parts = String(raw).match(/-?\d+(?:\.\d+)?/g);
+  if (!parts || parts.length < 2) return null;
+  return parts.map((p, i) => {
+    const n = Number(p);
+    return (n < 0 ? '− ' : (i === 0 ? '' : '+ ')) + fmtSheetCur(Math.abs(n));
+  }).join('  ');
+}
+
 // A per-field timeline for the Balance sheet - same shape as the vault's own
 // password history (openVaultPasswordHistory): "Current" first with its own
 // dot/badge, then up to the last 5 superseded values below it, newest first.
@@ -6451,27 +6488,36 @@ async function renderExpenseSheet(host, token) {
 // history itself is recorded. Not password data, so no masking here: the
 // value is shown plainly, with a copy button for pulling a past figure back
 // into a note or a calculation elsewhere.
-function openSheetFieldHistory(label, current, hist) {
+//
+// `rawCurrent` - only ever set for the accumulating rows (Loan..Metal, see
+// historyBtn's call site) - adds a second, smaller line under the total
+// showing the actual terms that made it up ("2,000 + 5,000"), same as each
+// history entry's own `raw`. The single-figure rows never pass one, so they
+// show only the total, exactly as before this existed.
+function openSheetFieldHistory(label, current, rawCurrent, hist) {
+  // The breakdown ("2,000 + 5,000") sits on its OWN line under the value row,
+  // never inside it - the value row is a flex line ending in the copy
+  // button, and a variable-length expression squeezed in there would push
+  // that button around instead of just wrapping cleanly underneath.
+  const contentOf = (val, raw, whenNode) => {
+    const breakdown = _sheetExprBreakdown(raw);
+    return el('div', { class: 'vh-content' }, [
+      whenNode,
+      el('div', { class: 'vh-pw-row' }, [
+        el('span', { class: 'vd-value vh-pw-val', text: fmtSheetCur(val) }),
+        _vaultCopyBtn(label, () => String(val)),
+      ]),
+      breakdown ? el('div', { class: 'vh-expr', text: breakdown }) : null,
+    ].filter(Boolean));
+  };
   const items = [
     el('div', { class: 'vh-item vh-current' }, [
       el('div', { class: 'vh-dot' }),
-      el('div', { class: 'vh-content' }, [
-        el('div', { class: 'vh-when' }, [el('span', { class: 'vh-current-badge', text: 'Current' })]),
-        el('div', { class: 'vh-pw-row' }, [
-          el('span', { class: 'vd-value vh-pw-val', text: fmtSheetCur(current) }),
-          _vaultCopyBtn(label, () => String(current)),
-        ]),
-      ]),
+      contentOf(current, rawCurrent, el('div', { class: 'vh-when' }, [el('span', { class: 'vh-current-badge', text: 'Current' })])),
     ]),
     ...hist.map((h) => el('div', { class: 'vh-item' }, [
       el('div', { class: 'vh-dot' }),
-      el('div', { class: 'vh-content' }, [
-        el('div', { class: 'vh-when', text: h.changedAt ? new Date(h.changedAt).toLocaleString() : 'Unknown date' }),
-        el('div', { class: 'vh-pw-row' }, [
-          el('span', { class: 'vd-value vh-pw-val', text: fmtSheetCur(h.value) }),
-          _vaultCopyBtn(label, () => String(h.value)),
-        ]),
-      ]),
+      contentOf(h.value, h.raw, el('div', { class: 'vh-when', text: h.changedAt ? new Date(h.changedAt).toLocaleString() : 'Unknown date' })),
     ])),
   ];
   openModal(el('div', { class: 'sheet' }, [
