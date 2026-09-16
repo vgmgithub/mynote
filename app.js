@@ -1100,7 +1100,11 @@ async function renderFeed() {
   const portfolio = state.portfolio;
   const cached = await mod.getCachedFeed(portfolio);
   const lastFetched = await mod.getLastFetch(portfolio);
-  const holdings = state.stocks.filter((s) => s.status !== 'sold');
+  // Bonds get news-sentiment cards same as any equity, but a coupon
+  // instrument has no earnings calls or analyst chatter for that to mean
+  // anything - and it already has its own surface (Investment → Bonds) for
+  // what actually matters to it (coupon, maturity, vs bank).
+  const holdings = state.stocks.filter((s) => s.status !== 'sold' && (s.category || '').toUpperCase() !== 'BONDS');
 
   host.appendChild(_buildFeedHeader(mod, lastFetched, navigator.onLine ? 'online' : 'offline', portfolio));
 
