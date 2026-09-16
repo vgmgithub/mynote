@@ -4354,7 +4354,7 @@ async function renderHome() {
     setAppMode('expense');
   });
   const personalCard = _homeCard(_walletIcon(), 'Personal Finance', 'Own spends · card & UPI limits', () => setAppMode('personal'));
-  const healthCard = _homeCard(el('img', { src: 'icons/health-card.png', alt: '', style: 'width: 30px; height: 30px; display: block;' }), 'Health Check', 'Medical records · Family history', () => setAppMode('health'));
+  const healthCard = _homeCard(el('img', { class: 'home-card-beat', src: 'icons/health-card.png', alt: '', style: 'width: 30px; height: 30px; display: block;' }), 'Health Check', 'Medical records · Family history', () => setAppMode('health'));
   const vaultCard = _homeCard('\ud83d\udd10', 'My Passwords', 'Locked · encrypted on this device', () => setAppMode('vault'));
   host.appendChild(el('div', { class: 'home-cards' }, [investmentCard, savingsCard, expenseCard, personalCard, healthCard, vaultCard]));
 
@@ -14817,7 +14817,7 @@ function buildCcMonthEditor(months, onChange) {
     if (typeof onChange === 'function') setTimeout(onChange, 0);
   };
 
-  const addRow = (ym, billed, status, paidOn) => {
+  const addRow = (ym, billed, status, paidOn, opts) => {
     const m = el('input', { class: 'txn-date', type: 'month', value: ym || todayISO().slice(0, 7) });
     const bIn = el('input', { class: 'txn-amt', type: 'number', inputmode: 'decimal', step: 'any', value: billed != null ? billed : '', placeholder: 'Billed ₹' });
     const statusSel = el('select', { class: 'cc-status-select' }, [
@@ -14840,7 +14840,10 @@ function buildCcMonthEditor(months, onChange) {
     const row = el('div', { class: 'mf-txn-row' }, [el('div', { class: 'txn-line' }, [m, bIn, statusSel, del])]);
     del.addEventListener('click', () => { row.remove(); ref.removed = true; refreshSummary(); });
     refs.push(ref);
-    rowsWrap.appendChild(row);
+    // Rows load newest-first (see the initial sort below), so a freshly added
+    // month - almost always the newest one there is - goes to the top with
+    // them instead of the bottom, where it would read as the oldest.
+    if (opts && opts.toTop) rowsWrap.prepend(row); else rowsWrap.appendChild(row);
     refreshSummary();
   };
 
@@ -14859,7 +14862,7 @@ function buildCcMonthEditor(months, onChange) {
     const d = new Date(Date.UTC(+mm[1], +mm[2], 1));   // +mm[2] is already next month (0-based)
     return d.toISOString().slice(0, 7);
   };
-  const addBtn = el('button', { class: 'btn ghost small', type: 'button', text: '+ Add month', onclick: () => addRow(nextYm(), null, null, null) });
+  const addBtn = el('button', { class: 'btn ghost small', type: 'button', text: '+ Add month', onclick: () => addRow(nextYm(), null, null, null, { toTop: true }) });
 
   const node = el('div', {}, [emptyEl, rowsWrap, summary, el('div', { class: 'btn-row' }, [addBtn])]);
   const collect = () => refs
@@ -15483,7 +15486,7 @@ function buildContribEditor(contributions, getSip, onChange) {
     if (typeof onChange === 'function') setTimeout(onChange, 0);
   };
 
-  const addRow = (date, amount, units, nav, type) => {
+  const addRow = (date, amount, units, nav, type, opts) => {
     const isSell = type === 'sell';
     const d = el('input', { class: 'txn-date', type: 'date', value: date || todayISO() });
     const amt = el('input', { class: 'txn-amt', type: 'number', inputmode: 'decimal', step: 'any', value: amount != null ? amount : '', placeholder: isSell ? 'Proceeds received ₹' : 'Amount invested ₹' });
@@ -15509,7 +15512,11 @@ function buildContribEditor(contributions, getSip, onChange) {
     ]);
     del.addEventListener('click', () => { row.remove(); ref.removed = true; refreshSummary(ref.type); });
     refs.push(ref);
-    (isSell ? sellRowsWrap : buyRowsWrap).appendChild(row);
+    // Rows load newest-first (see the initial sort below), so a freshly added
+    // transaction - almost always the latest one there is - goes to the top
+    // with them instead of the bottom, where it would read as the oldest.
+    const wrap = isSell ? sellRowsWrap : buyRowsWrap;
+    if (opts && opts.toTop) wrap.prepend(row); else wrap.appendChild(row);
     refreshSummary(ref.type);
   };
   (contributions || []).slice().sort((a, b2) => (b2.date || '').localeCompare(a.date || '')).forEach((c) => addRow(c.date, c.amount, c.units, c.nav, c.type));
@@ -15522,12 +15529,12 @@ function buildContribEditor(contributions, getSip, onChange) {
     onclick: () => {
       // Default the new row's date to the latest transaction already logged
       // (not today) - most adds are "the next SIP month", so this saves a tap.
-      addRow(lastDateOf('buy'), null, null, null, 'buy');
+      addRow(lastDateOf('buy'), null, null, null, 'buy', { toTop: true });
     },
   });
   const addSellBtn = el('button', {
     class: 'icon-btn', type: 'button', text: '×', title: 'Add sale',
-    onclick: () => addRow(lastDateOf('sell'), null, null, null, 'sell'),
+    onclick: () => addRow(lastDateOf('sell'), null, null, null, 'sell', { toTop: true }),
   });
 
   const buyTabBtn = el('button', { type: 'button', text: 'Buy', class: 'active' });

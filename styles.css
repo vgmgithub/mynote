@@ -1351,6 +1351,21 @@ body.locked { overflow: hidden; }
   display: flex; align-items: center; justify-content: center;
   background: var(--bg-2); border: 1px solid var(--line); border-radius: 14px;
 }
+/* A resting heartbeat's own rhythm (lub-dub, pause) rather than a plain
+   even pulse - two quick beats then a longer rest. transform-only (no width/
+   height/layout change), so it's GPU-composited: the browser runs it on the
+   compositor thread same as a video decode, untouched by JS or layout work
+   elsewhere in the app, and it costs nothing while the Health Check card
+   isn't even on screen since the animation is scoped to its own element. */
+@keyframes home-card-beat {
+  0%, 40%, 100% { transform: scale(1); }
+  15% { transform: scale(1.14); }
+  30% { transform: scale(1.05); }
+}
+.home-card-beat { animation: home-card-beat 1.8s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .home-card-beat { animation: none; }
+}
 .metal-bar-ico { display: flex; align-items: center; justify-content: center; }
 .metal-bar-ico svg { width: 30px; height: 30px; display: block; }
 img.metal-bar-ico { width: 30px; height: 30px; object-fit: contain; display: block; }
