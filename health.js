@@ -149,6 +149,15 @@ function effectiveRange(param, gender) {
   return param;
 }
 
+// "Standard interval" text for the (i) icon beside a parameter's name in
+// the Add/Edit Health Check form - the same range the value input's own
+// placeholder shows (effectiveRange resolves Male/Female first), just
+// still available once something's typed and the placeholder is gone.
+function paramIntervalText(p, gender) {
+  const label = paramRangeLabel(effectiveRange(p, gender));
+  return p.label + ': ' + (label && label !== '—' ? label + (p.unit ? ' ' + p.unit : '') : 'no standard range set');
+}
+
 const CHECK_TYPES = ['Annual Check-up', 'Periodic Check-up'];
 const MONTH_ABBR = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 // One fixed color per calendar month, shared by every entry that falls in
@@ -442,29 +451,6 @@ async function renderFamilyTable(people, params) {
     });
   };
 
-  // "Standard interval" text for the info icon next to a parameter's name -
-  // the reference range a reading is judged against, since the table only
-  // ever shows a colour, never the value itself. Male/Female ranges are
-  // given separately when they differ, since a column can hold either.
-  const paramIntervalText = (p) => {
-    if (!p.genderSpecific) {
-      const r = paramRangeLabel(p);
-      return p.label + ': ' + (r && r !== '—' ? r + (p.unit ? ' ' + p.unit : '') : 'no standard range set');
-    }
-    const m = paramRangeLabel({ intervalType: p.intervalType, min: p.maleMin, max: p.maleMax });
-    const f = paramRangeLabel({ intervalType: p.intervalType, min: p.femaleMin, max: p.femaleMax });
-    return p.label + ' - Male ' + m + ', Female ' + f + (p.unit ? ' ' + p.unit : '');
-  };
-  // Tap or hover the (i) for the range - title covers hover, the toast
-  // covers tap (there's no hover on a phone).
-  const paramLabelCell = (label, intervalText) => el('td', { class: 'hc-family-param' }, [
-    el('span', { class: 'hc-family-param-label', text: label }),
-    el('span', {
-      class: 'hc-param-info', text: 'i', title: intervalText,
-      onclick: (e) => { e.stopPropagation(); toast(intervalText); },
-    }),
-  ]);
-
   // BMI isn't one of the user's own configurable parameters (see
   // getHealthParams) - it's computed from height/weight, same as the badge
   // on a person's own page (calcBmi) - so its row is built separately and
@@ -472,7 +458,7 @@ async function renderFamilyTable(people, params) {
   // readings for. No parameter card exists for it to expand into, so a tap
   // just opens that person's page rather than scrolling to anything.
   const bmiRow = el('tr', {}, [
-    paramLabelCell('BMI', 'BMI standard range: 18.5-24.9 (healthy)'),
+    el('td', { class: 'hc-family-param', text: 'BMI' }),
     ...people.map(person => {
       const goToPerson = () => { _hcView = null; _healthPerson = person.id; renderHealthCheck(); };
       const bmi = calcBmi(person.heightCm, person.weightKg);
@@ -518,7 +504,7 @@ async function renderFamilyTable(people, params) {
       ]);
     });
     return el('tr', {}, [
-      paramLabelCell(p.label, paramIntervalText(p)),
+      el('td', { class: 'hc-family-param', text: p.label }),
       ...cells,
     ]);
   });
@@ -649,24 +635,10 @@ async function shareFamilyTableImage() {
       ctx.strokeStyle = '#e3e7ee';
       ctx.beginPath(); ctx.moveTo(pad, y + rowH); ctx.lineTo(width - pad, y + rowH); ctx.stroke();
 
-      // Parameter name, then its standard interval in a much smaller, muted
-      // font right after it - same "range it's judged against" info as the
-      // on-screen (i) icon (paramIntervalText), just always-visible since a
-      // static image has no tap/hover to reveal it on demand.
-      ctx.textAlign = 'left';
-      const rangeTxt = param.__bmi ? '18.5-24.9' : paramRangeLabel(param);
-      ctx.font = '400 6px ' + FONT;
-      const rangeW = rangeTxt && rangeTxt !== '—' ? ctx.measureText(rangeTxt).width + 5 : 0;
       ctx.font = '600 11px ' + FONT;
       ctx.fillStyle = '#0e1726';
-      const labelTrunc = _canvasTruncate(ctx, param.label, Math.max(20, paramColW - 16 - rangeW));
-      ctx.fillText(labelTrunc, pad + 8, y + rowH / 2);
-      if (rangeW) {
-        const labelW = ctx.measureText(labelTrunc).width;
-        ctx.font = '400 6px ' + FONT;
-        ctx.fillStyle = '#8a94a6';
-        ctx.fillText(rangeTxt, pad + 8 + labelW + 5, y + rowH / 2 + 1);
-      }
+      ctx.textAlign = 'left';
+      ctx.fillText(_canvasTruncate(ctx, param.label, paramColW - 16), pad + 8, y + rowH / 2);
 
       people.forEach((person, ci) => {
         const cx = pad + paramColW + colW * ci + colW / 2, cy = y + rowH / 2;
@@ -1369,8 +1341,22 @@ async function openHealthCheckForm(person, existing) {
     const medWrap = el('div', { style: 'flex: 1; display: flex; flex-direction: column; justify-content: flex-end;' }, [
       el('label', { style: 'display: flex; align-items: center; gap: 8px; padding-bottom: 12px; font-size: 0.85rem; color: var(--muted); cursor: pointer;' }, [medInput, '💊 Medicine taken']),
     ]);
+    // Not the shared field() helper - its label is plain text, and this one
+    // also carries the (i) icon for the standard interval (paramIntervalText),
+    // still reachable once a value's typed over the input's own placeholder.
+    const intervalText = paramIntervalText(p, person.gender);
+    const valueField = el('div', { class: 'field' }, [
+      el('label', {}, [
+        p.label + (p.unit ? ' (' + p.unit + ')' : ''),
+        el('span', {
+          class: 'hc-param-info', text: 'i', title: intervalText,
+          onclick: (e) => { e.preventDefault(); e.stopPropagation(); toast(intervalText); },
+        }),
+      ]),
+      input,
+    ]);
     return el('div', { class: 'field-row' }, [
-      field(p.label + (p.unit ? ' (' + p.unit + ')' : ''), input),
+      valueField,
       medWrap,
     ]);
   });
