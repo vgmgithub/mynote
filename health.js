@@ -410,6 +410,28 @@ async function renderFamilyTable(people, params) {
     });
   };
 
+  // BMI isn't one of the user's own configurable parameters (see
+  // getHealthParams) - it's computed from height/weight, same as the badge
+  // on a person's own page (calcBmi) - so its row is built separately and
+  // pinned first, ahead of whatever parameters people actually have
+  // readings for. No parameter card exists for it to expand into, so a tap
+  // just opens that person's page rather than scrolling to anything.
+  const bmiRow = el('tr', {}, [
+    el('td', { class: 'hc-family-param', text: 'BMI' }),
+    ...people.map(person => {
+      const goToPerson = () => { _hcView = null; _healthPerson = person.id; renderHealthCheck(); };
+      const bmi = calcBmi(person.heightCm, person.weightKg);
+      if (!bmi) {
+        return el('td', { class: 'hc-dot-cell', onclick: goToPerson }, [
+          el('span', { class: 'hc-dot hc-dot-blank', title: person.name + ' - BMI: no data' }),
+        ]);
+      }
+      return el('td', { class: 'hc-dot-cell', onclick: goToPerson }, [
+        el('span', { class: 'hc-dot', style: 'background: ' + getStatusColor(bmi.cls) + ';', title: person.name + ' - BMI ' + bmi.bmi + ' ' + bmi.category }),
+      ]);
+    }),
+  ]);
+
   const bodyRows = params.map(p => {
     const cells = people.map(person => {
       const personChecks = byPerson.get(person.id) || [];
@@ -424,8 +446,16 @@ async function renderFamilyTable(people, params) {
         ]);
       }
       const status = getParamStatus(latest.value, effectiveRange(p, person.gender));
+      const title = person.name + ' - ' + p.label + ': ' + latest.value + (p.unit ? ' ' + p.unit : '') + (latest.medicineTaken ? ' (medicine taken)' : '');
       return el('td', { class: 'hc-dot-cell', onclick: () => openFamilyCell(person, p, true) }, [
-        el('span', { class: 'hc-dot', style: 'background: ' + getStatusColor(status) + ';', title: person.name + ' - ' + p.label + ': ' + latest.value + (p.unit ? ' ' + p.unit : '') }),
+        el('span', { class: 'hc-dot-wrap', title }, [
+          el('span', { class: 'hc-dot', style: 'background: ' + getStatusColor(status) + ';' }),
+          // Small shield over the dot when medicine was on board for this
+          // reading - the same fact the person page shows as a 💊 pill, but
+          // a dot this size has no room for text, so a shield reads as
+          // "covered/adjusted" at a glance instead.
+          latest.medicineTaken ? el('span', { class: 'hc-dot-med', text: '🛡️' }) : null,
+        ].filter(Boolean)),
       ]);
     });
     return el('tr', {}, [
@@ -437,7 +467,7 @@ async function renderFamilyTable(people, params) {
   return el('div', { class: 'hc-family-wrap' }, [
     el('table', { class: 'hc-family-table' }, [
       el('thead', {}, [headerRow]),
-      el('tbody', {}, bodyRows),
+      el('tbody', {}, [bmiRow, ...bodyRows]),
     ]),
   ]);
 }
@@ -488,9 +518,14 @@ async function shareFamilyTableImage() {
       return null;
     };
     // Only rows someone actually has a reading for - an all-blank row would
-    // just be dead space in a static image nobody can tap through.
+    // just be dead space in a static image nobody can tap through. BMI is
+    // the one exception - like the on-screen table (renderFamilyTable), it's
+    // always pinned first regardless, since it's computed from height/weight
+    // rather than a logged reading.
     const rows = params.filter(p => people.some(person => latestFor(person, p)));
-    if (!rows.length) { toast('No records yet to share'); return; }
+    const hasBmi = people.some(p => calcBmi(p.heightCm, p.weightKg));
+    if (!rows.length && !hasBmi) { toast('No records yet to share'); return; }
+    rows.unshift({ __bmi: true, label: 'BMI' });
 
     const mutedColor = getComputedStyle(document.documentElement).getPropertyValue('--muted').trim() || '#8a94a6';
     const statusColor = (status) => { const c = getStatusColor(status); return c.startsWith('var(') ? mutedColor : c; };
@@ -532,7 +567,6 @@ async function shareFamilyTableImage() {
       ctx.fillText(_canvasTruncate(ctx, p.name, colW - 10), cx, top + headH / 2);
     });
 
-    ctx.font = '600 11px ' + FONT;
     rows.forEach((param, ri) => {
       const y = top + headH + rowH * ri;
       ctx.fillStyle = ri % 2 === 0 ? '#ffffff' : '#f7f9fc';
@@ -540,13 +574,29 @@ async function shareFamilyTableImage() {
       ctx.strokeStyle = '#e3e7ee';
       ctx.beginPath(); ctx.moveTo(pad, y + rowH); ctx.lineTo(width - pad, y + rowH); ctx.stroke();
 
+      ctx.font = '600 11px ' + FONT;
       ctx.fillStyle = '#0e1726';
       ctx.textAlign = 'left';
       ctx.fillText(_canvasTruncate(ctx, param.label, paramColW - 16), pad + 8, y + rowH / 2);
 
       people.forEach((person, ci) => {
-        const latest = latestFor(person, param);
         const cx = pad + paramColW + colW * ci + colW / 2, cy = y + rowH / 2;
+
+        if (param.__bmi) {
+          const bmi = calcBmi(person.heightCm, person.weightKg);
+          if (!bmi) {
+            ctx.strokeStyle = '#c7cdd8';
+            ctx.setLineDash([2, 2]);
+            ctx.beginPath(); ctx.arc(cx, cy, 6, 0, Math.PI * 2); ctx.stroke();
+            ctx.setLineDash([]);
+            return;
+          }
+          ctx.fillStyle = statusColor(bmi.cls);
+          ctx.beginPath(); ctx.arc(cx, cy, 6, 0, Math.PI * 2); ctx.fill();
+          return;
+        }
+
+        const latest = latestFor(person, param);
         if (!latest) {
           ctx.strokeStyle = '#c7cdd8';
           ctx.setLineDash([2, 2]);
@@ -557,6 +607,13 @@ async function shareFamilyTableImage() {
         const status = getParamStatus(latest.value, effectiveRange(param, person.gender));
         ctx.fillStyle = statusColor(status);
         ctx.beginPath(); ctx.arc(cx, cy, 6, 0, Math.PI * 2); ctx.fill();
+        // Small shield over the dot when medicine was on board for this
+        // reading, mirroring the on-screen .hc-dot-med badge.
+        if (latest.medicineTaken) {
+          ctx.font = '8px ' + FONT;
+          ctx.textAlign = 'center';
+          ctx.fillText('🛡️', cx + 4.5, cy - 4.5);
+        }
       });
     });
 
