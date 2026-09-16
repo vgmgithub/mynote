@@ -538,16 +538,18 @@ function _canvasRoundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-// Compact "Nd/Nm/Ny ago" for the blue badge in sharePersonImage - shorter
-// than timeAgoLabel's "N months ago" since it has to fit inside a pill
-// alongside the lab badge and medicine emoji, not stand alone.
+// Compact "Recent"/"Nm ago"/"Ny ago" for the blue badge in sharePersonImage -
+// shorter than timeAgoLabel's "N months ago" since it has to fit inside a
+// pill alongside the lab badge and medicine emoji, not stand alone.
+// Anything inside the last month reads as "Recent" rather than counting the
+// days: whoever the image is shared with wants to know whether a reading is
+// current, and 6 days versus 20 doesn't change that answer.
 function _canvasTimeAgo(dateStr) {
   const then = new Date(dateStr);
   if (isNaN(then.getTime())) return '';
   const now = new Date();
   const days = Math.floor((now - then) / 86400000);
-  if (days <= 0) return 'Today';
-  if (days < 30) return days + 'd ago';
+  if (days < 31) return 'Recent';
   let months = (now.getFullYear() - then.getFullYear()) * 12 + (now.getMonth() - then.getMonth());
   if (now.getDate() < then.getDate()) months--;
   if (months < 12) return months + 'm ago';
