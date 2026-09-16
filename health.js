@@ -980,10 +980,15 @@ async function openHealthPeopleManager(activeTab, editing) {
     if (isEdit) rec.id = editing.id;
     rec.id = await DB.put('healthPeople', rec);
     closeModal(); toast(isEdit ? 'Updated' : 'Added');
-    // Straight to this person's own Records page rather than back to the
-    // roster - saving a family member is almost always the first step
-    // toward logging or checking their readings, not the last one.
-    openHealthRecordsManager(rec);
+    // Back to wherever this form was reached from, not a fixed page: editing
+    // (or adding a 2nd+ member) was reached from the List tab, so that's
+    // "previous" and Save returns there. The one case with no List to go
+    // back to is adding the very first family member ever (the empty-state
+    // CTA, which never shows a List) - there, Save goes straight to that
+    // person's own Records page, the natural next step for someone with
+    // nobody logged yet.
+    if (isEdit || people.length) openHealthPeopleManager('list');
+    else openHealthRecordsManager(rec);
   };
 
   const formBody = el('div', {}, [
