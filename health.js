@@ -422,7 +422,9 @@ async function renderFamilyTable(people, params) {
       const goToPerson = () => { _hcView = null; _healthPerson = person.id; renderHealthCheck(); };
       const bmi = calcBmi(person.heightCm, person.weightKg);
       if (!bmi) {
-        return el('td', { class: 'hc-dot-cell', onclick: goToPerson }, [
+        // Nothing to open - no height/weight on record yet, so this cell
+        // just isn't clickable.
+        return el('td', {}, [
           el('span', { class: 'hc-dot hc-dot-blank', title: person.name + ' - BMI: no data' }),
         ]);
       }
@@ -441,7 +443,9 @@ async function renderFamilyTable(people, params) {
         if (n && n.value != null && n.value !== '') { latest = n; break; }
       }
       if (!latest) {
-        return el('td', { class: 'hc-dot-cell', onclick: () => openFamilyCell(person, p, false) }, [
+        // Nothing recorded for this person/parameter yet - no reading to
+        // jump to, so this cell just isn't clickable.
+        return el('td', {}, [
           el('span', { class: 'hc-dot hc-dot-blank', title: person.name + ' - ' + p.label + ': no data' }),
         ]);
       }
