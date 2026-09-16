@@ -15,6 +15,12 @@ let _expandedParamId = null;
 // range are listed - a parameter that has since returned to normal drops
 // out even if an older reading was abnormal.
 let _hcFilterOutOfRange = false;
+
+// Called once from app.js's setAppMode, right before renderHealthCheck(), so
+// every fresh entry into Health Check (from Home, or any other section)
+// lands on Family - not internally, or clicking a person tab (which sets
+// _hcView itself, via selectTab) would get undone by this on its own re-render.
+function resetHealthCheckView() { _hcView = 'family'; }
 // installHealthSwipe() attaches its touch listeners once, the first time
 // Health Check renders - not once per render, since renderHealthCheck()
 // clears and rebuilds #healthView's children but never the element itself.
@@ -1528,4 +1534,4 @@ async function openHealthRecordsManager(person) {
   ]));
 }
 
-export { renderHealthCheck, openHealthPeopleManager, openHealthCheckForm, openHealthParamsManager, openHealthRecordsManager };
+export { renderHealthCheck, openHealthPeopleManager, openHealthCheckForm, openHealthParamsManager, openHealthRecordsManager, resetHealthCheckView };

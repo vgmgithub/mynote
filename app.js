@@ -1860,7 +1860,10 @@ function applyAppMode(mode) {
     if (isSavings) renderHomeSavings();
     if (isExpense) { buildExpBottomNav(); renderHomeExpense(); }
     if (isPersonal) { buildPfBottomNav(); renderPersonal(); }
-    if (isHealth) { import('./health.js').then(m => m.renderHealthCheck()); }
+    // resetHealthCheckView() lands every fresh entry on Family - clicking a
+    // person tab inside Health Check calls renderHealthCheck() directly
+    // (never through here), so it can't undo that choice on its own re-render.
+    if (isHealth) { import('./health.js').then(m => { m.resetHealthCheckView(); m.renderHealthCheck(); }); }
     if (isMF) { buildMfBottomNav(); renderMF(); }
     if (isFD) { buildFdBottomNav(); renderFD(); }
     if (isDiv) { buildDivBottomNav(); renderDividend(); }
@@ -16145,6 +16148,30 @@ function renderHeatmap() {
   months.forEach((m) => htr.appendChild(el('th', { text: shortMonth(m.label) })));
   table.appendChild(el('thead', {}, [htr]));
 
+  // Best/worst STOCK for each month, column-wise across every stock - which
+  // one had the highest and lowest return that specific month. Distinct from
+  // the 👍/👎 below (a stock's own best/worst month, row-wise): that one asks
+  // "was this a good month for THIS stock", this asks "was THIS stock the
+  // best pick that month" - so it gets its own corner (top-left vs bottom-
+  // right) rather than fighting the same spot.
+  const monthStockPct = new Map();
+  stocks.forEach((s) => {
+    (s.history || []).forEach((h) => {
+      const ym = labelToYm(h.month);
+      if (ym && typeof h.pct === 'number') {
+        if (!monthStockPct.has(ym)) monthStockPct.set(ym, []);
+        monthStockPct.get(ym).push({ name: s.name, pct: h.pct });
+      }
+    });
+  });
+  const monthBestName = {}, monthWorstName = {};
+  monthStockPct.forEach((arr, ym) => {
+    if (arr.length < 2) return; // nothing to compare against with only one stock reporting
+    let best = arr[0], worst = arr[0];
+    arr.forEach((x) => { if (x.pct > best.pct) best = x; if (x.pct < worst.pct) worst = x; });
+    if (best.name !== worst.name) { monthBestName[ym] = best.name; monthWorstName[ym] = worst.name; }
+  });
+
   const tbody = el('tbody');
   stocks.forEach((s) => {
     const byYm = {};
@@ -16168,6 +16195,11 @@ function renderHeatmap() {
         td.appendChild(document.createTextNode(p.toFixed(2) + '%'));
         if (m.ym === maxYm) td.appendChild(el('span', { class: 'hm-sticker', text: '👍' }));
         else if (m.ym === minYm) td.appendChild(el('span', { class: 'hm-sticker', text: '👎' }));
+        if (monthBestName[m.ym] === s.name) {
+          td.appendChild(el('span', { class: 'hm-col-sticker hm-col-best', text: '👍', title: (s.name || '') + ' — highest return in ' + shortMonth(m.label) }));
+        } else if (monthWorstName[m.ym] === s.name) {
+          td.appendChild(el('span', { class: 'hm-col-sticker hm-col-worst', text: '👎', title: (s.name || '') + ' — lowest return in ' + shortMonth(m.label) }));
+        }
       }
       tr.appendChild(td);
     });

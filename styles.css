@@ -651,6 +651,11 @@ table.heatmap { border-collapse: collapse; font-size: 0.72rem; }
 .heatmap th, .heatmap td { border: 1px solid var(--line); padding: 5px 6px; text-align: center; white-space: nowrap; }
 .heatmap td { min-width: 56px; position: relative; font-weight: 700; }
 .hm-sticker { position: absolute; bottom: 1px; right: 1px; font-size: 0.8rem; line-height: 1; pointer-events: none; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.5)); }
+/* Top-left, opposite corner from .hm-sticker - that one is a stock's own
+   best/worst month (row-wise), this is the best/worst STOCK for that month
+   (column-wise), so the two never need to share a spot even when both land
+   on the same cell. */
+.hm-col-sticker { position: absolute; top: 1px; left: 1px; font-size: 0.8rem; line-height: 1; pointer-events: none; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.5)); }
 .heatmap thead th { position: sticky; top: 0; background: var(--bg-2); z-index: 2; color: var(--muted); font-weight: 600; }
 .heatmap th.rowhead, .heatmap th.corner { position: sticky; left: 0; background: var(--bg-2); text-align: left; }
 .heatmap th.rowhead { z-index: 1; max-width: 160px; }
