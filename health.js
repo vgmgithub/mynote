@@ -249,19 +249,21 @@ async function renderHealthCheck() {
   // and sticks to the top once scrolled there, same as the app header
   // above it, so it's still clear who/what a card further down belongs to.
   const selected = el('div', { class: 'hc-selected' }, [
-    el('div', { class: 'hc-avatar' }, [
-      isFamily
-        ? el('img', { src: 'icons/emoji/family.png', alt: '', style: 'width: 1.3em; height: 1.3em; display: inline-block; vertical-align: middle;' })
-        : personAvatarImg(age, person.gender, '1.3em'),
+    // Segment 1: avatar + name/age, as before.
+    el('div', { class: 'hc-selected-info' }, [
+      el('div', { class: 'hc-avatar' }, [
+        isFamily
+          ? el('img', { src: 'icons/emoji/family.png', alt: '', style: 'width: 1.3em; height: 1.3em; display: inline-block; vertical-align: middle;' })
+          : personAvatarImg(age, person.gender, '1.3em'),
+      ]),
+      el('div', {}, [
+        el('div', { class: 'hc-selected-name', text: isFamily ? 'Family Health of ' + people.length + ' members' : person.name }),
+        (!isFamily && age != null) ? el('div', { class: 'hc-selected-age', text: age + 'y' }) : null,
+      ].filter(Boolean)),
     ]),
-    el('div', { style: 'flex: 1;' }, [
-      el('div', { class: 'hc-selected-name', text: isFamily ? 'Family Health of ' + people.length + ' members' : person.name }),
-      (!isFamily && age != null) ? el('div', { class: 'hc-selected-age', text: age + 'y' }) : null,
-    ].filter(Boolean)),
-    // Only for a real person with both height AND weight on record - see
-    // calcBmi. Sits between the name/age block and Out of Range, on the
-    // same row, so the one-line summary of "who is this and are they okay"
-    // reads left to right without opening anything.
+    // Segment 2: BMI, stacked - score on top (bigger), category below,
+    // then how many kg to the healthy band. Only for a real person with
+    // both height AND weight on record - see calcBmi.
     (!isFamily && calcBmi(person.heightCm, person.weightKg)) ? (() => {
       const b = calcBmi(person.heightCm, person.weightKg);
       return el('div', { class: 'hc-bmi hc-bmi-' + b.cls }, [
@@ -270,6 +272,7 @@ async function renderHealthCheck() {
         b.deltaKg != null ? el('span', { class: 'hc-bmi-delta', text: (b.deltaDir === 'gain' ? '+' : '−') + b.deltaKg + 'kg to healthy' }) : null,
       ].filter(Boolean));
     })() : null,
+    // Segment 3: Out of Range filter.
     isFamily ? null : el('button', {
       class: 'hc-filter-btn' + (_hcFilterOutOfRange ? ' active' : ''),
       text: 'Out of Range',
