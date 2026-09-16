@@ -5123,7 +5123,8 @@ async function renderHomeSavings() {
 
   const efCard = _homeCard('🚨', 'Emergency Fund', 'targets · loans · corpus', () => openEmergency());
   const bankSavCard = _homeCard('🐷', 'Bank Savings', 'per-bank balances', () => setAppMode('banksav'));
-  host.appendChild(el('div', { class: 'home-cards' }, [efCard, bankSavCard]));
+  const inflationCard = _homeCard('📉', 'Inflation Calculator', 'today’s value of a future amount', () => openInflationCalculator());
+  host.appendChild(el('div', { class: 'home-cards' }, [efCard, bankSavCard, inflationCard]));
 
   try {
     const rows = (await DB.all('bankSavings')) || [];
@@ -5133,6 +5134,77 @@ async function renderHomeSavings() {
       sub.textContent = `${rows.length} account${rows.length === 1 ? '' : 's'} · ${fmtIntCur(total)}`;
     }
   } catch (_) {}
+}
+
+// Default only - the user's own figure (meta.inflationRatePct) always wins
+// once they edit and save it, same pattern as meta.metalDomesticPremium.
+const DEFAULT_INFLATION_PCT = 4.82;
+
+async function _inflationRatePct() {
+  const row = await DB.get('meta', 'inflationRatePct').catch(() => null);
+  return row && row.value != null ? Number(row.value) : DEFAULT_INFLATION_PCT;
+}
+
+// Present-day equivalent of a future rupee amount: what a sum you'll have
+// (or need) in some future year is actually worth in today's money, given
+// average inflation between now and then. PV = FV / (1 + rate)^years - the
+// same discounting math a "real return" or retirement-corpus estimate uses,
+// just standing alone here as a quick what-if.
+async function openInflationCalculator() {
+  const savedRate = await _inflationRatePct();
+  const thisYear = new Date().getFullYear();
+
+  const rateInput = el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: savedRate });
+  const amtInput = el('input', { type: 'number', inputmode: 'decimal', step: 'any', placeholder: '₹ amount' });
+  const yearInput = el('input', { type: 'number', inputmode: 'numeric', step: '1', value: thisYear + 10 });
+
+  const readout = el('div', { class: 'ef-proj-big' });
+
+  const refresh = () => {
+    readout.innerHTML = '';
+    const amt = num(amtInput.value);
+    const rate = num(rateInput.value);
+    const year = num(yearInput.value);
+    if (!(amt > 0) || rate == null) {
+      readout.appendChild(el('div', { class: 'hint', text: 'Enter an amount to see its value in today’s money.' }));
+      return;
+    }
+    const years = year != null ? year - thisYear : 0;
+    if (!(years > 0)) {
+      readout.appendChild(el('div', { class: 'hint', text: 'Pick a year after ' + thisYear + '.' }));
+      return;
+    }
+    const presentValue = amt / Math.pow(1 + rate / 100, years);
+    readout.appendChild(el('div', { class: 'label', text: fmtIntCur(amt) + ' in ' + year + ' is worth, today' }));
+    readout.appendChild(el('div', { class: 'big', text: fmtIntCur(presentValue) }));
+    readout.appendChild(el('div', { class: 'hint', text:
+      years + ' year' + (years === 1 ? '' : 's') + ' away, at ' + rate.toFixed(2) + '% average inflation' }));
+  };
+
+  amtInput.addEventListener('input', refresh);
+  yearInput.addEventListener('input', refresh);
+  rateInput.addEventListener('input', refresh);
+  // Saved only once the user moves on from the field, not on every
+  // keystroke - editing "4.82" one digit at a time shouldn't write to the
+  // DB four times before they've finished typing.
+  rateInput.addEventListener('change', () => {
+    const rate = num(rateInput.value);
+    if (rate != null) DB.put('meta', { key: 'inflationRatePct', value: rate }).catch(() => {});
+  });
+
+  refresh();
+
+  openModal(el('div', { class: 'sheet' }, [
+    el('h2', { text: 'Inflation Calculator' }),
+    el('p', { class: 'hint', text: 'What a future rupee amount is actually worth in today’s money, given average inflation between now and then.' }),
+    field('Inflation rate (% per year)', rateInput),
+    field('Amount', amtInput),
+    field('Year', yearInput),
+    readout,
+    el('div', { class: 'btn-row' }, [
+      el('button', { class: 'btn primary', text: 'Close', onclick: closeModal }),
+    ]),
+  ]));
 }
 
 // ---------- Tags tab: what the handles add up to ----------
