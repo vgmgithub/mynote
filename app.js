@@ -16195,10 +16195,13 @@ function renderHeatmap() {
         td.appendChild(document.createTextNode(p.toFixed(2) + '%'));
         if (m.ym === maxYm) td.appendChild(el('span', { class: 'hm-sticker', text: '👍' }));
         else if (m.ym === minYm) td.appendChild(el('span', { class: 'hm-sticker', text: '👎' }));
+        // Trophy/falling-chart rather than thumbs - those are already taken by
+        // .hm-sticker for a different question (a stock's own best/worst
+        // month), so this pair needed its own distinct icons.
         if (monthBestName[m.ym] === s.name) {
-          td.appendChild(el('span', { class: 'hm-col-sticker hm-col-best', text: '👍', title: (s.name || '') + ' — highest return in ' + shortMonth(m.label) }));
+          td.appendChild(el('span', { class: 'hm-col-sticker hm-col-best', text: '🏆', title: (s.name || '') + ' — highest return in ' + shortMonth(m.label) }));
         } else if (monthWorstName[m.ym] === s.name) {
-          td.appendChild(el('span', { class: 'hm-col-sticker hm-col-worst', text: '👎', title: (s.name || '') + ' — lowest return in ' + shortMonth(m.label) }));
+          td.appendChild(el('span', { class: 'hm-col-sticker hm-col-worst', text: '📉', title: (s.name || '') + ' — lowest return in ' + shortMonth(m.label) }));
         }
       }
       tr.appendChild(td);
