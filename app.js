@@ -4334,8 +4334,8 @@ async function renderHome() {
 
   // Subtitles list what's actually behind each card, in the order the section
   // itself lists them.
-  const investmentCard = _homeCard('💼', 'Investment', 'Stocks · MF · FD · Metals · Bonds · Dividends', () => setAppMode('investment'));
-  const savingsCard = _homeCard('🏦', 'Savings', 'Emergency Fund · Goals', () => setAppMode('savings'));
+  const investmentCard = _homeCard('💼', 'Investment', 'Stocks · MF · FD · Metals · Bonds', () => setAppMode('investment'));
+  const savingsCard = _homeCard('🏦', 'Savings', 'Emergency Fund · Dividends', () => setAppMode('savings'));
   // Two different taps, two different destinations:
   //  - the card itself (title/subtitle/chevron) opens on whichever tab was
   //    last open there (_expTab persists across navigation, defaulting to
@@ -5051,9 +5051,8 @@ async function renderHomeInvestment() {
   const fdCard = _homeCard('🏦', 'Fixed Deposits', 'FD ladder · maturity · interest', () => setAppMode('fd'));
   const metalCard = _homeCard(_metalBarIcon(), 'Metals', 'gold · silver · SGB', () => openMetal());
   const bondCard = _homeCard('🧾', 'Bonds', 'coupon · maturity · vs bank', () => openBond());
-  const divCard = _homeCard('💰', 'Dividends', 'per-stock · yearly · YoY', () => openDividend());
 
-  host.appendChild(el('div', { class: 'home-cards' }, [stockCard, mfCard, fdCard, metalCard, bondCard, divCard]));
+  host.appendChild(el('div', { class: 'home-cards' }, [stockCard, mfCard, fdCard, metalCard, bondCard]));
 
   // Live stats
   try {
@@ -5104,15 +5103,6 @@ async function renderHomeInvestment() {
       if (bondSub) bondSub.textContent = `${activeBonds.length} active · ${fmtIntCur(invested)} invested`;
     }
 
-    const divMod = await import('./dividend.js');
-    const divList = await _eligibleDividendRecords(divMod, { write: false });
-    if (divList.length) {
-      const inRows = divList.filter((d) => d.market === 'in');
-      const curYear = new Date().getFullYear();
-      const inThisYr = inRows.reduce((s, d) => s + divMod.yearTotal(d, curYear), 0);
-      const divSub = divCard.querySelector('.home-card-sub');
-      if (divSub) divSub.textContent = `${divList.length} stocks · ${fmtIntCur(inThisYr)} in ${curYear}`;
-    }
   } catch (_) {}
 }
 
@@ -5122,9 +5112,10 @@ async function renderHomeSavings() {
   host.innerHTML = '';
 
   const efCard = _homeCard('🚨', 'Emergency Fund', 'targets · loans · corpus', () => openEmergency());
+  const divCard = _homeCard('💰', 'Dividends', 'per-stock · yearly · YoY', () => openDividend());
   const bankSavCard = _homeCard('🐷', 'Bank Savings', 'per-bank balances', () => setAppMode('banksav'));
   const inflationCard = _homeCard('📉', 'Inflation Calculator', 'today’s value of a future amount', () => openInflationCalculator());
-  host.appendChild(el('div', { class: 'home-cards' }, [efCard, bankSavCard, inflationCard]));
+  host.appendChild(el('div', { class: 'home-cards' }, [efCard, divCard, bankSavCard, inflationCard]));
 
   try {
     const rows = (await DB.all('bankSavings')) || [];
@@ -5132,6 +5123,16 @@ async function renderHomeSavings() {
     if (rows.length && sub) {
       const total = rows.reduce((s, r) => s + (Number(r.balance) || 0), 0);
       sub.textContent = `${rows.length} account${rows.length === 1 ? '' : 's'} · ${fmtIntCur(total)}`;
+    }
+
+    const divMod = await import('./dividend.js');
+    const divList = await _eligibleDividendRecords(divMod, { write: false });
+    if (divList.length) {
+      const inRows = divList.filter((d) => d.market === 'in');
+      const curYear = new Date().getFullYear();
+      const inThisYr = inRows.reduce((s, d) => s + divMod.yearTotal(d, curYear), 0);
+      const divSub = divCard.querySelector('.home-card-sub');
+      if (divSub) divSub.textContent = `${divList.length} stocks · ${fmtIntCur(inThisYr)} in ${curYear}`;
     }
   } catch (_) {}
 }
