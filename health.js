@@ -362,7 +362,7 @@ async function renderHealthCheck() {
       // being a control and becomes a plain status label - a button that only
       // ever shows an empty list is a button that shouldn't be pressable.
       isFamily ? null : (outOfRangeCount === 0
-        ? el('div', { class: 'hc-filter-btn hc-filter-btn-clear', text: 'All in Range' })
+        ? el('div', { class: 'hc-filter-btn hc-filter-btn-clear', text: 'All is Well' })
         : el('button', {
             class: 'hc-filter-btn' + (_hcFilterOutOfRange ? ' active' : ''),
             onclick: () => { _hcFilterOutOfRange = !_hcFilterOutOfRange; renderHealthCheck(); },
