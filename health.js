@@ -1224,13 +1224,21 @@ async function openHealthCheckForm(person, existing) {
     };
     if (isEdit) rec.id = existing.id;
     await DB.put('healthChecks', rec);
-    closeModal(); toast(isEdit ? 'Health check updated' : 'Health check added'); renderHealthCheck();
+    closeModal(); toast(isEdit ? 'Health check updated' : 'Health check added');
+    // Editing only ever happens from within that person's Records page (the
+    // ✏️ in openHealthRecordsManager's list), so Update returns there rather
+    // than falling through to the main Health Check page - which could be
+    // showing a different person or the Family table entirely, whatever it
+    // was on before Records was opened. Adding (the FAB, from the main page
+    // itself) stays on that same main page, unchanged.
+    if (isEdit) openHealthRecordsManager(person);
+    else renderHealthCheck();
   };
 
   const del = async () => {
     if (!window.confirm('Delete this health check record?')) return;
     await DB.del('healthChecks', existing.id);
-    closeModal(); toast('Removed'); renderHealthCheck();
+    closeModal(); toast('Removed'); openHealthRecordsManager(person);
   };
 
   const footerBtns = [el('button', { class: 'btn primary', text: 'Save', onclick: save })];
