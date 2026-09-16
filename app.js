@@ -4960,22 +4960,14 @@ function _metalBarIcon() {
   return el('img', { src: 'icons/gold-bars.png', class: 'metal-bar-ico', alt: 'Gold bars' });
 }
 
-// A bi-fold WALLET for the Personal Finance card - drawn rather than picked
-// from the emoji set, which offers a purse, a handbag and a pouch and nothing a
-// man would say he carries. It is the same wallet as that section's own add
-// button, so Home and the section it opens are recognisably the one thing.
+// The Personal Finance card's own icon - deliberately a DIFFERENT image from
+// the section's add-spend FAB (#pfAddBtn in index.html) now: the two used to
+// share one drawn wallet SVG "so Home and the section it opens are
+// recognisably the one thing", but the user supplied two distinct icons
+// (2026-09-16) and asked for them kept apart - a cash note for the card, a
+// hand-with-₹ for the FAB.
 function _walletIcon() {
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('viewBox', '0 0 24 24');
-  svg.setAttribute('class', 'wallet-ico');
-  svg.setAttribute('aria-hidden', 'true');
-  svg.setAttribute('focusable', 'false');
-  svg.innerHTML = '<rect x="12.2" y="2.9" width="9" height="5.8" rx="1.2" fill="#EDE9FE" stroke="#4C1D95" stroke-width="0.9"/>'
-    + '<path d="M13.4 5.9h6.6" stroke="#4C1D95" stroke-width="0.9" stroke-linecap="round"/>'
-    + '<path d="M3.5 7h14.8c1 0 1.7.8 1.7 1.7v9.6c0 1-.8 1.7-1.7 1.7H3.5c-1 0-1.7-.8-1.7-1.7V8.7c0-1 .8-1.7 1.7-1.7Z" fill="#fff" stroke="#4C1D95" stroke-width="1"/>'
-    + '<path d="M13.9 12.2h6v3.6h-6a1.8 1.8 0 0 1 0-3.6Z" fill="#C4B5FD" stroke="#4C1D95" stroke-width="0.9"/>'
-    + '<circle cx="15.7" cy="14" r="0.8" fill="#4C1D95"/>';
-  return svg;
+  return el('img', { src: 'icons/personal-finance.png', class: 'wallet-ico', alt: 'Personal Finance' });
 }
 
 // The copy button on a vault card. The clipboard emoji was the biggest, most

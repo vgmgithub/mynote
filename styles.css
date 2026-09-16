@@ -2385,7 +2385,7 @@ input.pf-lim-input { width: 100%; padding: 9px 11px; border: 1px solid var(--lin
   box-shadow: 0 6px 14px rgba(0,0,0,0.32), 0 12px 28px rgba(0,0,0,0.28), 0 0 0 1px rgba(255,255,255,0.14);
 }
 .fab.fab-personal:active { transform: translateY(1px); box-shadow: 0 4px 10px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.14); }
-.fab.fab-personal svg { width: 26px; height: 26px; display: block; }
+.fab.fab-personal svg, .fab.fab-personal img { width: 26px; height: 26px; display: block; object-fit: contain; }
 /* On Home both live in the bottom-right corner, STACKED rather than spread
    along the bottom edge. The household one keeps the lower slot, being the
    one logged more often and so the one the thumb should find first. */
