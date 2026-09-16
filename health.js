@@ -385,6 +385,19 @@ async function renderHealthCheck() {
   host.appendChild(sections);
 }
 
+// scrollIntoView's block:'start' aligns the card's top edge with the very
+// top of the scroll area - exactly where the sticky app header and the
+// sticky .hc-selected name/BMI row sit (see renderHealthCheck), so both the
+// card AND the row naming who it belongs to end up hidden behind them.
+// This scrolls to the same card but shifted down past both sticky layers.
+function scrollCardBelowStickyHeaders(card) {
+  const appHeader = document.querySelector('.app-header');
+  const selectedRow = document.querySelector('.hc-selected');
+  const stickyH = (appHeader ? appHeader.offsetHeight : 0) + (selectedRow ? selectedRow.offsetHeight : 0);
+  const y = card.getBoundingClientRect().top + window.scrollY - stickyH - 8;
+  window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
+}
+
 // One row per parameter, one column per family member, each cell a traffic-
 // light DOT for their LATEST reading for that parameter (not their whole
 // history, and not the value itself) - a quick side-by-side glance instead
@@ -406,7 +419,7 @@ async function renderFamilyTable(people, params) {
     _expandedParamId = hasEntry ? param.id : null;
     renderHealthCheck().then(() => {
       const card = Array.from(document.querySelectorAll('.hc-card')).find(c => c.dataset.paramId === String(param.id));
-      if (card) card.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      if (card) scrollCardBelowStickyHeaders(card);
     });
   };
 
