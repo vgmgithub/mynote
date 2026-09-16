@@ -358,14 +358,15 @@ async function renderHealthCheck() {
     // own readings on their page. Share sits below Out of Range and reads
     // smaller on a person's page - Out of Range is the primary action there.
     el('div', { class: 'hc-selected-actions' }, [
-      isFamily ? null : el('button', {
-        class: 'hc-filter-btn'
-          + (_hcFilterOutOfRange ? ' active' : '')
-          + (outOfRangeCount === 0 ? ' hc-filter-btn-clear' : ''),
-        onclick: () => { _hcFilterOutOfRange = !_hcFilterOutOfRange; renderHealthCheck(); },
-      }, outOfRangeCount === 0
-        ? ['All Clear']
-        : ['Out of Range', el('span', { class: 'hc-filter-count', text: String(outOfRangeCount) })]),
+      // With nothing out of range there's nothing to filter to, so this stops
+      // being a control and becomes a plain status label - a button that only
+      // ever shows an empty list is a button that shouldn't be pressable.
+      isFamily ? null : (outOfRangeCount === 0
+        ? el('div', { class: 'hc-filter-btn hc-filter-btn-clear', text: 'All Clear' })
+        : el('button', {
+            class: 'hc-filter-btn' + (_hcFilterOutOfRange ? ' active' : ''),
+            onclick: () => { _hcFilterOutOfRange = !_hcFilterOutOfRange; renderHealthCheck(); },
+          }, ['Out of Range', el('span', { class: 'hc-filter-count', text: String(outOfRangeCount) })])),
       el('button', {
         class: 'hc-share-btn' + (isFamily ? '' : ' hc-share-btn-sm'),
         title: isFamily ? 'Share family table as an image' : "Share " + person.name + "'s records as an image",
@@ -556,6 +557,59 @@ function _canvasTimeAgo(dateStr) {
   return Math.floor(months / 12) + 'y ago';
 }
 
+// Every shared image gets the same app icon top-right and the same footer
+// underneath. Once an image leaves the app it carries no other context, so
+// whoever receives it can see where the numbers came from - and that it's
+// somebody's own running record, not a lab report or a clinical document.
+const SHARE_FOOTER_H = 42;
+// Kept short enough to fit the narrowest image this draws - a one-person
+// family table is only ~250px wide, and a truncated disclaimer says less
+// than a brief one.
+const SHARE_DISCLAIMER = 'Self-recorded in MyNotes - not a medical report.';
+
+let _appIconPromise = null;
+function _loadAppIcon() {
+  if (!_appIconPromise) {
+    // Resolves to null rather than rejecting: a missing icon should cost the
+    // image its logo, not the whole share.
+    _appIconPromise = new Promise((resolve) => {
+      const im = new Image();
+      im.onload = () => resolve(im);
+      im.onerror = () => resolve(null);
+      im.src = 'icons/icon-192.png';
+    });
+  }
+  return _appIconPromise;
+}
+
+// Rounded like an app icon rather than a bare square, matching how the same
+// artwork reads on a home screen.
+function _drawAppIcon(ctx, icon, x, y, size) {
+  if (!icon) return;
+  ctx.save();
+  _canvasRoundRect(ctx, x, y, size, size, size * 0.22);
+  ctx.clip();
+  ctx.drawImage(icon, x, y, size, size);
+  ctx.restore();
+}
+
+function _drawShareChrome(ctx, icon, width, height, pad, FONT) {
+  _drawAppIcon(ctx, icon, width - pad - 38, pad, 38);
+
+  const y = height - SHARE_FOOTER_H;
+  ctx.strokeStyle = '#e3e7ee';
+  ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(width - pad, y); ctx.stroke();
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  _drawAppIcon(ctx, icon, pad, y + 9, 13);
+  ctx.font = '700 10px ' + FONT;
+  ctx.fillStyle = '#0e1726';
+  ctx.fillText('MyNotes', pad + (icon ? 18 : 0), y + 16);
+  ctx.font = '400 7px ' + FONT;
+  ctx.fillStyle = '#8a94a6';
+  ctx.fillText(_canvasTruncate(ctx, SHARE_DISCLAIMER, width - pad * 2), pad, y + 32);
+}
+
 // Redraws the same Family table (parameter rows x person columns of status
 // dots - see renderFamilyTable above, which this deliberately mirrors) onto
 // a flat PNG, then hands it to the Web Share API so it can go to WhatsApp,
@@ -593,10 +647,11 @@ async function shareFamilyTableImage() {
     const mutedColor = getComputedStyle(document.documentElement).getPropertyValue('--muted').trim() || '#8a94a6';
     const statusColor = (status) => { const c = getStatusColor(status); return c.startsWith('var(') ? mutedColor : c; };
 
+    const appIcon = await _loadAppIcon();
     const dpr = Math.min(window.devicePixelRatio || 1, 3);
     const paramColW = 130, colW = 88, rowH = 34, headH = 40, pad = 16, titleH = 44;
     const width = pad * 2 + paramColW + colW * people.length;
-    const height = titleH + headH + rowH * rows.length + pad * 2;
+    const height = titleH + headH + rowH * rows.length + pad + SHARE_FOOTER_H;
 
     const canvas = document.createElement('canvas');
     canvas.width = Math.round(width * dpr);
@@ -683,6 +738,7 @@ async function shareFamilyTableImage() {
     ctx.strokeStyle = '#dfe3ea';
     ctx.strokeRect(pad, top, width - pad * 2, headH + rowH * rows.length);
 
+    _drawShareChrome(ctx, appIcon, width, height, pad, FONT);
     await _shareCanvasImage(canvas, 'family-health.png', 'Family Health');
   } catch (e) {
     console.error('shareFamilyTableImage failed:', e);
@@ -749,9 +805,10 @@ async function sharePersonImage(person) {
     const statusColor = (status) => { const c = getStatusColor(status); return c.startsWith('var(') ? mutedColor : c; };
 
     const bmi = calcBmi(person.heightCm, person.weightKg);
+    const appIcon = await _loadAppIcon();
     const dpr = Math.min(window.devicePixelRatio || 1, 3);
     const width = 360, pad = 16, headH = bmi && bmi.deltaKg != null ? 76 : 60, rowH = 64;
-    const height = pad + headH + rowH * rows.length + pad;
+    const height = pad + headH + rowH * rows.length + SHARE_FOOTER_H;
 
     const canvas = document.createElement('canvas');
     canvas.width = Math.round(width * dpr);
@@ -777,7 +834,8 @@ async function sharePersonImage(person) {
     ctx.textAlign = 'left';
     ctx.font = '700 17px ' + FONT;
     ctx.fillStyle = '#0e1726';
-    ctx.fillText(_canvasTruncate(ctx, person.name, width - pad * 2 - 50), pad + 48, pad + 14);
+    // -46 keeps a long name clear of the app icon sitting in the top-right.
+    ctx.fillText(_canvasTruncate(ctx, person.name, width - pad * 2 - 50 - 46), pad + 48, pad + 14);
 
     const age = calcAge(person.dob);
     let subLine = age != null ? age + 'y' : '';
@@ -881,6 +939,7 @@ async function sharePersonImage(person) {
       ctx.beginPath(); ctx.moveTo(pad, y + rowH); ctx.lineTo(width - pad, y + rowH); ctx.stroke();
     });
 
+    _drawShareChrome(ctx, appIcon, width, height, pad, FONT);
     await _shareCanvasImage(canvas, (person.name || 'health').replace(/\s+/g, '-').toLowerCase() + '-health.png', person.name + "'s Health");
   } catch (e) {
     console.error('sharePersonImage failed:', e);
