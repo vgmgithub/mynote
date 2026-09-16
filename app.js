@@ -3520,7 +3520,11 @@ function buildExpBottomNav() {
   // the annual plan - set once, glanced at - so it sits at the far end next to
   // Review rather than second, where it was taking the easiest reach on the bar
   // from the three tabs touched every week.
-  [['cc', '💳', 'Credit Card'], ['spend', '🧾', 'Expense'], ['tracker', '📍', 'Tracker'], ['review', '🔍', 'Review'], ['alloc', '🧭', 'Allocation']].forEach(([v, ico, label]) => {
+  // 'spend' was labelled "Expense" - the same word as the section itself,
+  // which read as "which Expense is this" rather than saying what the tab
+  // actually is: the monthly cash-flow sheet (In Hand + Virtual Bal minus
+  // what's gone out), headlined by Available Balance. Renamed 2026-09-16.
+  [['cc', '💳', 'Credit Card'], ['spend', '🧾', 'Balance'], ['tracker', '📍', 'Tracker'], ['review', '🔍', 'Review'], ['alloc', '🧭', 'Allocation']].forEach(([v, ico, label]) => {
     nav.appendChild(el('button', { 'data-view': v, onclick: () => { if (_expTab === v) return; _expTab = v; renderHomeExpense(); } },
       [el('span', { class: 'bn-ico', text: ico }), label]));
   });
@@ -4332,7 +4336,10 @@ async function renderHome() {
   // itself lists them.
   const investmentCard = _homeCard('💼', 'Investment', 'Stocks · MF · FD · Metals · Bonds · Dividends', () => setAppMode('investment'));
   const savingsCard = _homeCard('🏦', 'Savings', 'Emergency Fund · Goals', () => setAppMode('savings'));
-  const expenseCard = _homeCard('💳', 'Expense', 'Credit Card · Allocation · Monthly sheet', () => setAppMode('expense'));
+  // Lands straight on Balance (Available Balance), not wherever _expTab last
+  // was - this card IS the "check my funds and balance" shortcut, so it
+  // should never open on Credit Card by accident of navigation history.
+  const expenseCard = _homeCard('💳', 'Expense', 'Balance · Credit Card · Tracker', () => { _expTab = 'spend'; setAppMode('expense'); });
   const personalCard = _homeCard(_walletIcon(), 'Personal Finance', 'Own spends · card & UPI limits', () => setAppMode('personal'));
   const healthCard = _homeCard(el('img', { src: 'icons/health-card.png', alt: '', style: 'width: 30px; height: 30px; display: block;' }), 'Health Check', 'Medical records · Family history', () => setAppMode('health'));
   const vaultCard = _homeCard('\ud83d\udd10', 'My Passwords', 'Locked · encrypted on this device', () => setAppMode('vault'));
