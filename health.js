@@ -295,6 +295,26 @@ async function renderHealthCheck() {
   const isFamily = _hcView === 'family';
   const age = isFamily ? null : calcAge(person.dob);
 
+  // Fetched here (rather than down with the section-building loop below,
+  // where this used to live) so the Out of Range button's own count badge
+  // can be computed before that button is built. Reused there too, so this
+  // isn't a second DB read.
+  let personChecks = null, params = null, outOfRangeCount = 0;
+  if (!isFamily) {
+    const checks = await DB.all('healthChecks').catch(() => []);
+    personChecks = checks.filter(c => c.personId === _healthPerson).sort((a, b) => b.date.localeCompare(a.date));
+    params = (await getHealthParams()).slice().sort((a, b) => a.label.localeCompare(b.label));
+    outOfRangeCount = params.reduce((count, p) => {
+      for (const c of personChecks) {
+        const n = c.parameters && normalizeParamEntry(c.parameters[p.id]);
+        if (n && n.value != null && n.value !== '') {
+          return count + (getParamStatus(n.value, effectiveRange(p, person.gender)) === 'good' ? 0 : 1);
+        }
+      }
+      return count;
+    }, 0);
+  }
+
   // This row names whatever the tabs above selected - a person (their
   // avatar, name, age) or the family table (a family emoji + its label) -
   // and sticks to the top once scrolled there, same as the app header
@@ -330,10 +350,13 @@ async function renderHealthCheck() {
     // smaller on a person's page - Out of Range is the primary action there.
     el('div', { class: 'hc-selected-actions' }, [
       isFamily ? null : el('button', {
-        class: 'hc-filter-btn' + (_hcFilterOutOfRange ? ' active' : ''),
-        text: 'Out of Range',
+        class: 'hc-filter-btn'
+          + (_hcFilterOutOfRange ? ' active' : '')
+          + (outOfRangeCount === 0 ? ' hc-filter-btn-clear' : ''),
         onclick: () => { _hcFilterOutOfRange = !_hcFilterOutOfRange; renderHealthCheck(); },
-      }),
+      }, outOfRangeCount === 0
+        ? ['All Clear']
+        : ['Out of Range', el('span', { class: 'hc-filter-count', text: String(outOfRangeCount) })]),
       el('button', {
         class: 'hc-share-btn' + (isFamily ? '' : ' hc-share-btn-sm'),
         title: isFamily ? 'Share family table as an image' : "Share " + person.name + "'s records as an image",
@@ -356,9 +379,6 @@ async function renderHealthCheck() {
     return;
   }
 
-  const checks = await DB.all('healthChecks').catch(() => []);
-  const personChecks = checks.filter(c => c.personId === _healthPerson).sort((a, b) => b.date.localeCompare(a.date));
-
   fab.classList.remove('hidden');
   fab.onclick = () => openHealthCheckForm(person);
 
@@ -367,7 +387,6 @@ async function renderHealthCheck() {
     return;
   }
 
-  const params = (await getHealthParams()).slice().sort((a, b) => a.label.localeCompare(b.label));
   const sections = el('div', {});
   let shown = 0;
   params.forEach(p => {
@@ -423,6 +442,29 @@ async function renderFamilyTable(people, params) {
     });
   };
 
+  // "Standard interval" text for the info icon next to a parameter's name -
+  // the reference range a reading is judged against, since the table only
+  // ever shows a colour, never the value itself. Male/Female ranges are
+  // given separately when they differ, since a column can hold either.
+  const paramIntervalText = (p) => {
+    if (!p.genderSpecific) {
+      const r = paramRangeLabel(p);
+      return p.label + ': ' + (r && r !== '—' ? r + (p.unit ? ' ' + p.unit : '') : 'no standard range set');
+    }
+    const m = paramRangeLabel({ intervalType: p.intervalType, min: p.maleMin, max: p.maleMax });
+    const f = paramRangeLabel({ intervalType: p.intervalType, min: p.femaleMin, max: p.femaleMax });
+    return p.label + ' - Male ' + m + ', Female ' + f + (p.unit ? ' ' + p.unit : '');
+  };
+  // Tap or hover the (i) for the range - title covers hover, the toast
+  // covers tap (there's no hover on a phone).
+  const paramLabelCell = (label, intervalText) => el('td', { class: 'hc-family-param' }, [
+    el('span', { class: 'hc-family-param-label', text: label }),
+    el('span', {
+      class: 'hc-param-info', text: 'i', title: intervalText,
+      onclick: (e) => { e.stopPropagation(); toast(intervalText); },
+    }),
+  ]);
+
   // BMI isn't one of the user's own configurable parameters (see
   // getHealthParams) - it's computed from height/weight, same as the badge
   // on a person's own page (calcBmi) - so its row is built separately and
@@ -430,7 +472,7 @@ async function renderFamilyTable(people, params) {
   // readings for. No parameter card exists for it to expand into, so a tap
   // just opens that person's page rather than scrolling to anything.
   const bmiRow = el('tr', {}, [
-    el('td', { class: 'hc-family-param', text: 'BMI' }),
+    paramLabelCell('BMI', 'BMI standard range: 18.5-24.9 (healthy)'),
     ...people.map(person => {
       const goToPerson = () => { _hcView = null; _healthPerson = person.id; renderHealthCheck(); };
       const bmi = calcBmi(person.heightCm, person.weightKg);
@@ -476,7 +518,7 @@ async function renderFamilyTable(people, params) {
       ]);
     });
     return el('tr', {}, [
-      el('td', { class: 'hc-family-param', text: p.label }),
+      paramLabelCell(p.label, paramIntervalText(p)),
       ...cells,
     ]);
   });
@@ -607,10 +649,24 @@ async function shareFamilyTableImage() {
       ctx.strokeStyle = '#e3e7ee';
       ctx.beginPath(); ctx.moveTo(pad, y + rowH); ctx.lineTo(width - pad, y + rowH); ctx.stroke();
 
+      // Parameter name, then its standard interval in a much smaller, muted
+      // font right after it - same "range it's judged against" info as the
+      // on-screen (i) icon (paramIntervalText), just always-visible since a
+      // static image has no tap/hover to reveal it on demand.
+      ctx.textAlign = 'left';
+      const rangeTxt = param.__bmi ? '18.5-24.9' : paramRangeLabel(param);
+      ctx.font = '400 6px ' + FONT;
+      const rangeW = rangeTxt && rangeTxt !== '—' ? ctx.measureText(rangeTxt).width + 5 : 0;
       ctx.font = '600 11px ' + FONT;
       ctx.fillStyle = '#0e1726';
-      ctx.textAlign = 'left';
-      ctx.fillText(_canvasTruncate(ctx, param.label, paramColW - 16), pad + 8, y + rowH / 2);
+      const labelTrunc = _canvasTruncate(ctx, param.label, Math.max(20, paramColW - 16 - rangeW));
+      ctx.fillText(labelTrunc, pad + 8, y + rowH / 2);
+      if (rangeW) {
+        const labelW = ctx.measureText(labelTrunc).width;
+        ctx.font = '400 6px ' + FONT;
+        ctx.fillStyle = '#8a94a6';
+        ctx.fillText(rangeTxt, pad + 8 + labelW + 5, y + rowH / 2 + 1);
+      }
 
       people.forEach((person, ci) => {
         const cx = pad + paramColW + colW * ci + colW / 2, cy = y + rowH / 2;
