@@ -856,15 +856,16 @@ async function sharePersonImage(person) {
       // at a glance, same spirit as the on-screen hc-trend-ago label.
       const ago = _canvasTimeAgo(r.latest.date);
       if (ago) {
-        ctx.font = '600 9px ' + FONT;
-        const agoText = ago;
-        const tw2 = ctx.measureText(agoText).width;
-        const bx2 = subX, by2 = y + 42, bw2 = tw2 + 14, bh2 = 15;
+        ctx.font = '600 7px ' + FONT;
+        const tw2 = ctx.measureText(ago).width;
+        // by2/bh2 keep this pill centred on the same line as the lab badge
+        // beside it (y + 42, height 15) even though it's shorter.
+        const bx2 = subX, by2 = y + 43.5, bw2 = tw2 + 11, bh2 = 12;
         ctx.fillStyle = 'rgba(37,99,235,0.12)';
-        _canvasRoundRect(ctx, bx2, by2, bw2, bh2, 7.5);
+        _canvasRoundRect(ctx, bx2, by2, bw2, bh2, 6);
         ctx.fill();
         ctx.fillStyle = '#2563eb';
-        ctx.fillText(agoText, bx2 + 7, by2 + bh2 / 2 + 0.5);
+        ctx.fillText(ago, bx2 + 5.5, by2 + bh2 / 2 + 0.5);
       }
 
       ctx.textAlign = 'right';

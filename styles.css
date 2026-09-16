@@ -3224,8 +3224,10 @@ textarea.vault-notes:focus { outline: none; border-color: var(--accent); }
 .hc-family-table th:not(:first-child), .hc-family-table td.hc-dot-cell { width: 58px; }
 .hc-family-param { font-weight: 600; }
 /* (i) info icon beside a test's name on its card - tap or hover shows the
-   reference range, which used to sit on a permanent chip beside the name. */
-.hc-param-info { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; margin-left: 6px; vertical-align: 1px; border-radius: 50%; border: 1px solid var(--muted); color: var(--muted); font-size: 0.62rem; font-style: italic; font-weight: 700; line-height: 1; cursor: pointer; }
+   reference range, which used to sit on a permanent chip beside the name.
+   Filled with the page's own text colour rather than a literal black, so it
+   inverts to a light dot on a dark card instead of vanishing into it. */
+.hc-param-info { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 12px; height: 12px; margin-left: 6px; vertical-align: 2px; border-radius: 50%; background: var(--text); color: var(--bg); font-size: 0.5rem; font-style: italic; font-weight: 700; line-height: 1; cursor: pointer; }
 .hc-dot-cell { cursor: pointer; }
 .hc-dot-cell:active { background: var(--bg-2); }
 .hc-dot-wrap { position: relative; display: inline-flex; }
