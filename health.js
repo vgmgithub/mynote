@@ -323,12 +323,19 @@ async function renderHealthCheck() {
         b.deltaKg != null ? el('span', { class: 'hc-bmi-delta', text: (b.deltaDir === 'gain' ? '+' : '−') + b.deltaKg + 'kg to healthy' }) : null,
       ].filter(Boolean));
     })() : null,
-    // Segment 3: Out of Range filter.
-    isFamily ? null : el('button', {
-      class: 'hc-filter-btn' + (_hcFilterOutOfRange ? ' active' : ''),
-      text: 'Out of Range',
-      onclick: () => { _hcFilterOutOfRange = !_hcFilterOutOfRange; renderHealthCheck(); },
-    }),
+    // Segment 3: Out of Range filter on a person's page, Share on the
+    // Family table (there's nothing to filter there - it's already only
+    // latest readings).
+    isFamily
+      ? el('button', {
+          class: 'hc-share-btn', text: '📤', title: 'Share family table as an image',
+          onclick: () => shareFamilyTableImage(),
+        })
+      : el('button', {
+          class: 'hc-filter-btn' + (_hcFilterOutOfRange ? ' active' : ''),
+          text: 'Out of Range',
+          onclick: () => { _hcFilterOutOfRange = !_hcFilterOutOfRange; renderHealthCheck(); },
+        }),
   ].filter(Boolean));
   host.appendChild(selected);
   // CSS doesn't auto-stack sticky siblings - two elements both pinned at
@@ -429,6 +436,140 @@ async function renderFamilyTable(people, params) {
       el('tbody', {}, bodyRows),
     ]),
   ]);
+}
+
+// Truncates text to fit maxWidth px in ctx's current font, adding an
+// ellipsis - canvas has no CSS text-overflow, so this is that by hand.
+function _canvasTruncate(ctx, text, maxWidth) {
+  if (ctx.measureText(text).width <= maxWidth) return text;
+  let t = text;
+  while (t.length > 1 && ctx.measureText(t + '…').width > maxWidth) t = t.slice(0, -1);
+  return t + '…';
+}
+
+// Redraws the same Family table (parameter rows x person columns of status
+// dots - see renderFamilyTable above, which this deliberately mirrors) onto
+// a flat PNG, then hands it to the Web Share API so it can go to WhatsApp,
+// email, etc. straight from the button - a live DOM table can't be shared
+// as-is outside the app. Falls back to a plain download where file sharing
+// isn't supported (e.g. a desktop browser). Always drawn on a white
+// background regardless of the app's own theme, since the point is for
+// someone else to read it standalone.
+async function shareFamilyTableImage() {
+  try {
+    const people = await DB.all('healthPeople');
+    if (!people.length) { toast('No family members to share'); return; }
+    const params = (await getHealthParams()).slice().sort((a, b) => a.label.localeCompare(b.label));
+    const checks = await DB.all('healthChecks').catch(() => []);
+    const byPerson = new Map(people.map(p => [p.id, checks.filter(c => c.personId === p.id).sort((a, b) => b.date.localeCompare(a.date))]));
+
+    const latestFor = (person, param) => {
+      const personChecks = byPerson.get(person.id) || [];
+      for (const c of personChecks) {
+        const n = c.parameters && normalizeParamEntry(c.parameters[param.id]);
+        if (n && n.value != null && n.value !== '') return n;
+      }
+      return null;
+    };
+    // Only rows someone actually has a reading for - an all-blank row would
+    // just be dead space in a static image nobody can tap through.
+    const rows = params.filter(p => people.some(person => latestFor(person, p)));
+    if (!rows.length) { toast('No records yet to share'); return; }
+
+    const mutedColor = getComputedStyle(document.documentElement).getPropertyValue('--muted').trim() || '#8a94a6';
+    const statusColor = (status) => { const c = getStatusColor(status); return c.startsWith('var(') ? mutedColor : c; };
+
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    const paramColW = 130, colW = 88, rowH = 34, headH = 40, pad = 16, titleH = 44;
+    const width = pad * 2 + paramColW + colW * people.length;
+    const height = titleH + headH + rowH * rows.length + pad * 2;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    const FONT = '-apple-system, Segoe UI, Roboto, Arial, sans-serif';
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
+
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#0e1726';
+    ctx.font = '700 17px ' + FONT;
+    ctx.fillText('Family Health', pad, pad + 14);
+    ctx.fillStyle = '#8a94a6';
+    ctx.font = '400 11px ' + FONT;
+    ctx.fillText(new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }), pad, pad + 32);
+
+    const top = pad + titleH;
+    ctx.fillStyle = '#eef1f6';
+    ctx.fillRect(pad, top, width - pad * 2, headH);
+    ctx.font = '700 11px ' + FONT;
+    ctx.fillStyle = '#0e1726';
+    ctx.textAlign = 'left';
+    ctx.fillText('Parameter', pad + 8, top + headH / 2);
+    ctx.textAlign = 'center';
+    people.forEach((p, i) => {
+      const cx = pad + paramColW + colW * i + colW / 2;
+      ctx.fillText(_canvasTruncate(ctx, p.name, colW - 10), cx, top + headH / 2);
+    });
+
+    ctx.font = '600 11px ' + FONT;
+    rows.forEach((param, ri) => {
+      const y = top + headH + rowH * ri;
+      ctx.fillStyle = ri % 2 === 0 ? '#ffffff' : '#f7f9fc';
+      ctx.fillRect(pad, y, width - pad * 2, rowH);
+      ctx.strokeStyle = '#e3e7ee';
+      ctx.beginPath(); ctx.moveTo(pad, y + rowH); ctx.lineTo(width - pad, y + rowH); ctx.stroke();
+
+      ctx.fillStyle = '#0e1726';
+      ctx.textAlign = 'left';
+      ctx.fillText(_canvasTruncate(ctx, param.label, paramColW - 16), pad + 8, y + rowH / 2);
+
+      people.forEach((person, ci) => {
+        const latest = latestFor(person, param);
+        const cx = pad + paramColW + colW * ci + colW / 2, cy = y + rowH / 2;
+        if (!latest) {
+          ctx.strokeStyle = '#c7cdd8';
+          ctx.setLineDash([2, 2]);
+          ctx.beginPath(); ctx.arc(cx, cy, 6, 0, Math.PI * 2); ctx.stroke();
+          ctx.setLineDash([]);
+          return;
+        }
+        const status = getParamStatus(latest.value, effectiveRange(param, person.gender));
+        ctx.fillStyle = statusColor(status);
+        ctx.beginPath(); ctx.arc(cx, cy, 6, 0, Math.PI * 2); ctx.fill();
+      });
+    });
+
+    ctx.strokeStyle = '#dfe3ea';
+    ctx.strokeRect(pad, top, width - pad * 2, headH + rowH * rows.length);
+
+    canvas.toBlob(async (blob) => {
+      if (!blob) { toast('Could not create image'); return; }
+      const file = new File([blob], 'family-health.png', { type: 'image/png' });
+      try {
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: 'Family Health' });
+          return;
+        }
+      } catch (e) {
+        if (e.name === 'AbortError') return; // user backed out of the share sheet
+      }
+      // No file-sharing support (e.g. desktop browser) - save it instead.
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'family-health.png';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast('Image saved');
+    }, 'image/png');
+  } catch (e) {
+    console.error('shareFamilyTableImage failed:', e);
+    toast('Could not create image');
+  }
 }
 
 // entries is newest-first. Only the latest reading shows by default; tapping
