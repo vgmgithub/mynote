@@ -6233,9 +6233,34 @@ async function renderExpenseSheet(host, token) {
   const saveField = async (key, value, srcAtSave) => {
     const patch = { ym, [key]: value, updatedAt: new Date().toISOString() };
     if (srcAtSave !== undefined) patch[key + 'Src'] = value == null ? null : round2(srcAtSave || 0);
+    // Field history: what this box held just before, dated to when it
+    // changed - last 5, newest first, same shape the vault's own password
+    // history uses, so "when did I change what" has one answer across the
+    // app rather than a different convention per surface. Compared as
+    // NUMBERS (sumExpr), not raw text, so rewriting "7000" as "2000+5000"
+    // isn't logged as a change when the two add up the same.
+    const prevRaw = sheet[key];
+    const prevNum = (prevRaw == null || String(prevRaw).trim() === '') ? null : sumExpr(prevRaw);
+    const nextNum = (value == null || String(value).trim() === '') ? null : sumExpr(String(value));
+    if (prevNum != null && prevNum !== nextNum) {
+      const hist = Array.isArray(sheet[key + 'Hist']) ? sheet[key + 'Hist'] : [];
+      patch[key + 'Hist'] = [{ value: prevNum, changedAt: new Date().toISOString() }, ...hist].slice(0, 5);
+    }
     await DB.put('monthlySheet', Object.assign({}, sheet, patch));
     renderHomeExpense();
   };
+  // Subtle by design - present on every field this sheet can actually save
+  // (see saveField above), never calling attention to itself, but always
+  // there for "when did I change this." Opens even with nothing recorded yet
+  // (shows Current only) rather than only appearing once a history exists.
+  const historyBtn = (label, key, currentVal) => el('button', {
+    class: 'icon-btn msheet-history', type: 'button',
+    title: label + ' history', 'aria-label': label + ' history',
+    onclick: (e) => {
+      e.stopPropagation();
+      openSheetFieldHistory(label, currentVal, Array.isArray(sheet[key + 'Hist']) ? sheet[key + 'Hist'] : []);
+    },
+  }, [_historyIcon()]);
 
   // Is this row still tracking its source, or has it been deliberately set?
   // Nothing stored at all follows. A stored figure follows only while it still
@@ -6298,7 +6323,7 @@ async function renderExpenseSheet(host, token) {
           });
     table.appendChild(el('div', { class: 'msheet-row msheet-credit' }, [
       el('div', { class: 'msheet-label' }, [
-        el('span', {}, [label, state]),
+        el('span', {}, [label, state, historyBtn(label, key, amount)]),
         // The deduction is named in the caption rather than shown as a second
         // figure, so the row still explains itself with one number on it.
         el('span', { class: 'msheet-note', text: off > 0 ? note + ' − ' + fmtSheetCur(off) : note }),
@@ -6357,7 +6382,7 @@ async function renderExpenseSheet(host, token) {
             });
       table.appendChild(el('div', { class: 'msheet-row msheet-debit' }, [
         el('div', { class: 'msheet-label' }, [
-          el('span', {}, [r.label, state]),
+          el('span', {}, [r.label, state, historyBtn(r.label, r.key, boxVal)]),
           el('span', { class: 'msheet-note', text: r.note }),
         ]),
         inp,
@@ -6385,7 +6410,7 @@ async function renderExpenseSheet(host, token) {
     const noteTxt = r.source != null ? r.note + ' · ' + fmtSheetCur(r.source) : r.note;
     table.appendChild(el('div', { class: 'msheet-row msheet-debit' }, [
       el('div', { class: 'msheet-label' }, [
-        el('span', { text: r.label }),
+        el('span', {}, [r.label, historyBtn(r.label, r.key, boxVal)]),
         el('span', { class: 'msheet-note', text: noteTxt }),
       ]),
       el('div', { class: 'msheet-stack' }, [
@@ -6416,6 +6441,56 @@ async function renderExpenseSheet(host, token) {
   ]));
 
   host.appendChild(explainRow('About this sheet', 'Available Balance = (In Hand + Virtual Bal) − every red row. Each box takes a running total you can add to: type "2000+5000" and the figure above shows the sum. ↻ Fetch appends this month\'s figure (the amount after the · in a row\'s caption) as another term. In Hand starts from the Allocation salary and Monthly Expense from the Tracker balance left in the kitty — type over either for a month that differed, or clear it to follow the source again. Virtual Bal and Other Expense are lists rather than boxes: tap + to itemise them, and the row shows the total.', 'How the sheet adds up'));
+}
+
+// A per-field timeline for the Balance sheet - same shape as the vault's own
+// password history (openVaultPasswordHistory): "Current" first with its own
+// dot/badge, then up to the last 5 superseded values below it, newest first.
+// Reached from the subtle history icon `historyBtn` puts on every field
+// renderExpenseSheet can actually save - see saveField there for where the
+// history itself is recorded. Not password data, so no masking here: the
+// value is shown plainly, with a copy button for pulling a past figure back
+// into a note or a calculation elsewhere.
+function openSheetFieldHistory(label, current, hist) {
+  const items = [
+    el('div', { class: 'vh-item vh-current' }, [
+      el('div', { class: 'vh-dot' }),
+      el('div', { class: 'vh-content' }, [
+        el('div', { class: 'vh-when' }, [el('span', { class: 'vh-current-badge', text: 'Current' })]),
+        el('div', { class: 'vh-pw-row' }, [
+          el('span', { class: 'vd-value vh-pw-val', text: fmtSheetCur(current) }),
+          _vaultCopyBtn(label, () => String(current)),
+        ]),
+      ]),
+    ]),
+    ...hist.map((h) => el('div', { class: 'vh-item' }, [
+      el('div', { class: 'vh-dot' }),
+      el('div', { class: 'vh-content' }, [
+        el('div', { class: 'vh-when', text: h.changedAt ? new Date(h.changedAt).toLocaleString() : 'Unknown date' }),
+        el('div', { class: 'vh-pw-row' }, [
+          el('span', { class: 'vd-value vh-pw-val', text: fmtSheetCur(h.value) }),
+          _vaultCopyBtn(label, () => String(h.value)),
+        ]),
+      ]),
+    ])),
+  ];
+  openModal(el('div', { class: 'sheet' }, [
+    el('div', { class: 'sheet-scroll' }, [
+      el('div', { class: 'vd-head' }, [
+        el('div', { class: 'vd-head-text' }, [
+          el('h2', { class: 'vd-title', text: label }),
+          el('div', { class: 'vd-cat', text: 'Change history' }),
+        ]),
+      ]),
+      el('div', { class: 'vh-timeline' }, items),
+      el('p', { class: 'hint', text: hist.length
+        ? 'Only the last 5 changes are kept for this box.'
+        : 'No changes recorded yet for this box.' }),
+    ]),
+    el('div', { class: 'sheet-footer' }, [el('div', { class: 'btn-row' }, [
+      el('button', { class: 'btn ghost', text: 'Close', onclick: closeModal }),
+    ])]),
+  ]));
 }
 
 // ---------- The heatmap: every month at once ----------

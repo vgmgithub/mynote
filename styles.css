@@ -2429,6 +2429,12 @@ body[data-mode="home"] .home-foot { padding-right: 76px; }
 button.msheet-follow { font-family: inherit; cursor: pointer; }
 .msheet-follow.is-override { border-color: rgba(245,158,11,0.5); color: var(--warn); }
 .msheet-follow.is-override:active { background: rgba(245,158,11,0.16); }
+/* Deliberately muted - present on every field the sheet can save, but never
+   competing with the label/value for attention. See historyBtn/saveField in
+   renderExpenseSheet, and openSheetFieldHistory for what it opens. */
+.msheet-history { display: inline-flex; vertical-align: middle; margin-left: 4px; padding: 2px; color: var(--muted); opacity: 0.45; }
+.msheet-history .edit-ico { width: 13px; height: 13px; }
+.msheet-history:active { opacity: 0.9; }
 /* Which window each half of the allowance is counted over. Stated, because a
    September list can legitimately hold a spend dated 25 August. */
 .pf-window-note { margin: -4px 0 10px; font-size: 0.6rem; line-height: 1.45; }
