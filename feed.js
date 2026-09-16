@@ -348,6 +348,28 @@ function _entityMatchesStock(entity, stockName) {
   return false;
 }
 
+// Whether the article's own text (title + summary) actually names the
+// company - checked independently of Marketaux's entity tags, which cover
+// only the entity-tagging case. Without this, an article with NO entities at
+// all passed through unfiltered (nothing to not-match), so a search hit that
+// happened to be about something else entirely could still get attached to
+// the stock. Two forms are accepted: the full company name, and its short
+// form (the first word - "Reliance" of Reliance Industries, "Wipro" of Wipro
+// Limited - the name a headline actually uses), matched as a whole word so
+// "Titan" doesn't match "Titanium".
+function _textMentionsStock(text, stockName) {
+  const norm = normCompanyName(text);
+  const sName = normCompanyName(stockName);
+  if (!norm || !sName) return false;
+  if (norm.includes(sName)) return true;
+  const shortForm = sName.split(' ')[0];
+  if (shortForm && shortForm.length >= 3) {
+    const re = new RegExp('\\b' + shortForm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b');
+    if (re.test(norm)) return true;
+  }
+  return false;
+}
+
 async function fetchOne(stock, apiKey, signal) {
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 19);
   const params = new URLSearchParams({
@@ -374,6 +396,13 @@ async function fetchOne(stock, apiKey, signal) {
     // (e.g. a general IT-sector article tagged Infosys/TCS shouldn't appear under BEML)
     const match = entities.find((e) => _entityMatchesStock(e, stock.name));
     if (entities.length > 0 && !match) continue;
+
+    // Belt-and-braces: whatever the entity tagging said, the article must
+    // also actually name the company (or its short form) in the text a
+    // reader would see. This is what catches the no-entity case above -
+    // there, "not un-matched" isn't the same as "confirmed relevant".
+    const textBlob = (a.title || '') + ' ' + (a.description || a.snippet || '');
+    if (!_textMentionsStock(textBlob, stock.name)) continue;
 
     // Use the matched entity's own sentiment score so the signal reflects how
     // this specific company is covered, not a diluted average across all mentions.

@@ -1082,6 +1082,7 @@ async function renderFeed() {
   host.innerHTML = '';
   const mod = await import('./feed.js');
   const apiKey = await mod.getApiKey();
+  const portfolio = state.portfolio;
 
   // First-time onboarding: no key yet → show the sign-up explainer.
   if (!apiKey) {
@@ -1097,7 +1098,6 @@ async function renderFeed() {
     return;
   }
 
-  const portfolio = state.portfolio;
   const cached = await mod.getCachedFeed(portfolio);
   const lastFetched = await mod.getLastFetch(portfolio);
   // Bonds get news-sentiment cards same as any equity, but a coupon
