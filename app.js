@@ -1296,8 +1296,11 @@ async function _buildCrossPortfolioDigest(mod, currentPortfolio) {
 }
 
 function _buildFeedHeader(mod, lastFetched, status, portfolio) {
-  const isUS = portfolio === 'me-us';
-  const anchorLabel = isUS ? '6:30 PM IST' : '8:30 AM IST';
+  // Read the anchor rather than restating it - the schedule lives in feed.js,
+  // and a label that disagrees with the actual sync time is worse than none.
+  const anchor = mod.feedAnchorFor(portfolio);
+  const h12 = ((anchor.h + 11) % 12) + 1;
+  const anchorLabel = h12 + ':' + String(anchor.m).padStart(2, '0') + ' ' + (anchor.h < 12 ? 'AM' : 'PM') + ' IST';
   const syncLink = el('span', { class: 'feed-sync-link', text: 'Sync now' });
   syncLink.addEventListener('click', () => refreshFeedNow(false));
   const lastTxt = lastFetched
@@ -1493,21 +1496,28 @@ async function refreshFeedNow(silent) {
     const isIndia = state.portfolio !== 'me-us';
     const portfolios = isIndia ? ['me-in', 'wife-in'] : [state.portfolio];
 
-    // Load active holdings for each portfolio in scope.
+    // Load active holdings for each portfolio in scope. Bonds are skipped here
+    // for the same reason renderFeed hides them - no point spending one of the
+    // 100 daily requests on something the Feed will never show.
     const portfolioStocks = new Map();
     for (const p of portfolios) {
       const all = p === state.portfolio
         ? state.stocks
         : await DB.byPortfolio('stocks', p).catch(() => []);
-      portfolioStocks.set(p, (all || []).filter((s) => s.status !== 'sold'));
+      portfolioStocks.set(p, (all || []).filter((s) => s.status !== 'sold' && (s.category || '').toUpperCase() !== 'BONDS'));
     }
 
-    // Deduplicate by normalised name across portfolios. Key = lowercase name.
-    // Each unique name fetched once; result shared to all matching stocks.
+    // One request per COMPANY, not per holding: the news for a stock is the
+    // same news whoever owns it, so a name held in both portfolios is fetched
+    // once and written to both. Keyed on feed.js's own company normalisation
+    // (strips Ltd/Limited/Corp, punctuation, case) rather than a plain
+    // lowercase - the same company is rarely typed identically in two
+    // portfolios, and "Infosys" vs "Infosys Ltd" would otherwise cost two
+    // requests to fetch one company's news twice.
     const byName = new Map(); // normName → { fetchName, targets[] }
     for (const [p, stocks] of portfolioStocks) {
       for (const s of stocks) {
-        const norm = s.name.trim().toLowerCase();
+        const norm = mod.normCompanyName(s.name) || s.name.trim().toLowerCase();
         if (!byName.has(norm)) byName.set(norm, { fetchName: s.name, targets: [] });
         byName.get(norm).targets.push({ stockId: s.id, portfolio: p, stockName: s.name });
       }

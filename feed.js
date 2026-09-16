@@ -238,11 +238,20 @@ export async function saveApiKey(key) {
 
 const _IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000; // UTC+5:30 in ms
 
+// Each market gets its own anchor, hour AND minute - they are two different
+// trading days, not one schedule with a shifted hour.
+//   India portfolios (me-in, wife-in) → 08:30 IST — NSE pre-open starts at 09:00.
+//   US portfolio (me-us)              → 18:00 IST — ahead of the NYSE open.
+export const FEED_ANCHORS = {
+  india: { h: 8, m: 30 },
+  us: { h: 18, m: 0 },
+};
+
+export function feedAnchorFor(portfolio) {
+  return portfolio === 'me-us' ? FEED_ANCHORS.us : FEED_ANCHORS.india;
+}
+
 // Returns true when a fresh fetch is due.
-//
-// Anchor times (IST):
-//   India portfolios (me-in, wife-in) → 08:30 — NSE pre-open starts at 09:00.
-//   US portfolio (me-us)              → 18:30 — NYSE opens; market closes ~22:30 IST.
 //
 // Logic: find the most recent anchor point before now. If the last fetch
 // happened before that anchor, we are stale and need a sync. This ensures
@@ -251,9 +260,9 @@ const _IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000; // UTC+5:30 in ms
 export function shouldAutoRefresh(lastFetchMs, portfolio, nowMs) {
   if (!lastFetchMs) return true;
 
-  const isUS = portfolio === 'me-us';
-  const anchorH = isUS ? 18 : 8;
-  const anchorM = 30;
+  const anchor = feedAnchorFor(portfolio);
+  const anchorH = anchor.h;
+  const anchorM = anchor.m;
 
   // Build a Date whose UTC fields read as IST local time (shift by +5:30).
   const nowIST = new Date(nowMs + _IST_OFFSET_MS);
@@ -318,7 +327,7 @@ export function applyKeywordSentiment(text) {
 
 // Normalise a company name for fuzzy matching: lowercase, strip legal suffixes,
 // collapse whitespace. "Bharat Electronics Limited" → "bharat electronics".
-function _normCompanyName(s) {
+export function normCompanyName(s) {
   return (s || '').toLowerCase()
     .replace(/\b(ltd|limited|corp|corporation|inc|co|pvt|private|plc|llc|group|holdings?)\b\.?/gi, '')
     .replace(/[^a-z0-9\s]/g, ' ')
@@ -329,9 +338,9 @@ function _normCompanyName(s) {
 // Returns true when a Marketaux entity looks like it refers to our stock.
 // Handles both full names ("BEML Limited" ↔ "BEML") and tickers ("IOB.NS" ↔ "IOB").
 function _entityMatchesStock(entity, stockName) {
-  const eName  = _normCompanyName(entity.name || '');
+  const eName  = normCompanyName(entity.name || '');
   const eSym   = (entity.symbol || '').toUpperCase().split('.')[0]; // strip .NS / .BO suffix
-  const sName  = _normCompanyName(stockName);
+  const sName  = normCompanyName(stockName);
   const sUpper = stockName.trim().toUpperCase();
 
   if (eName && sName && (eName.includes(sName) || sName.includes(eName))) return true;
