@@ -3381,3 +3381,7 @@ body:not([data-mode="stocks"]) :is(#summary, #price-status, #toolbar, #stockList
 .home-backup-status { flex: 1; min-width: 0; font-size: 0.82rem; font-weight: 600; color: var(--good); }
 .home-backup-strip.is-overdue .home-backup-status { color: var(--warn); }
 .home-backup-btn { background: rgba(56, 189, 248, 0.16); color: var(--accent); white-space: nowrap; }
+
+/* Home has no bottom nav: drop the space reserved for it so the page ends where its content does. */
+body[data-mode="home"] { padding-bottom: 0; min-height: 0; }
+body[data-mode="home"] #homeView { padding-bottom: calc(8px + var(--safe-bottom)); }

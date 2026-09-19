@@ -17905,60 +17905,6 @@ async function requestPersistentStorage() {
     try { await navigator.storage.persist(); } catch (_) {}
   }
 }
-
-// One nudge a session, when there is something to lose and it has been either
-// too long or too much since it was last saved.
-//
-// This began `const stocks = await DB.all('stocks'); if (!stocks.length) return;`
-// which meant it never once fired for anyone whose data is spends, cards and
-// passwords rather than shares - the people with the most to lose, since none
-// of that exists anywhere else. A share can be re-entered from a statement; a
-// password in the vault cannot be recovered from anything.
-//
-// Two triggers rather than one. Time alone nags people who have changed
-// nothing, and a count alone never reaches someone who edits rarely but has
-// years of history sitting on one phone.
-const BACKUP_NUDGE_DAYS = 30;
-const BACKUP_NUDGE_CHANGES = 25;
-
-async function checkBackupReminder() {
-  try {
-    if (sessionStorage.getItem('backupNudgeShown')) return;
-    const now = await dataCount();
-    if (!now) return;                    // nothing on the device to lose yet
-    const m = await DB.get('meta', 'lastBackup').catch(() => null);
-    const c = await DB.get('meta', 'lastBackupCount').catch(() => null);
-    const last = m && m.value ? m.value : 0;
-    const then = c && typeof c.value === 'number' ? c.value : null;
-    const days = last ? Math.floor((Date.now() - last) / 86400000) : null;
-    // Unknown for a backup taken before the count was recorded. An unknown is
-    // not treated as a reason to nag - the date on its own still is.
-    const added = then == null ? null : Math.max(0, now - then);
-    const stale = days == null || days > BACKUP_NUDGE_DAYS;
-    const drifted = added != null && added >= BACKUP_NUDGE_CHANGES;
-    if (!stale && !drifted) return;
-
-    const ago = days + (days === 1 ? ' day' : ' days') + ' ago';
-    let msg;
-    if (days == null) {
-      // The one case worth naming what is at stake rather than counting it.
-      // More than one row, because a vault that exists always holds the
-      // hidden copy of its own master password. The rows are ciphertext, so
-      // nothing out here can tell which one that is - the count is all there
-      // is to go on, and one row means nothing has been saved yet.
-      const vault = await DB.all('vault').catch(() => []);
-      const verb = now === 1 ? ' exists' : ' exist';
-      msg = 'No backup yet · ' + now + (now === 1 ? ' entry' : ' entries')
-        + (vault.length > 1 ? ', passwords included,' + verb : verb) + ' only on this phone';
-    } else if (drifted) {
-      msg = added + ' new since your last backup, ' + ago;
-    } else {
-      msg = 'Last backup ' + ago;
-    }
-    sessionStorage.setItem('backupNudgeShown', '1');
-    setTimeout(() => toast(msg + ' · tap to back up', () => openBackupSheet()), 1500);
-  } catch (_) {}
-}
 function checkMonthEndSnapshotReminder() {
   if (!isMonthEndReminderWindow() || !missingCurrentMonthCapture(state.months)) return;
   const key = 'snapshotReminderShown_' + state.portfolio + '_' + thisYm();
@@ -18060,7 +18006,6 @@ async function init() {
     } catch (e) { console.warn('SW registration failed', e); }
   }
   requestPersistentStorage();
-  checkBackupReminder();
   checkMonthEndSnapshotReminder();
   // Idempotent: back-fills wife-in (and reverse) months with the peer's Nifty
   // where one side is missing it. Cheap; a no-op once everything's in sync.
