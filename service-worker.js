@@ -1,4 +1,4 @@
-const CACHE = 'mynote-stocks-v502';
+const CACHE = 'mynote-stocks-v503';
 const ASSETS = [
   './',
   './index.html',
@@ -78,7 +78,11 @@ self.addEventListener('activate', (e) => {
 // on the next load.
 self.addEventListener('fetch', (e) => {
   const req = e.request;
-  if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
+  const url = new URL(req.url);
+  if (req.method !== 'GET' || url.origin !== self.location.origin) return;
+  // Leave this worker's own script (and the page's version probes) to the
+  // network. Answering them from cache would hide every new release.
+  if (url.pathname.endsWith('/service-worker.js') || url.searchParams.has('_')) return;
   e.respondWith(
     caches.match(req).then((cached) => {
       const network = fetch(req, { cache: 'no-store' })

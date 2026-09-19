@@ -1886,6 +1886,9 @@ async function render() {
   if (_usShowInr) {
     const row = await DB.get('meta', 'homeLiveRates').catch(() => null);
     _cachedUsdInr = row && row.value && row.value.usdInr ? Number(row.value.usdInr) : null;
+    // The user may have left Stocks while that read was in flight - drawing now
+    // would un-hide stock sections on top of whatever screen they moved to.
+    if (state.appMode !== 'stocks') return;
   }
   const v = state.view;
   const holdings = v === 'holdings';
@@ -1915,7 +1918,7 @@ async function render() {
 // Sits ABOVE the stock view system. The Stocks app renders exactly as before;
 // this just decides which of the three surfaces is on screen and keeps the
 // header (with the shared 3-dots menu) consistent.
-const STOCK_SURFACE = ['#summary', '#toolbar', '#stockList', '#monthlyView', '#heatmapView', '#trendView', '#feedView', '#addBtn', '#ocrBtn'];
+const STOCK_SURFACE = ['#summary', '#price-status', '#toolbar', '#stockList', '#monthlyView', '#heatmapView', '#trendView', '#feedView', '#addBtn', '#ocrBtn'];
 // Real back navigation (Android hardware/gesture back, iOS edge-swipe, browser
 // back button) all operate on the browser's OWN history stack via popstate -
 // they do NOT dispatch touch/pointer events our own code can intercept, so a
@@ -16771,10 +16774,6 @@ async function openMenu() {
     : 'Protect this app with a PIN';
   items.push(menuItem('🔒', lockCfg && lockCfg.enabled ? 'App lock · on' : 'Set up app lock', lockDesc, () => { closeModal(); openLockEntry(); }));
   items.push(menuItem('📰', 'Feed settings', 'Marketaux API key for the news Feed', () => { closeModal(); openFeedSettings(); }));
-  // Update item - label/description flip when a new SW is already waiting.
-  const updTitle = window.__updateReady ? 'Update available - tap to apply' : 'Check for updates';
-  const updDesc = window.__updateReady ? 'A new version is ready to install' : 'Pull the latest version from the server';
-  items.push(menuItem('🔄', updTitle, updDesc, () => { closeModal(); checkForUpdates(); }));
   openModal(el('div', { class: 'sheet' }, [
     el('h2', { text: 'Menu' }),
     el('div', { class: 'menu-list' }, items),
@@ -17758,54 +17757,90 @@ async function openLockEntry() {
   else openLockSetup();
 }
 
-// ---------- app updates (user-triggered) ----------
+// ---------- App updates ----------
+// A new version is fetched in the background; a gradient card asks before it is
+// applied, so the page never reloads under the user mid-task.
+//
+// Two independent signals raise the card, because relying on the browser's own
+// service-worker events alone missed updates (the card never appeared and the
+// app quietly ran one release behind):
+//   1. the service worker reports a new worker installed and waiting;
+//   2. the app itself compares the release it is RUNNING with the one on the
+//      server (checkForNewVersion below) - that works even if (1) never fires.
+const _releaseNum = (name) => Number((String(name).match(/-v(\d+)$/) || [])[1]) || 0;
 
-// Tap-to-update flow. Two paths:
-//   1. A new SW is already waiting (detected at startup) → postMessage to
-//      skip-wait → SW activates → controllerchange → page reloads.
-//   2. No SW waiting → call reg.update() to ask the browser to fetch a fresh
-//      service-worker.js. If a new one installs, same flow as #1. Otherwise
-//      toast "up to date".
-async function checkForUpdates() {
-  if (!('serviceWorker' in navigator)) { toast('Updates not supported in this browser'); return; }
-  const reg = window.__swReg || await navigator.serviceWorker.getRegistration();
-  if (!reg) { toast('Service worker not registered'); return; }
-
-  // Already waiting - just apply it.
-  if (reg.waiting) {
-    reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-    toast('Applying update…');
-    return; // controllerchange handler will reload
-  }
-
-  toast('Checking for updates…');
+// The release this page is running = the oldest MyNotes cache on the device (a
+// newer worker's cache appears next to it while it waits, and the old one is
+// deleted the moment that worker takes over).
+async function _runningRelease() {
+  if (!('caches' in window)) return 0;
+  const nums = (await caches.keys()).filter((k) => /^mynote-stocks-v\d+$/.test(k)).map(_releaseNum);
+  return nums.length ? Math.min(...nums) : 0;
+}
+async function _serverRelease() {
+  // A UNIQUE url every time. The running service worker intercepts same-origin
+  // GETs and answers from its own cache first, so a plain fetch of
+  // service-worker.js returns the copy we are already running and every check
+  // says "up to date" - which is exactly why the update card stopped appearing.
+  // A url it has never cached cannot be answered from the cache.
+  const r = await fetch('service-worker.js?_=' + Date.now(), { cache: 'no-store' });
+  const m = (await r.text()).match(/const CACHE = '(mynote-stocks-v\d+)'/);
+  return m ? _releaseNum(m[1]) : 0;
+}
+async function checkForNewVersion() {
   try {
-    await reg.update();
-  } catch (e) {
-    toast('Could not reach server - try again later');
-    return;
-  }
+    if (navigator.onLine === false) return;
+    const [running, latest] = await Promise.all([_runningRelease(), _serverRelease()]);
+    if (running && latest && latest > running) showUpdatePopup(latest);
+  } catch (_) { /* offline or blocked: try again next time */ }
+}
 
-  // If reg.update found something new, it's now in `installing`. Wait for it.
-  if (reg.installing) {
-    await new Promise((resolve) => {
-      const sw = reg.installing;
-      const done = () => { sw.removeEventListener('statechange', onChange); resolve(); };
-      const onChange = () => {
-        if (sw.state === 'installed' || sw.state === 'activated' || sw.state === 'redundant') done();
-      };
-      sw.addEventListener('statechange', onChange);
-      // Safety timeout - don't block forever on a hung install.
-      setTimeout(done, 8000);
-    });
-  }
+// Last resort that always works: drop the worker and its caches, then reload so
+// everything is fetched fresh. Your data (IndexedDB) is not touched.
+async function _hardRefresh() {
+  try { for (const r of await navigator.serviceWorker.getRegistrations()) await r.unregister(); } catch (_) {}
+  try { for (const k of await caches.keys()) if (k.startsWith('mynote-stocks-')) await caches.delete(k); } catch (_) {}
+  location.reload();
+}
 
-  if (reg.waiting) {
-    reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-    toast('Update found - applying…');
-  } else {
-    toast('You\'re on the latest version');
-  }
+async function applyUpdate(titleEl) {
+  titleEl.textContent = 'Updating…';
+  // If nothing has happened after a few seconds, do the hard refresh instead.
+  const bail = setTimeout(_hardRefresh, 7000);
+  try {
+    const reg = window.__swReg || (await navigator.serviceWorker.getRegistration());
+    if (!reg) { clearTimeout(bail); return _hardRefresh(); }
+    if (!reg.waiting) {
+      try { await reg.update(); } catch (_) {}
+      for (let i = 0; i < 20 && !reg.waiting; i++) await new Promise((r) => setTimeout(r, 250));
+    }
+    if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });   // controllerchange then reloads
+    else { clearTimeout(bail); _hardRefresh(); }
+  } catch (_) { clearTimeout(bail); _hardRefresh(); }
+}
+
+const _dismissedRelease = () => Number(sessionStorage.getItem('mynoteUpdateLater') || 0);
+function showUpdatePopup(release) {
+  if (document.querySelector('.update-pop')) return;
+  // "Later" is remembered for this visit, per release, so it is not nagged again
+  // every check - a newer release still shows.
+  if (release && _dismissedRelease() >= release) return;
+  const title = el('div', { class: 'update-pop-title', text: 'New version available' });
+  const pop = el('div', { class: 'update-pop', role: 'alertdialog', 'aria-label': 'Update available' }, [
+    el('div', { class: 'update-pop-ico', text: '🚀' }),
+    el('div', { class: 'update-pop-body' }, [
+      title,
+      el('div', { class: 'update-pop-sub', text: 'Update now to get the latest improvements.' }),
+    ]),
+    el('div', { class: 'update-pop-actions' }, [
+      el('button', { class: 'update-pop-btn go', type: 'button', text: 'Update', onclick: () => applyUpdate(title) }),
+      el('button', { class: 'update-pop-btn later', type: 'button', text: 'Later', onclick: () => {
+        try { if (release) sessionStorage.setItem('mynoteUpdateLater', String(release)); } catch (_) {}
+        pop.remove();
+      } }),
+    ]),
+  ]);
+  document.body.appendChild(pop);
 }
 
 // ---------- install ----------
@@ -17965,31 +18000,37 @@ async function init() {
   applyAppMode('home');
   if ('serviceWorker' in navigator) {
     try {
-      // updateViaCache: 'none' ensures any update check (manual or browser-
-      // initiated) bypasses the HTTP cache for the SW script - so we always
-      // see the bumped CACHE = 'vNN'. We do NOT auto-call reg.update() here:
-      // updates apply only when the user taps Menu → "Check for updates".
+      // updateViaCache: 'none' ensures any update check bypasses the HTTP cache
+      // for the SW script - so we always see the bumped CACHE = 'vNN'. Updates
+      // are checked in the background and only APPLIED when the user taps
+      // Update on the popup.
       const reg = await navigator.serviceWorker.register('service-worker.js', { updateViaCache: 'none' });
       window.__swReg = reg;
 
       // Mark "update ready" if a new SW is already waiting (e.g. installed in
       // a previous tab/session) and we have an active controller serving us.
       const markReady = () => {
-        if (navigator.serviceWorker.controller) {
-          window.__updateReady = true;
-          // If the menu is currently open, redraw it so the label flips.
-          const openSheet = document.querySelector('.modal-host:not(.hidden) .sheet h2');
-          if (openSheet && openSheet.textContent === 'Menu') { closeModal(); openMenu(); }
-        }
+        if (navigator.serviceWorker.controller) showUpdatePopup();
       };
-      if (reg.waiting) markReady();
-      reg.addEventListener('updatefound', () => {
-        const sw = reg.installing;
+      // Watch a worker until it is installed. Covers all three moments an update
+      // can be in: already waiting, already installing when this page opened (the
+      // "updatefound" event has then already fired and is never repeated), or
+      // found later.
+      const watch = (sw) => {
         if (!sw) return;
-        sw.addEventListener('statechange', () => {
-          if (sw.state === 'installed') markReady();
-        });
-      });
+        if (sw.state === 'installed') markReady();
+        sw.addEventListener('statechange', () => { if (sw.state === 'installed') markReady(); });
+      };
+      watch(reg.waiting);
+      watch(reg.installing);
+      reg.addEventListener('updatefound', () => watch(reg.installing));
+
+      // Look for a new version now, whenever the app comes back to the
+      // foreground, and every 30 minutes while it stays open.
+      const checkNow = () => { reg.update().catch(() => {}); checkForNewVersion(); };
+      checkNow();
+      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkNow(); });
+      setInterval(checkNow, 30 * 60 * 1000);
 
       // controllerchange fires when the new SW claims the page (after the
       // user's tap triggered SKIP_WAITING). This reload is intentional.

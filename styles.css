@@ -3348,3 +3348,28 @@ html[data-theme="light"] .hc-empty-cta { color: #fff; }
 }
 .us-cur-switch.active .us-cur-thumb { left: 15px; color: var(--accent); }
 @media (prefers-reduced-motion: reduce) { .us-cur-thumb { transition: none; } }
+
+/* ---------- Update available popup ---------- */
+.update-pop {
+  position: fixed; left: 12px; right: 12px; bottom: calc(16px + var(--safe-bottom)); z-index: 9500;
+  max-width: 480px; margin: 0 auto; padding: 14px;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  border-radius: 18px; color: #fff;
+  background: linear-gradient(135deg, #ff7a00 0%, #ff2e63 52%, #7b2ff7 100%);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.18) inset;
+  animation: update-pop-in 0.35s ease-out;
+}
+@keyframes update-pop-in { from { transform: translateY(30px); opacity: 0; } to { transform: none; opacity: 1; } }
+.update-pop-ico { font-size: 1.9rem; line-height: 1; }
+.update-pop-body { flex: 1; min-width: 150px; }
+.update-pop-title { font-weight: 800; font-size: 1rem; }
+.update-pop-sub { font-size: 0.82rem; opacity: 0.92; margin-top: 2px; }
+.update-pop-actions { display: flex; gap: 8px; margin-left: auto; }
+.update-pop-btn { border: none; border-radius: 10px; padding: 9px 16px; font-weight: 700; font-size: 0.9rem; cursor: pointer; }
+.update-pop-btn.go { background: #fff; color: #b3123f; }
+.update-pop-btn.later { background: rgba(255, 255, 255, 0.2); color: #fff; }
+@media (prefers-reduced-motion: reduce) { .update-pop { animation: none; } }
+
+/* Stock-only sections can never show on another screen, whatever JS timing does.
+   (The "Prices updated Nd ago" line used to leak onto unrelated pages.) */
+body:not([data-mode="stocks"]) :is(#summary, #price-status, #toolbar, #stockList, #monthlyView, #heatmapView, #trendView, #feedView, #portfolioTabs, #bottomNav, #addBtn, #ocrBtn) { display: none !important; }
