@@ -4552,6 +4552,22 @@ async function renderHome() {
     const t = pfTotals(thisYm, pf.byYm, pf.allocs, pf.upiLimit);
     if (t.limit > 0) _perDayBadge(personalCard.querySelector('.home-card-badge'), t.left, daysLeft);
   } catch (_) { /* Home stands without it */ }
+  try { host.appendChild(await _homeBackupStrip()); } catch (_) {}
+}
+
+async function _homeBackupStrip() {
+  const last = await DB.get('meta', 'lastBackup').catch(() => null);
+  const at = last && last.value ? Number(last.value) : 0;
+  const days = at ? Math.floor((Date.now() - at) / 86400000) : null;
+  const status = days === null ? 'No backup yet'
+    : 'Last backup: ' + new Date(at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+      + (days === 0 ? ' (today)' : ' (' + days + (days === 1 ? ' day' : ' days') + ' ago)');
+  const overdue = days === null || days >= 7;
+  return el('div', { class: 'home-backup-strip' + (overdue ? ' is-overdue' : '') }, [
+    el('span', { class: 'home-backup-ico', text: overdue ? '⚠️' : '🛡️' }),
+    el('span', { class: 'home-backup-status', text: status }),
+    el('button', { class: 'btn small home-backup-btn', type: 'button', text: 'Back up now', onclick: () => openBackupSheet() }),
+  ]);
 }
 // Horizontally-scrolling strip of money ARRIVING within the next week, shown on
 // Home above the section cards. Two sources, one rail:
@@ -16805,6 +16821,7 @@ async function markBackedUp() {
   const count = await dataCount();
   await DB.put('meta', { key: 'lastBackup', value: Date.now() });
   await DB.put('meta', { key: 'lastBackupCount', value: count });
+  if (state.appMode === 'home') renderHome().catch(() => {});
 }
 
 async function exportData() {
