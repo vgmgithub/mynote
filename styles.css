@@ -3436,3 +3436,6 @@ input, textarea, select, [contenteditable="true"], .allow-select, .allow-select 
 .pf-perday-val { font-size: 1.15rem; font-weight: 800; color: var(--good); white-space: nowrap; }
 
 .pf-lim-pool { margin: 8px 2px 4px; font-size: 0.78rem; line-height: 1.4; }
+/* (i) beside a label: tap for a plain-language meaning */
+.help-dot { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; margin-left: 6px; padding: 0; border-radius: 50%; border: 1px solid var(--line); background: var(--card-2); color: var(--muted); font: italic 700 0.62rem Georgia, serif; vertical-align: middle; cursor: pointer; }
+.help-dot:active { color: var(--text); }

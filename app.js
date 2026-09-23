@@ -2082,7 +2082,7 @@ function buildMfBottomNav() {
   const nav = $('#mfBottomNav');
   if (nav.childElementCount) { updateMfNavActive(); return; }
   nav.innerHTML = '';
-  [['holdings', '📈', 'Holdings'], ['overview', '📊', 'Overview'], ['benchmark', '🎯', 'Benchmark'], ['stats', '⚖️', 'Stats']].forEach(([v, ico, label]) => {
+  [['holdings', '📈', 'Holdings'], ['overview', '📊', 'Overview'], ['benchmark', '🎯', 'Targets'], ['stats', '⚖️', 'Performance']].forEach(([v, ico, label]) => {
     nav.appendChild(el('button', { 'data-view': v, onclick: () => { if (_mfTab === v) return; _mfTab = v; renderMF(); } },
       [el('span', { class: 'bn-ico', text: ico }), label]));
   });
@@ -3070,7 +3070,7 @@ async function renderPfSpends(host, token) {
       el('p', { text: 'Nothing logged for ' + mod.monthLabel(ym) + ' yet.' }),
       el('p', { class: 'hint', text: t.limit > 0
         ? 'Tap the + to log a personal spend. Card and UPI are tracked against separate limits.'
-        : 'Set the Card figure on the Expense Allocation tab and the UPI limit on the Limits tab, then tap + to log a spend.' }),
+        : 'Set the Card figure on the Expense Yearly plan tab and the UPI limit on the Limits tab, then tap + to log a spend.' }),
     ]));
     return;
   }
@@ -3256,7 +3256,7 @@ async function renderPfLimits(host, token) {
 
   host.appendChild(el('h3', { class: 'div-group-head', text: '\ud83c\udfaf Monthly allowance' }));
 
-  // Both limits editable here. The card figure IS the Allocation tab's Card
+  // Both limits editable here. The card figure IS the Yearly plan tab's Card
   // line, written back to that same record - one number in one place, editable
   // from either, rather than a copy that drifts.
   const cardInp = el('input', { type: 'number', inputmode: 'decimal', step: 'any', class: 'pf-lim-input', value: cardLimit || '' });
@@ -3287,7 +3287,7 @@ async function renderPfLimits(host, token) {
         // Without a row for the year there is nowhere in the household budget
         // to put it, and inventing one here would create a half-filled
         // allocation the Expense tab would then show as real.
-        toast('Add ' + year + ' on the Expense Allocation tab first');
+        toast('Add ' + year + ' on the Expense Yearly plan tab first');
         return;
       }
       await DB.put('allocations', Object.assign({}, alloc, { card: c, updatedAt: new Date().toISOString() }));
@@ -3304,7 +3304,7 @@ async function renderPfLimits(host, token) {
       el('div', { class: 'pf-lim-edit-cell' }, [
         el('div', { class: 'pf-lim-edit-lbl', text: '\ud83d\udcb3 Card a month' }),
         cardInp,
-        el('div', { class: 'pf-lim-edit-sub', text: 'This is the Allocation tab\u2019s Card figure' }),
+        el('div', { class: 'pf-lim-edit-sub', text: 'This is the Yearly plan tab\u2019s Card figure' }),
       ]),
       el('div', { class: 'pf-lim-edit-cell' }, [
         el('div', { class: 'pf-lim-edit-lbl', text: '\ud83d\udcf1 UPI / Cash a month' }),
@@ -3594,7 +3594,7 @@ async function renderPfReview(host, token) {
     + 'is next month\u2019s allowance rather than this one\u2019s.');
   _rvwFitSection(host, _reviewKittyFit(ym, ownByYm, (k) => pfTotals(k, byYm, allocs, upiLimit).limit, thisYm), {
     word: 'allowance',
-    each: () => ' — the card half of that is set on Expense’s Allocation tab, the UPI half on Limits',
+    each: () => ' — the card half of that is set on Expense’s Yearly plan tab, the UPI half on Limits',
   });
 
   host.appendChild(explainRow('How this tab reads your months', 'Each category is compared with its own median month from your own entries — not a target, and not an average, which one unusual month would skew. Month totals count UPI over the calendar month and card spends over the bill they land on, matching the Spends and Limits tabs.', 'About these figures'));
@@ -3734,7 +3734,7 @@ function buildPfBottomNav() {
   if (nav.childElementCount) { updatePfNavActive(); return; }
   nav.innerHTML = '';
   [['spends', '\ud83d\uded2', 'Spends'], ['limits', '\ud83c\udfaf', 'Limits'],
-   ['review', '\ud83d\udd0d', 'Review'], ['cards', '\ud83e\uddfe', 'Card check'],
+   ['review', '\ud83d\udd0d', 'Review'], ['cards', '\ud83e\uddfe', 'Card bill'],
    ['tags', '\ud83c\udff7\ufe0f', 'Tags']].forEach(([v, ico, label]) => {
     nav.appendChild(el('button', { 'data-view': v, onclick: () => { if (_pfTab === v) return; _pfTab = v; renderPersonal(); } },
       [el('span', { class: 'bn-ico', text: ico }), label]));
@@ -3763,7 +3763,7 @@ function buildExpBottomNav() {
   // which read as "which Expense is this" rather than saying what the tab
   // actually is: the monthly cash-flow sheet (In Hand + Virtual Bal minus
   // what's gone out), headlined by Available Balance. Renamed 2026-09-16.
-  [['cc', '💳', 'Credit Card'], ['spend', '🧾', 'Balance'], ['tracker', '📍', 'Tracker'], ['review', '🔍', 'Review'], ['alloc', '🧭', 'Allocation']].forEach(([v, ico, label]) => {
+  [['cc', '💳', 'Credit Card'], ['spend', '🧾', 'Cash flow'], ['tracker', '📍', 'Tracker'], ['review', '🔍', 'Review'], ['alloc', '🧭', 'Yearly plan']].forEach(([v, ico, label]) => {
     nav.appendChild(el('button', { 'data-view': v, onclick: () => { if (_expTab === v) return; _expTab = v; renderHomeExpense(); } },
       [el('span', { class: 'bn-ico', text: ico }), label]));
   });
@@ -4164,7 +4164,7 @@ async function openFdForm(existing) {
     el('div', { class: 'field-row' }, [field('Fresh principal (top-up only)', principal), field('Rate % p.a.', rate)]),
     el('div', { class: 'field-row' }, [field('Start date', startDate), field('Maturity date', maturityDate)]),
     field('Tenure (months) → fills maturity date', tenure),
-    el('div', { class: 'field-row' }, [field('Compounding', compounding), field('Type', payout)]),
+    el('div', { class: 'field-row' }, [field('Compounding', compounding, 'compounding'), field('Type', payout, 'payoutType')]),
     field('Funded by — tick matured FD(s) to merge in (adds their payout to your deposit)', parentListEl),
     field('Notes', notes),
     field('Part of Emergency Fund — moves it to that page and out of these totals', efSwitch),
@@ -4586,7 +4586,7 @@ async function renderHome() {
   // The icon's own listener stops the click from also reaching the card's -
   // without that, tapping the icon would fire both and Balance would win by
   // running last, which happens to look right today but is fragile.
-  const expenseCard = _homeCard('💳', 'Expense', 'Balance · Credit Card · Tracker', () => setAppMode('expense'));
+  const expenseCard = _homeCard('💳', 'Expense', 'Cash flow · Credit Cards · Tracker', () => setAppMode('expense'));
   expenseCard.querySelector('.home-card-ico').addEventListener('click', (e) => {
     e.stopPropagation();
     _expTab = 'spend';
@@ -6781,7 +6781,7 @@ async function renderExpenseSheet(host, token) {
     el('span', { class: 'msheet-total-val', text: fmtSheetCur(available) }),
   ]));
 
-  host.appendChild(explainRow('About this sheet', 'Available Balance = (In Hand + Virtual Bal) − every red row. Each box takes a running total you can add to: type "2000+5000" and the figure above shows the sum. ↻ Fetch appends this month\'s figure (the amount after the · in a row\'s caption) as another term. In Hand starts from the Allocation salary and Monthly Expense from the Tracker balance left in the kitty — type over either for a month that differed, or clear it to follow the source again. Virtual Bal and Other Expense are lists rather than boxes: tap + to itemise them, and the row shows the total.', 'How the sheet adds up'));
+  host.appendChild(explainRow('About this sheet', 'Available Balance = (In Hand + Virtual Bal) − every red row. Each box takes a running total you can add to: type "2000+5000" and the figure above shows the sum. ↻ Fetch appends this month\'s figure (the amount after the · in a row\'s caption) as another term. In Hand starts from the Allocation salary and Monthly Expense from the Tracker balance left in the household budget — type over either for a month that differed, or clear it to follow the source again. Virtual Bal and Other Expense are lists rather than boxes: tap + to itemise them, and the row shows the total.', 'How the sheet adds up'));
 }
 
 // The accumulating boxes (Loan through Metal) store an additive EXPRESSION,
@@ -7070,7 +7070,7 @@ function _trkHeatmapGrid(host, yms, byYm, allocs, efLoans, thisYm, mod, now) {
 
   // What went IN, first - every other row is read against it.
   const kittyOf = (k) => _kittyFor(k, allocs, efLoans);
-  row('Kitty', 'trk-heat-kitty', cols.map((k) => ({ text: money(kittyOf(k)) })));
+  row('Household budget', 'trk-heat-kitty', cols.map((k) => ({ text: money(kittyOf(k)) })));
 
   ordered.forEach((name) => {
     const per = catByYm.get(name);
@@ -7119,7 +7119,7 @@ function _trkHeatmapGrid(host, yms, byYm, allocs, efLoans, thisYm, mod, now) {
   row('Spent', 'cc-sum trk-sum-top', cols.map((k) => {
     const t = totalOf(k), b = kittyOf(k);
     return { text: money(t), cls: b > 0 ? (t > b ? 'h-hi2' : 'h-low1') : '',
-      title: b > 0 ? fmtSheetCur(t) + ' of a ' + fmtSheetCur(b) + ' kitty' : '' };
+      title: b > 0 ? fmtSheetCur(t) + ' of a ' + fmtSheetCur(b) + ' household budget' : '' };
   }));
   row('Left', 'cc-sum', cols.map((k) => {
     const b = kittyOf(k);
@@ -7206,7 +7206,7 @@ function _trkHeatmapGrid(host, yms, byYm, allocs, efLoans, thisYm, mod, now) {
     'The shade scales with how big the change actually was, not a handful of fixed steps - a small '
       + 'dip is a pale green, a month that doubled is a deep red, and two different-sized jumps no '
       + 'longer paint identically just for landing in the same rough band.',
-    'Kitty is what went in that month. Spent, Left and Per day are read against it. Days left and '
+    'Household budget is what went in that month. Spent, Left and Per day are read against it. Days left and '
       + 'Per day only apply to the month in progress - a closed month has no days still to spend.',
   ], 'How the colours are worked out'));
 }
@@ -8671,7 +8671,7 @@ let _pfFilter = 'all';
 let _pfRenderToken = 0;
 const pfRenderStale = (token) => token !== _pfRenderToken;
 
-// The month's two allowances. The card figure is the Allocation tab's own
+// The month's two allowances. The card figure is the Yearly plan tab's own
 // "Card" line - the one place the household budget is already written down -
 // so it is read live rather than copied. The UPI one has no home in that
 // budget, so it is a setting of its own.
@@ -8739,7 +8739,7 @@ async function renderSpendTracker(host, token) {
 
   // The kitty is the House Exp allocation DOUBLED: the same figure goes in from
   // each of us, so what the household actually has to spend is twice the line
-  // on the Allocation tab.
+  // on the Yearly plan tab.
   const share = alloc ? Number(alloc.houseExp) || 0 : 0;
   // Through _kittyFor, so this agrees with the Expense sheet and the Review
   // tab. Computing it inline here is what let the repayment earmark go missing
@@ -8817,7 +8817,7 @@ async function renderSpendTracker(host, token) {
       // basis line forced a wrap. Beside "Kitty" there is room, and the siren
       // is what the Emergency Fund is marked with everywhere else.
       el('div', { class: 'trk-sum-label trk-label-row' }, [
-        el('span', { text: 'Kitty' }),
+        el('span', { text: 'Household budget' }),
         drawn > 0
           ? el('span', { class: 'trk-draw-badge', title: 'Emergency draw added this month', text: '🚨' + fmtSheetCur(drawn) })
           : (earmark > 0
@@ -8860,7 +8860,7 @@ async function renderSpendTracker(host, token) {
     host.appendChild(el('div', { class: 'empty' }, [
       el('div', { class: 'e-icon', text: '📍' }),
       el('p', { text: 'Nothing logged for ' + mod.monthLabel(ym) + ' yet.' }),
-      el('p', { class: 'hint', text: share > 0 ? 'Tap "+ Add spend" each time money leaves the household kitty.' : 'Set House Exp on the Allocation tab first — the kitty is that figure doubled.' }),
+      el('p', { class: 'hint', text: share > 0 ? 'Tap "+ Add spend" each time money leaves the household budget.' : 'Set House Exp on the Yearly plan tab first — the household budget is that figure doubled.' }),
     ]));
     return;
   }
@@ -9026,7 +9026,7 @@ async function renderSpendTracker(host, token) {
     }
   } catch (_) { /* commentary only — the month's figures above stand on their own */ }
 
-  host.appendChild(explainRow('About the kitty', 'The kitty is the Allocation tab\'s House Exp doubled — the same figure from each of you. Every spend logged here comes off it. This tab always shows the current month; earlier months stay in the backup.', 'Where the kitty comes from'));
+  host.appendChild(explainRow('About the household budget', 'The household budget is the Yearly plan tab\'s House Exp doubled — the same figure from each of you. Every spend logged here comes off it. This tab always shows the current month; earlier months stay in the backup.', 'Where the household budget comes from'));
 }
 
 // 'YYYY-MM' -> "Sep '26", for form copy that has no credit.js import to hand.
@@ -9352,7 +9352,7 @@ async function openSpendForm(budget, existing, defaultDate) {
   const amountField = field('Amount (\u20b9)', amount);
   const amountLabel = amountField.querySelector('label span') || amountField.querySelector('label');
   const refundNote = el('p', { class: 'hint pf-refund-note hidden',
-    text: 'Money coming back into the kitty. Enter it as a positive figure — it comes off the '
+    text: 'Money coming back into the household budget. Enter it as a positive figure — it comes off the '
       + 'month’s spending, off what is left to spend, and off the card it was credited to.' });
   const syncRefund = () => {
     const on = chosenCat === REFUND_CAT;
@@ -9543,7 +9543,7 @@ async function openSpendForm(budget, existing, defaultDate) {
   openModal(el('div', { class: 'sheet has-fixed-footer' }, [
     el('div', { class: 'sheet-scroll' }, [
       el('h2', { text: editing ? 'Edit spend' : 'Add spend' }),
-      el('p', { class: 'hint', text: budget > 0 ? 'Comes off the ' + fmtSheetCur(budget) + ' household kitty.' : 'No House Exp allocation set yet — this is still logged.' }),
+      el('p', { class: 'hint', text: budget > 0 ? 'Comes off the ' + fmtSheetCur(budget) + ' household budget.' : 'No House Exp allocation set yet — this is still logged.' }),
       el('div', { class: 'field' }, [
         el('label', {}, [
           el('span', { text: 'Category' }),
@@ -9851,7 +9851,7 @@ function _reviewMethods(ym, byYm, prevYm) {
 // handful of months on record one holiday, one hospital trip or one deposit
 // drags a mean far enough to make every other month look thrifty.
 
-// The household kitty for one month: the Allocation tab's House Exp doubled
+// The household kitty for one month: the Yearly plan tab's House Exp doubled
 // (the same figure from each of us), PLUS any emergency draw taken from the
 // Emergency Fund that month.
 //
@@ -10474,7 +10474,7 @@ function _rvwCurveChart(curve, o) {
   if (o.kitty > 0 && o.kitty <= maxY) {
     svg.appendChild(mk('line', { x1: padL, y1: Y(o.kitty), x2: w - padR, y2: Y(o.kitty), stroke: '#34d399', 'stroke-width': '1.2', 'stroke-dasharray': '5 4', opacity: '0.85' }));
     const t = mk('text', { x: w - padR, y: Y(o.kitty) - 4, fill: '#34d399', 'font-size': '9', 'text-anchor': 'end' });
-    t.textContent = o.limitLabel || 'kitty';
+    t.textContent = o.limitLabel || 'household budget';
     svg.appendChild(t);
   }
 
@@ -10588,8 +10588,8 @@ async function renderReview(host, token) {
   const headNotes = [];
   if (a.kitty > 0) {
     headNotes.push(overKitty > 0
-      ? 'Over the kitty by ' + fmtSheetCur(overKitty)
-      : fmtSheetCur(-overKitty) + ' still in the kitty');
+      ? 'Over the household budget by ' + fmtSheetCur(overKitty)
+      : fmtSheetCur(-overKitty) + ' still in the household budget');
   }
   if (a.isCurrent) headNotes.push(perDayLabel(a.daysLeft + 1));
   // No straight-line pace figure here any more. Dividing by days elapsed and
@@ -10663,13 +10663,13 @@ async function renderReview(host, token) {
       if (f.fitPerDay != null) {
         lines.push(f.fitPerDay > 0
           ? ['OK', fmtIntCur(f.fitPerDay) + ' a day for the ' + perDayLabel(f.fitDays)
-              + ', to stay inside the ' + fmtSheetCur(kitty) + ' kitty']
-          : ['NO', 'The kitty is already spent · anything from here is over it']);
+              + ', to stay inside the ' + fmtSheetCur(kitty) + ' household budget']
+          : ['NO', 'The household budget is already spent · anything from here is over it']);
       }
       if (f.overKitty != null && f.overKitty > 0) {
-        lines.push(['NO', 'On this estimate the month ends ' + fmtSheetCur(f.overKitty) + ' over the kitty']);
+        lines.push(['NO', 'On this estimate the month ends ' + fmtSheetCur(f.overKitty) + ' over the household budget']);
       } else if (f.overKitty != null) {
-        lines.push(['OK', 'On this estimate the month ends ' + fmtSheetCur(-f.overKitty) + ' inside the kitty']);
+        lines.push(['OK', 'On this estimate the month ends ' + fmtSheetCur(-f.overKitty) + ' inside the household budget']);
       }
       if (f.usualByNow > 0) {
         lines.push([f.vsUsualByNow > 0 ? 'UP' : 'DOWN', 'By the ' + f.day + _ordinalSuffix(f.day)
@@ -10891,7 +10891,7 @@ async function renderReview(host, token) {
 
   _rvwMethodsSection(host, methods, ' It is also what feeds this month\u2019s card reimbursement.');
   _rvwFitSection(host, fit, {
-    word: 'kitty',
+    word: 'household budget',
     // The kitty is House Exp DOUBLED, so a suggested figure is only actionable
     // once it is halved back into the line actually typed on Allocation.
     each: (f) => ' — that is ' + fmtSheetCur(round2(f.suggested / 2)) + ' each on House Exp',
@@ -11116,7 +11116,7 @@ function _recurringDue(ym, byYm) {
   return out;
 }
 
-// ---------- Allocation tracker (Expense → Allocation tab) ----------
+// ---------- Allocation tracker (Expense → Yearly plan tab) ----------
 async function renderAllocation(host, token) {
   // This is called again on every year-switch and after every save (not just
   // on first entry to the tab, unlike most other renderX functions which are
@@ -12929,7 +12929,7 @@ async function openBondForm(existing) {
     el('p', { class: 'hint', text: 'Staggered — enter the term sheet\'s own installments. Leave a leg blank when that date only pays the other one. Principal installments should add up to the invested amount.' }),
     scheduleEditor.node,
   ]);
-  const interestFreqField = field('Interest payout', interestFreq);
+  const interestFreqField = field('Interest payout', interestFreq, 'interestPayout');
   // Principal (and interest) dates normally anchor on MATURITY, not start - a
   // bond maturing on the 26th pays on the 26th of every month, regardless of
   // when a given buyer's own start date falls (see bonds.js periodDates). This
@@ -13112,12 +13112,12 @@ async function openBondForm(existing) {
   // ---- Details tab ----
   const detailsContent = el('div', {}, [
     field('Name', name),
-    el('div', { class: 'field-row' }, [field('Rating', rating), field('Coupon rate % p.a.', rate)]),
+    el('div', { class: 'field-row' }, [field('Rating', rating), field('Coupon rate % p.a.', rate, 'coupon')]),
     el('div', { class: 'field-row' }, [field('₹ invested', investAmount), field('Bank rate % (optional)', bankRate)]),
     el('div', { class: 'field-row' }, [field('Start date', startDate), field('Maturity date', maturityDate)]),
     field('Tenure (months) → fills maturity date', tenure),
-    el('div', { class: 'field-row' }, [field('Type', payout), field('Maturity amount (optional override)', maturityAmount)]),
-    el('div', { class: 'field-row' }, [interestFreqField, field('Principal repaid', principalFreq)]),
+    el('div', { class: 'field-row' }, [field('Type', payout, 'payoutType'), field('Maturity amount (optional override)', maturityAmount)]),
+    el('div', { class: 'field-row' }, [interestFreqField, field('Principal repaid', principalFreq, 'principalRepaid')]),
     principalFirstDateField,
     staggerBlock,
     field('Sold / redeemed early — also use this to close out a bond redeemed at maturity', soldSwitch),
@@ -14502,8 +14502,8 @@ async function openEfTargetForm(existing) {
     el('div', { class: 'sheet-scroll' }, [
       el('h2', { text: isEdit ? (r.name || 'Edit target') : 'Add target' }),
       field('Name', name),
-      el('div', { class: 'field-row' }, [field('Amount (₹)', amount), field('Rung order', order)]),
-      field('Stacking', ladder),
+      el('div', { class: 'field-row' }, [field('Amount (₹)', amount), field('Order in the ladder', order)]),
+      field('How it counts', ladder, 'ladder'),
       el('p', { class: 'hint', text: '"Replaces the previous" is for a target that supersedes the one below it rather than adding to it — e.g. a joint fund that already covers the single-person one beneath it. Use "Adds on top" when the goal genuinely stacks.' }),
       el('div', { class: 'field-row' }, [field('Expected by', expectedClosure), field('Note', note)]),
     ]),
@@ -14693,7 +14693,7 @@ function openCcPayForm(card, ym, billed, mod, cyc) {
 async function renderCreditCards(host, token) {
   // Called again on every timeline click (via renderHomeExpense, which
   // clears first) — but also defensively cleared here, the same lesson the
-  // Allocation tab's duplication bug taught: never trust the caller alone.
+  // Yearly plan tab's duplication bug taught: never trust the caller alone.
   host.innerHTML = '';
   const mod = await import('./credit.js');
   const [cards, reimbRows, houseSpends, personalSpends] = await Promise.all([
@@ -15292,8 +15292,8 @@ async function openMF() {
   setAppMode('mf');
 }
 
-const _mfCell = (k, v, cls) => el('div', { class: 'cell' }, [
-  el('div', { class: 'k', text: k }),
+const _mfCell = (k, v, cls, help) => el('div', { class: 'cell' }, [
+  el('div', { class: 'k', text: k }, help ? [helpDot(help)] : null),
   el('div', { class: 'v ' + (cls || ''), text: v }),
 ]);
 
@@ -15363,7 +15363,7 @@ async function renderMF() {
   const cells = [
     _mfCell('Invested', fmtCur(totInv, 'INR')),
     _mfCell('Returns Earned', fmtCur(totVal - totInv, 'INR'), pctClass(gainPct)),
-    _mfCell(viewSold ? 'Realized XIRR' : 'Portfolio XIRR', wXirr != null ? fmtPct(wXirr) : '-', wXirr != null ? pctClass(wXirr) : ''),
+    _mfCell(viewSold ? 'Realized XIRR' : 'Portfolio XIRR', wXirr != null ? fmtPct(wXirr) : '-', wXirr != null ? pctClass(wXirr) : '', 'xirr'),
     _mfCell('Above benchmark', benchCount ? `${aboveBench} of ${benchCount}` : '-'),
   ];
 
@@ -16013,8 +16013,8 @@ async function openFundForm(existing) {
     typeList,
     field('Fund name', name),
     el('div', { class: 'field-row' }, [field('Type', type), field('Category', category)]),
-    el('div', { class: 'field-row' }, [field('Status', status), field('Monthly SIP', sip)]),
-    el('div', { class: 'field-row' }, [field('Latest NAV', latestNav), field('NAV as of', navAsOf)]),
+    el('div', { class: 'field-row' }, [field('Status', status), field('Monthly SIP', sip, 'sip')]),
+    el('div', { class: 'field-row' }, [field('Latest NAV', latestNav, 'nav'), field('NAV as of', navAsOf)]),
     soldRow,
     el('div', { class: 'field-row' }, [field('Good return', goodReturn), field('Target year', targetYear)]),
     field('Part of Emergency Fund — moves it to that page and out of these totals', efSwitch),
@@ -16576,7 +16576,26 @@ export function closeModal() {
   host.innerHTML = '';
   if (escHandler) { document.removeEventListener('keydown', escHandler); escHandler = null; }
 }
-export const field = (labelText, inputNode) => el('div', { class: 'field' }, [el('label', { text: labelText }), inputNode]);
+// Plain-language meanings for terms a newcomer will not know. helpDot() puts a
+// small (i) beside a label; tapping it opens the meaning.
+const GLOSSARY = {
+  xirr: ['XIRR', 'Your real yearly return. Unlike a simple percentage it counts WHEN each rupee went in, so a fund you added to every month is judged fairly.'],
+  nav: ['NAV', 'Net Asset Value: the price of one unit of a mutual fund today. Your value is units held x NAV.'],
+  sip: ['SIP', 'Systematic Investment Plan: a fixed amount you invest in a fund every month.'],
+  compounding: ['Compounding', 'How often the bank adds interest to your deposit. More often means slightly more money, because interest then earns interest.'],
+  payoutType: ['Cumulative or Payout', 'Cumulative: interest stays in and grows, and you get everything at the end. Payout: interest is paid to you along the way and the deposit stays the same.'],
+  coupon: ['Coupon rate', 'The yearly interest a bond pays, as a percentage of the amount you invested.'],
+  interestPayout: ['Interest payout', 'How often the bond pays you its interest: monthly, quarterly, yearly, or once at the end.'],
+  principalRepaid: ['Principal repaid', 'When your invested money comes back. Usually all at maturity; some bonds return it in instalments.'],
+  ladder: ['How a target counts', 'Adds on top: this target is extra, on top of the ones below. Replaces the previous: this target already includes the one below it (a joint fund that covers the single-person one), so it is not added twice.'],
+};
+function helpDot(term) {
+  const g = GLOSSARY[term];
+  if (!g) return null;
+  return el('button', { class: 'help-dot', type: 'button', 'aria-label': 'What is ' + g[0] + '?', text: 'i',
+    onclick: (e) => { e.preventDefault(); e.stopPropagation(); openInfoSheet(g[0], g[1]); } });
+}
+export const field = (labelText, inputNode, help) => el('div', { class: 'field' }, [el('label', { text: labelText }, help ? [helpDot(help)] : null), inputNode]);
 
 // A segmented control over a short list of options, exposing the same `.value`
 // a <select> does so a caller reading it does not care which one it got. For a
