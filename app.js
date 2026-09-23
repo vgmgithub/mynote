@@ -4652,7 +4652,8 @@ async function renderHome() {
 // month's limit already spent (household budget for the Tracker FAB, Card + UPI / Cash for the
 // personal one); a full ring means the limit is used up. It always breathes a soft glow, and every
 // new entry makes it blink while the extra dashes light up one by one. No limit set: no ring.
-const FAB_RING_DASHES = 36;
+const FAB_RING_DASHES = 60;
+const FAB_RING_R = 20.5;
 const _fabRingPrev = {};
 function _fabRingLoad(id) {
   if (_fabRingPrev[id]) return _fabRingPrev[id];
@@ -4664,19 +4665,30 @@ function _fabRingStore(id, v) {
   try { localStorage.setItem('fabRing:' + id, JSON.stringify(v)); } catch (_) {}
 }
 function _fabRingDashes(n) {
-  // Short segments with clear gaps, so it reads as separate LEDs on a strip.
-  const unit = 100 / FAB_RING_DASHES, dash = unit * 0.46, gap = unit - dash;
+  // Fine hairline ticks with even gaps: a precise, instrument-like scale rather than chunky blocks.
+  const unit = 100 / FAB_RING_DASHES, dash = unit * 0.42, gap = unit - dash;
   const parts = [];
   for (let i = 0; i < n; i++) parts.push(dash.toFixed(3), gap.toFixed(3));
   parts.push('0', '200');
   return parts.join(' ');
+}
+// Lights n ticks and parks the bright "head" LED on the last lit one (hidden when nothing is lit).
+function _fabRingDraw(svg, n) {
+  svg.querySelector('.fab-ring-lit').setAttribute('stroke-dasharray', _fabRingDashes(n));
+  const head = svg.querySelector('.fab-ring-head');
+  if (!n) { head.setAttribute('opacity', '0'); return; }
+  const a = ((n - 0.71) / FAB_RING_DASHES) * 2 * Math.PI - Math.PI / 2;
+  head.setAttribute('cx', (24 + FAB_RING_R * Math.cos(a)).toFixed(2));
+  head.setAttribute('cy', (24 + FAB_RING_R * Math.sin(a)).toFixed(2));
+  head.setAttribute('opacity', '1');
 }
 function _setFabRing(btn, spent, limit) {
   if (!btn) return;
   let svg = btn.querySelector('svg.fab-ring');
   if (!(limit > 0)) { if (svg) svg.remove(); btn.classList.remove('has-ring'); return; }
   const NS = 'http://www.w3.org/2000/svg';
-  if (!svg) {
+  if (!svg || !svg.querySelector('.fab-ring-head')) {
+    if (svg) svg.remove();
     svg = document.createElementNS(NS, 'svg');
     svg.setAttribute('class', 'fab-ring');
     svg.setAttribute('viewBox', '0 0 48 48');
@@ -4684,11 +4696,15 @@ function _setFabRing(btn, spent, limit) {
     ['fab-ring-track', 'fab-ring-lit'].forEach((cls) => {
       const c = document.createElementNS(NS, 'circle');
       c.setAttribute('class', cls);
-      c.setAttribute('cx', '24'); c.setAttribute('cy', '24'); c.setAttribute('r', '20.5');
+      c.setAttribute('cx', '24'); c.setAttribute('cy', '24'); c.setAttribute('r', String(FAB_RING_R));
       c.setAttribute('pathLength', '100');
       c.setAttribute('transform', 'rotate(-90 24 24)');
       svg.appendChild(c);
     });
+    const head = document.createElementNS(NS, 'circle');
+    head.setAttribute('class', 'fab-ring-head');
+    head.setAttribute('r', '1.9');
+    svg.appendChild(head);
     svg.querySelector('.fab-ring-track').setAttribute('stroke-dasharray', _fabRingDashes(FAB_RING_DASHES));
     btn.appendChild(svg);
   }
@@ -4696,22 +4712,21 @@ function _setFabRing(btn, spent, limit) {
   const frac = Math.max(0, spent) / limit;
   const lit = Math.min(FAB_RING_DASHES, Math.round(Math.min(1, frac) * FAB_RING_DASHES));
   btn.classList.toggle('is-full', frac >= 1);
-  const litEl = svg.querySelector('.fab-ring-lit');
   const prev = _fabRingLoad(btn.id);
   clearInterval(btn._ringTimer);
   if (prev && spent > prev.spent + 0.005 && prev.ym === todayISO().slice(0, 7)) {
-    // A new entry: blink, and light the extra dashes one at a time.
+    // A new entry: the head LED blinks while the extra ticks light up one at a time.
     let n = Math.min(prev.lit, lit);
-    litEl.setAttribute('stroke-dasharray', _fabRingDashes(n));
+    _fabRingDraw(svg, n);
     btn.classList.remove('ring-blink'); void btn.offsetWidth; btn.classList.add('ring-blink');
     clearTimeout(btn._blinkTimer);
     btn._blinkTimer = setTimeout(() => btn.classList.remove('ring-blink'), 2400);
     btn._ringTimer = setInterval(() => {
       if (n >= lit) { clearInterval(btn._ringTimer); return; }
-      n++; litEl.setAttribute('stroke-dasharray', _fabRingDashes(n));
-    }, 110);
+      n++; _fabRingDraw(svg, n);
+    }, 60);
   } else {
-    litEl.setAttribute('stroke-dasharray', _fabRingDashes(lit));
+    _fabRingDraw(svg, lit);
   }
   _fabRingStore(btn.id, { ym: todayISO().slice(0, 7), spent, lit });
 }
