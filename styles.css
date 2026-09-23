@@ -3458,3 +3458,35 @@ input, textarea, select, [contenteditable="true"], .allow-select, .allow-select 
 /* Yearly plan: the others' contribution is a sub point inside the House Exp card */
 .alloc-sub { display: flex; justify-content: space-between; gap: 8px; margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--line); font-size: 0.72rem; color: var(--muted); }
 .alloc-sub-v { font-weight: 700; color: var(--good); }
+
+/* Existing loans list: a Paid button on each entry */
+.vb-row.has-paid input.vb-amt { flex: 0 0 84px; width: 84px; }
+.vb-paid { border: 1px solid var(--line); background: var(--card-2); color: var(--muted); border-radius: 10px; padding: 7px 10px; font: inherit; font-size: 0.78rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.vb-paid.is-paid { border-color: var(--good); color: var(--good); background: color-mix(in srgb, var(--good) 14%, transparent); }
+/* Get started: a step card is a tappable block with a small Skip on optional steps */
+
+/* Existing loans: settled loans sit below, struck through, with the date they were paid */
+.vb-prev-head { margin: 12px 0 2px; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.vb-row.vb-prev { opacity: 0.75; font-size: 0.86rem; }
+.vb-prev-name, .vb-prev-amt { text-decoration: line-through; color: var(--muted); }
+.vb-prev-name { flex: 1 1 auto; min-width: 0; }
+.vb-prev-date { color: var(--good); font-size: 0.74rem; font-weight: 700; white-space: nowrap; }
+.vb-prev-undo { font-size: 0.74rem; padding: 4px 8px; }
+
+/* Cash flow: Available Balance, the loans taken off, and the Actual Balance with a short reminder */
+.msheet-loan-line { display: flex; justify-content: space-between; margin: 2px 4px 0; padding: 4px 12px; font-size: 0.85rem; color: var(--muted); }
+.msheet-actual { margin-top: 2px; }
+.msheet-loan-note { margin: 4px 6px 10px; font-size: 0.78rem; text-align: center; }
+
+/* Existing loans: each entry keeps a repayment box, a tally and its history */
+.vb-loan { border: 1px solid var(--line); border-radius: 12px; padding: 10px; background: var(--card-2); display: flex; flex-direction: column; gap: 8px; }
+.vb-loan-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.vb-loan-tally { font-size: 0.78rem; color: var(--muted); }
+.vb-loan-hist { flex: 0 0 auto; padding: 2px 6px; }
+.vb-loan-pay { display: flex; align-items: center; gap: 8px; }
+input.loan-pay { flex: 1 1 auto; width: auto; }
+.vb-loan-pay .btn.small { flex: 0 0 auto; }
+.loan-hist { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.loan-hist-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+.loan-hist-date { flex: 1; font-size: 0.85rem; color: var(--muted); }
+.loan-hist-amt { font-weight: 700; }
