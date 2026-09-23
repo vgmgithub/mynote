@@ -3426,3 +3426,13 @@ input, textarea, select, [contenteditable="true"], .allow-select, .allow-select 
 .sgb-rule b { font-size: 0.9rem; }
 .sgb-rule div div { color: var(--muted); font-size: 0.82rem; line-height: 1.5; margin-top: 3px; }
 .sgb-rule .sgb-rule-eg { font-style: italic; opacity: 0.85; }
+
+/* Personal Spending: what is left per remaining day */
+.pf-perday { display: flex; align-items: center; gap: 12px; margin: 8px 0; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--line); background: var(--card); }
+.pf-perday-ico { font-size: 1.4rem; }
+.pf-perday-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.pf-perday-label { font-weight: 700; font-size: 0.92rem; }
+.pf-perday-sub { font-size: 0.74rem; color: var(--muted); }
+.pf-perday-val { font-size: 1.15rem; font-weight: 800; color: var(--good); white-space: nowrap; }
+
+.pf-lim-pool { margin: 8px 2px 4px; font-size: 0.78rem; line-height: 1.4; }
