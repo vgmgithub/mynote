@@ -2819,6 +2819,7 @@ function spendFilterNote(f, shown, extra) {
 
 // ---------- Personal Finance: the section renderer ----------
 async function renderPersonal() {
+  if (state.appMode === 'home') { refreshHomeFabRings(); return; }
   if (state.appMode !== 'personal') return;
   const host = $('#pfView');
   host.innerHTML = '';
@@ -4642,7 +4643,93 @@ async function renderHome() {
     const t = pfTotals(thisYm, pf.byYm, pf.allocs, pf.upiLimit);
     if (t.limit > 0) _perDayBadge(personalCard.querySelector('.home-card-badge'), t.left, daysLeft);
   } catch (_) { /* Home stands without it */ }
+  refreshHomeFabRings();
   try { host.appendChild(await _homeBackupStrip()); } catch (_) {}
+}
+
+// ---------- Home FAB rings ----------
+// A dashed LED-style ring around each add-spend FAB on Home. The lit dashes are the share of this
+// month's limit already spent (household budget for the Tracker FAB, Card + UPI / Cash for the
+// personal one); a full ring means the limit is used up. It always breathes a soft glow, and every
+// new entry makes it blink while the extra dashes light up one by one. No limit set: no ring.
+const FAB_RING_DASHES = 28;
+const _fabRingPrev = {};
+function _fabRingLoad(id) {
+  if (_fabRingPrev[id]) return _fabRingPrev[id];
+  try { const v = JSON.parse(localStorage.getItem('fabRing:' + id) || 'null'); if (v) return v; } catch (_) {}
+  return null;
+}
+function _fabRingStore(id, v) {
+  _fabRingPrev[id] = v;
+  try { localStorage.setItem('fabRing:' + id, JSON.stringify(v)); } catch (_) {}
+}
+function _fabRingDashes(n) {
+  const unit = 100 / FAB_RING_DASHES, dash = unit * 0.62, gap = unit - dash;
+  const parts = [];
+  for (let i = 0; i < n; i++) parts.push(dash.toFixed(3), gap.toFixed(3));
+  parts.push('0', '200');
+  return parts.join(' ');
+}
+function _setFabRing(btn, spent, limit) {
+  if (!btn) return;
+  let svg = btn.querySelector('svg.fab-ring');
+  if (!(limit > 0)) { if (svg) svg.remove(); btn.classList.remove('has-ring'); return; }
+  const NS = 'http://www.w3.org/2000/svg';
+  if (!svg) {
+    svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('class', 'fab-ring');
+    svg.setAttribute('viewBox', '0 0 72 72');
+    svg.setAttribute('aria-hidden', 'true');
+    ['fab-ring-track', 'fab-ring-lit'].forEach((cls) => {
+      const c = document.createElementNS(NS, 'circle');
+      c.setAttribute('class', cls);
+      c.setAttribute('cx', '36'); c.setAttribute('cy', '36'); c.setAttribute('r', '33');
+      c.setAttribute('pathLength', '100');
+      c.setAttribute('transform', 'rotate(-90 36 36)');
+      svg.appendChild(c);
+    });
+    svg.querySelector('.fab-ring-track').setAttribute('stroke-dasharray', _fabRingDashes(FAB_RING_DASHES));
+    btn.appendChild(svg);
+  }
+  btn.classList.add('has-ring');
+  const frac = Math.max(0, spent) / limit;
+  const lit = Math.min(FAB_RING_DASHES, Math.round(Math.min(1, frac) * FAB_RING_DASHES));
+  btn.classList.toggle('is-full', frac >= 1);
+  const litEl = svg.querySelector('.fab-ring-lit');
+  const prev = _fabRingLoad(btn.id);
+  clearInterval(btn._ringTimer);
+  if (prev && spent > prev.spent + 0.005 && prev.ym === todayISO().slice(0, 7)) {
+    // A new entry: blink, and light the extra dashes one at a time.
+    let n = Math.min(prev.lit, lit);
+    litEl.setAttribute('stroke-dasharray', _fabRingDashes(n));
+    btn.classList.remove('ring-blink'); void btn.offsetWidth; btn.classList.add('ring-blink');
+    clearTimeout(btn._blinkTimer);
+    btn._blinkTimer = setTimeout(() => btn.classList.remove('ring-blink'), 2400);
+    btn._ringTimer = setInterval(() => {
+      if (n >= lit) { clearInterval(btn._ringTimer); return; }
+      n++; litEl.setAttribute('stroke-dasharray', _fabRingDashes(n));
+    }, 110);
+  } else {
+    litEl.setAttribute('stroke-dasharray', _fabRingDashes(lit));
+  }
+  _fabRingStore(btn.id, { ym: todayISO().slice(0, 7), spent, lit });
+}
+async function refreshHomeFabRings() {
+  if (state.appMode !== 'home') return;
+  try {
+    const thisYm = todayISO().slice(0, 7);
+    const [allocs, efLoans, kittyRows] = await Promise.all([
+      DB.all('allocations').catch(() => []),
+      DB.byIndex('emergency', 'kind', 'loan').catch(() => []),
+      DB.byIndex('spends', 'ym', thisYm).catch(() => []),
+    ]);
+    const kitty = _kittyFor(thisYm, allocs, efLoans);
+    const kSpent = round2((kittyRows || []).reduce((a, r) => a + (Number(r.amount) || 0), 0));
+    _setFabRing($('#spendAddBtn'), kSpent, kitty);
+    const pf = await pfLoad();
+    const t = pfTotals(thisYm, pf.byYm, pf.allocs, pf.upiLimit);
+    _setFabRing($('#pfAddBtn'), round2(t.limit - t.left), t.limit);
+  } catch (_) { /* the FABs work without their rings */ }
 }
 
 async function _homeBackupStrip() {
@@ -6381,6 +6468,7 @@ async function renderHomeExpense() {
   // belongs to which screen is applyAppMode's business, not this function's.
   // Credit Cards has its own screen now; its saves still call this to refresh.
   if (state.appMode === 'cc') { renderCc(); return; }
+  if (state.appMode === 'home') { refreshHomeFabRings(); return; }
   if (state.appMode !== 'expense') return;
   if (_expTab === 'cc') _expTab = 'tracker';
 

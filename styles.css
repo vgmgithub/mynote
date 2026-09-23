@@ -3516,3 +3516,22 @@ input.loan-pay { flex: 1 1 auto; width: auto; }
 
 #ccBottomNav button { font-size: 0.72rem; }
 .cc-cardchips { flex-wrap: wrap; padding: 4px 0 8px; gap: 6px; }
+
+/* ---------- Home FAB rings: dashed LED ring = share of the month's limit spent ---------- */
+.fab svg.fab-ring, .fab.fab-spend svg.fab-ring, .fab.fab-personal svg.fab-ring {
+  position: absolute; left: -8px; top: -8px; width: 72px; height: 72px; pointer-events: none; overflow: visible;
+  --ring: #ffffff; --ring-dim: rgba(255, 255, 255, 0.16); --ring-glow: rgba(255, 255, 255, 0.85);
+  animation: fab-ring-breathe 2.6s ease-in-out infinite;
+}
+.fab.fab-personal svg.fab-ring { --ring: #2fd3a4; --ring-dim: rgba(47, 211, 164, 0.16); --ring-glow: rgba(47, 211, 164, 0.8); }
+.fab-ring circle { fill: none; stroke-width: 3; stroke-linecap: round; }
+.fab-ring .fab-ring-track { stroke: var(--ring-dim); }
+.fab-ring .fab-ring-lit { stroke: var(--ring); filter: drop-shadow(0 0 2px var(--ring-glow)) drop-shadow(0 0 5px var(--ring-glow)); }
+body:not([data-mode="home"]) .fab svg.fab-ring { display: none; }
+@keyframes fab-ring-breathe { 0%, 100% { opacity: 0.78; } 50% { opacity: 1; } }
+/* A new entry: a few quick blinks while the extra dashes light up. */
+.fab.ring-blink svg.fab-ring { animation: fab-ring-blink 0.4s ease-in-out 6; }
+@keyframes fab-ring-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+@media (prefers-reduced-motion: reduce) {
+  .fab svg.fab-ring, .fab.ring-blink svg.fab-ring { animation: none; opacity: 1; }
+}
