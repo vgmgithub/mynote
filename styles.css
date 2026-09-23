@@ -3521,16 +3521,17 @@ input.loan-pay { flex: 1 1 auto; width: auto; }
 /* Both add-spend FABs a little smaller, with room between them for the rings. */
 .fab.fab-spend, .fab.fab-personal { width: 48px; height: 48px; right: 22px; }
 .fab.fab-spend svg:not(.fab-ring), .fab.fab-personal img { width: 23px; height: 23px; }
-.fab.fab-personal.is-second { bottom: calc(78px + 48px + 22px + var(--safe-bottom)); }
-body[data-mode="home"] .fab.fab-personal.is-second { bottom: calc(18px + 48px + 22px + var(--safe-bottom)); }
+.fab.fab-personal.is-second { bottom: calc(78px + 48px + 12px + var(--safe-bottom)); }
+body[data-mode="home"] .fab.fab-personal.is-second { bottom: calc(18px + 48px + 12px + var(--safe-bottom)); }
 .fab svg.fab-ring, .fab.fab-spend svg.fab-ring, .fab.fab-personal svg.fab-ring {
-  position: absolute; left: -8px; top: -8px; width: 64px; height: 64px; pointer-events: none; overflow: visible;
+  /* Inside the button, just in from its edge, like an LED strip set into the rim. */
+  position: absolute; left: 0; top: 0; width: 48px; height: 48px; pointer-events: none; overflow: visible;
   animation: fab-ring-breathe 2.6s ease-in-out infinite;
 }
 /* Household (kitty): the amber of its own icon. Personal: white. */
 .fab.fab-spend svg.fab-ring { --ring: #f5a623; --ring-dim: rgba(245, 166, 35, 0.3); --ring-glow: rgba(245, 166, 35, 0.9); }
-.fab.fab-personal svg.fab-ring { --ring: #ffffff; --ring-dim: rgba(255, 255, 255, 0.28); --ring-glow: rgba(255, 255, 255, 0.9); }
-.fab-ring circle { fill: none; stroke-width: 3.4; stroke-linecap: butt; }
+.fab.fab-personal svg.fab-ring { --ring: #ffffff; --ring-dim: rgba(255, 255, 255, 0.22); --ring-glow: rgba(255, 255, 255, 0.9); }
+.fab-ring circle { fill: none; stroke-width: 2.8; stroke-linecap: butt; }
 .fab-ring .fab-ring-track { stroke: var(--ring-dim); }
 .fab-ring .fab-ring-lit { stroke: var(--ring); filter: drop-shadow(0 0 1.5px var(--ring-glow)) drop-shadow(0 0 4px var(--ring-glow)); }
 body:not([data-mode="home"]) .fab svg.fab-ring { display: none; }

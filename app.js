@@ -4679,14 +4679,14 @@ function _setFabRing(btn, spent, limit) {
   if (!svg) {
     svg = document.createElementNS(NS, 'svg');
     svg.setAttribute('class', 'fab-ring');
-    svg.setAttribute('viewBox', '0 0 64 64');
+    svg.setAttribute('viewBox', '0 0 48 48');
     svg.setAttribute('aria-hidden', 'true');
     ['fab-ring-track', 'fab-ring-lit'].forEach((cls) => {
       const c = document.createElementNS(NS, 'circle');
       c.setAttribute('class', cls);
-      c.setAttribute('cx', '32'); c.setAttribute('cy', '32'); c.setAttribute('r', '29.5');
+      c.setAttribute('cx', '24'); c.setAttribute('cy', '24'); c.setAttribute('r', '20.5');
       c.setAttribute('pathLength', '100');
-      c.setAttribute('transform', 'rotate(-90 32 32)');
+      c.setAttribute('transform', 'rotate(-90 24 24)');
       svg.appendChild(c);
     });
     svg.querySelector('.fab-ring-track').setAttribute('stroke-dasharray', _fabRingDashes(FAB_RING_DASHES));
