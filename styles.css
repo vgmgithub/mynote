@@ -3446,3 +3446,5 @@ input, textarea, select, [contenteditable="true"], .allow-select, .allow-select 
 .more-opts > summary::-webkit-details-marker { display: none; }
 .more-opts > summary::before { content: '▸  '; }
 .more-opts[open] > summary::before { content: '▾  '; }
+
+.empty-cta { margin-top: 12px; min-width: 200px; flex: none; }

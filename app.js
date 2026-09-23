@@ -114,7 +114,7 @@ let _bondSort = 'maturity';  // 'maturity' | 'amount' | 'rate'
 let _efTab = 'fund';         // 'fund' | 'targets' | 'loans' | 'log' | 'terms' (bottom nav)
 let _efLoanFilter = 'open';  // 'open' | 'closed' | 'all'
 // Expense view state (only used inside the Expense section page).
-let _expTab = 'cc';          // 'cc' | 'alloc' | 'spend' | 'tracker' | 'review' (bottom nav)
+let _expTab = 'tracker';     // 'cc' | 'alloc' | 'spend' | 'tracker' | 'review' (bottom nav) - opens on the everyday one
 let _expSheetYm = null;      // month shown on the Expense tab; null = this month
 // First month the monthly sheet covers. Nothing before this is reachable — the
 // sheet simply wasn't being kept then, so those months would be blank forever.
@@ -12190,7 +12190,19 @@ async function renderMetal() {
   // The + (add transaction) button only makes sense on the Gold/Silver ledgers.
   $('#metalAddBtn').classList.toggle('hidden', _metalTab === 'sgb' || _metalTab === 'overview');
   if (_metalTab === 'sgb') return renderMetalSgb(host);
-  if (_metalTab === 'overview') return renderMetalOverview(host);
+  if (_metalTab === 'overview') {
+    const [txns, stocks] = await Promise.all([DB.all('metals').catch(() => []), DB.all('stocks').catch(() => [])]);
+    if (!(txns || []).length && !(stocks || []).some(isSgb)) {
+      host.appendChild(el('div', { class: 'empty' }, [
+        el('div', { class: 'e-icon', text: '🪙' }),
+        el('p', { text: 'No gold or silver yet.' }),
+        el('p', { class: 'hint', text: 'Add your first purchase and this page shows what you hold, what it is worth and how it is doing.' }),
+        el('button', { class: 'btn primary empty-cta', type: 'button', text: 'Add gold or silver', onclick: () => openMetalTxn(null) }),
+      ]));
+      return;
+    }
+    return renderMetalOverview(host);
+  }
   return renderMetalLedger(host, _metalTab);
 }
 
@@ -13400,6 +13412,19 @@ const _efInfoRow = (icon, label, sub, amount, group, amtCls) => el('div', { clas
 // ---- Fund tab: where the money is, the reconciliation, and the target ladder
 function efFundTab(c, parked) {
   const wrap = el('div', { class: 'tab-content' });
+  // Nothing entered yet: say what to do first instead of showing a screen of zeros.
+  if (!c.contributionCount && !c.loanCount && !(c.targets || []).length && !c.parkedCount) {
+    wrap.appendChild(el('div', { class: 'empty' }, [
+      el('div', { class: 'e-icon', text: '🚨' }),
+      el('p', { text: 'Start your emergency fund.' }),
+      el('p', { class: 'hint', text: 'Log what you put in each month, and set a target to aim for. Everything else on this page fills in from that.' }),
+      el('div', { class: 'btn-row' }, [
+        el('button', { class: 'btn primary', type: 'button', text: 'Log a contribution', onclick: () => openEfContribForm(null) }),
+        el('button', { class: 'btn ghost', type: 'button', text: 'Set a target', onclick: () => openEfTargetForm(null) }),
+      ]),
+    ]));
+    return wrap;
+  }
 
   // Interest, grouped by REALISED (cash already in the fund) vs PENDING /
   // unrealised (mark-to-market or a projection) — different confidence, so kept
