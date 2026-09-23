@@ -462,3 +462,29 @@ export function buildSeedFund(seed, nowMs) {
     createdAt: iso, updatedAt: iso,
   };
 }
+
+// ---------- SIP reminders ----------
+// A fund with a SIP amount AND a SIP date (day of the month, 1-31) gets a Home reminder shortly before the day.
+// No date, no reminder. A short month clamps the day (31 falls on the 30th, or the 28th/29th in February).
+export const SIP_REMIND_DAYS = 2;
+export const validSipDay = (d) => { const n = Math.round(Number(d)); return n >= 1 && n <= 31 ? n : null; };
+// Days from `now` (whole days, local) to the next occurrence of `day`, today counted as 0, and that date as ISO.
+export function nextSip(day, now = new Date()) {
+  const d = validSipDay(day);
+  if (d == null) return null;
+  const at = (y, m) => { const dim = new Date(y, m + 1, 0).getDate(); return new Date(y, m, Math.min(d, dim)); };
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let next = at(today.getFullYear(), today.getMonth());
+  if (next < today) next = at(today.getFullYear(), today.getMonth() + 1);
+  const iso = next.getFullYear() + '-' + String(next.getMonth() + 1).padStart(2, '0') + '-' + String(next.getDate()).padStart(2, '0');
+  return { days: Math.round((next - today) / 86400000), date: iso };
+}
+// The reminder for one fund, or null: only running SIPs (not stopped or sold), only with a date, only in the window.
+export function sipReminder(fund, now = new Date()) {
+  if (!fund || fund.soldDate || /^(Stopped|Sold)$/.test(fund.status || '')) return null;
+  const amount = Math.round(Number(fund.sip) * 100) / 100;
+  if (!(amount > 0)) return null;
+  const n = nextSip(fund.sipDay, now);
+  if (!n || n.days > SIP_REMIND_DAYS) return null;
+  return { name: fund.name || 'Mutual fund', amount, days: n.days, date: n.date };
+}

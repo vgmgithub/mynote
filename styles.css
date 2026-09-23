@@ -3490,3 +3490,26 @@ input.loan-pay { flex: 1 1 auto; width: auto; }
 .loan-hist-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
 .loan-hist-date { flex: 1; font-size: 0.85rem; color: var(--muted); }
 .loan-hist-amt { font-weight: 700; }
+
+.badge.due-badge-sip { color: #16a34a; border-color: rgba(22,163,74,0.45); background: rgba(22,163,74,0.12); font-weight: 700; }
+@media (prefers-color-scheme: dark) { .badge.due-badge-sip { color: #86efac; } }
+
+/* The Coming Up strip now drifts by script: the rail itself scrolls, so it can be dragged and scrolled by hand */
+.due-soon-scroller.is-marquee .due-soon-rail { animation: none; overflow-x: auto; width: auto; scroll-snap-type: none;
+  cursor: grab; user-select: none; -webkit-user-select: none; touch-action: pan-x pan-y; }
+.due-soon-scroller.is-marquee .due-soon-rail:active { cursor: grabbing; }
+
+.badge.mf-sip-badge { color: #16a34a; border-color: rgba(22,163,74,0.45); background: rgba(22,163,74,0.12); font-weight: 700; }
+@media (prefers-color-scheme: dark) { .badge.mf-sip-badge { color: #86efac; } }
+/* The strip no longer carries a second copy of the cards, so there is nothing to hide. */
+
+/* SIP done, from Home: a centred popup listing the fund, then two boxes */
+.sip-sheet h2 { display: flex; align-items: center; gap: 10px; }
+.sip-ico { display: inline-flex; width: 34px; height: 34px; align-items: center; justify-content: center; border-radius: 10px; background: color-mix(in srgb, #16a34a 16%, transparent); font-size: 1.15rem; }
+.sip-details { margin: 10px 0 6px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.sip-row { display: flex; justify-content: space-between; gap: 12px; padding: 9px 12px; font-size: 0.88rem; border-bottom: 1px solid var(--line); }
+.sip-row:last-child { border-bottom: 0; }
+.sip-row span { color: var(--muted); }
+.sip-row b { text-align: right; font-variant-numeric: tabular-nums; }
+.sip-form { margin-top: 12px; }
+.sip-form[hidden] { display: none; }
