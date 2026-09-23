@@ -3070,7 +3070,7 @@ async function renderPfSpends(host, token) {
       el('p', { text: 'Nothing logged for ' + mod.monthLabel(ym) + ' yet.' }),
       el('p', { class: 'hint', text: t.limit > 0
         ? 'Tap the + to log a personal spend. Card and UPI are tracked against separate limits.'
-        : 'Set your Card and UPI limits, then log a spend. Limits are optional - you can log spends without them.' }),
+        : 'Set your Card and UPI / Cash limits, then log a spend. Limits are optional - you can log spends without them.' }),
       el('div', { class: 'btn-row' }, [
         el('button', { class: 'btn primary', type: 'button', text: 'Log a spend', onclick: () => openPfSpendForm(null) }),
         t.limit > 0 ? null : el('button', { class: 'btn ghost', type: 'button', text: 'Set limits', onclick: () => {
@@ -6407,7 +6407,7 @@ async function renderExpenseSheet(host, token) {
   const sheet = sheetRow || {};
 
   // What the Tracker tab has left in the household kitty for this month —
-  // House Exp doubled, less everything logged against it. Feeds the Monthly
+  // House Exp (plus others' contribution), less everything logged against it. Feeds the Monthly
   // Expense row so the two surfaces can't disagree about the same figure.
   const kitty = _kittyFor(ym, allocs, efLoans);
   const kittySpent = round2((spendRows || []).reduce((s, r) => s + (Number(r.amount) || 0), 0));
@@ -8746,9 +8746,7 @@ async function renderSpendTracker(host, token) {
   const year = Number(ym.slice(0, 4));
   const alloc = (allocs || []).find((a) => Number(a.year) === year) || null;
 
-  // The kitty is the House Exp allocation DOUBLED: the same figure goes in from
-  // each of us, so what the household actually has to spend is twice the line
-  // on the Yearly plan tab.
+  // The kitty is the House Exp allocation, plus whatever others contribute to the house.
   const share = alloc ? Number(alloc.houseExp) || 0 : 0;
   // Through _kittyFor, so this agrees with the Expense sheet and the Review
   // tab. Computing it inline here is what let the repayment earmark go missing
@@ -8756,6 +8754,7 @@ async function renderSpendTracker(host, token) {
   const drawn = _emergencyDrawIn(ym, efLoans);
   const earmark = _repayEarmarkIn(ym, efLoans);
   const budget = _kittyFor(ym, allocs, efLoans);
+  const sharedIn = _sharedFor(ym, allocs);
   const totalOf = (k) => round2((byYm.get(k) || []).reduce((s, r) => s + (Number(r.amount) || 0), 0));
   const spends = (byYm.get(ym) || []).slice().sort((a, b2) => String(b2.date || '').localeCompare(String(a.date || '')) || (b2.id - a.id));
   const spent = totalOf(ym);
@@ -8834,8 +8833,8 @@ async function renderSpendTracker(host, token) {
             : document.createTextNode('')),
       ]),
       el('div', { class: 'trk-sum-val', text: fmtSheetCur(budget) }),
-      el('div', { class: 'trk-sum-note', text: share > 0
-        ? fmtSheetCur(share) + ' × 2' + (drawn > 0 && earmark > 0 ? ' − ' + fmtSheetCur(earmark) : '')
+      el('div', { class: 'trk-sum-note', text: share > 0 || sharedIn > 0
+        ? (share > 0 ? fmtSheetCur(share) + (_kittyDoubled(ym) ? ' × 2' : ' house exp') : '') + (sharedIn > 0 ? (share > 0 ? ' + ' : '') + fmtSheetCur(sharedIn) + ' shared by others' : '') + (drawn > 0 && earmark > 0 ? ' − ' + fmtSheetCur(earmark) : '')
         : 'set House Exp for ' + year }),
     ]),
     el('div', { class: 'trk-sum-cell' }, [
@@ -8869,7 +8868,7 @@ async function renderSpendTracker(host, token) {
     host.appendChild(el('div', { class: 'empty' }, [
       el('div', { class: 'e-icon', text: '📍' }),
       el('p', { text: 'Nothing logged for ' + mod.monthLabel(ym) + ' yet.' }),
-      el('p', { class: 'hint', text: share > 0 ? 'Tap "+ Add spend" each time money leaves the household budget.' : 'Set House Exp on the Yearly plan tab first — the household budget is that figure doubled.' }),
+      el('p', { class: 'hint', text: share > 0 ? 'Tap "+ Add spend" each time money leaves the household budget.' : 'Set House Exp on the Yearly plan tab first — the household budget is that figure, plus anything others contribute (doubled until Sep 2026).' }),
     ]));
     return;
   }
@@ -9035,7 +9034,7 @@ async function renderSpendTracker(host, token) {
     }
   } catch (_) { /* commentary only — the month's figures above stand on their own */ }
 
-  host.appendChild(explainRow('About the household budget', 'The household budget is the Yearly plan tab\'s House Exp doubled — the same figure from each of you. Every spend logged here comes off it. This tab always shows the current month; earlier months stay in the backup.', 'Where the household budget comes from'));
+  host.appendChild(explainRow('About the household budget', 'The household budget is the Yearly plan tab\'s House Exp, plus what someone else contributes to the house if you turned that on there (until Sep 2026 it was House Exp doubled, the same figure from each of you). Every spend logged here comes off it. This tab always shows the current month; earlier months stay in the backup.', 'Where the household budget comes from'));
 }
 
 // 'YYYY-MM' -> "Sep '26", for form copy that has no credit.js import to hand.
@@ -9860,8 +9859,8 @@ function _reviewMethods(ym, byYm, prevYm) {
 // handful of months on record one holiday, one hospital trip or one deposit
 // drags a mean far enough to make every other month look thrifty.
 
-// The household kitty for one month: the Yearly plan tab's House Exp doubled
-// (the same figure from each of us), PLUS any emergency draw taken from the
+// The household kitty for one month: the Yearly plan tab's House Exp, PLUS what someone else
+// contributes to the house (if the plan says so), PLUS any emergency draw taken from the
 // Emergency Fund that month.
 //
 // An emergency draw is money that genuinely left the fund and became spendable
@@ -9914,13 +9913,25 @@ function _repayEarmarkIn(ym, loans) {
   }, 0));
 }
 
+// Months before this keep the old rule: House Exp DOUBLED (the same figure from each of us). From it on,
+// the budget is House Exp plus what the other person puts in ("shared by others" on the Yearly plan), so
+// either share can change on its own. Past months are never recomputed under the new rule.
+const KITTY_SPLIT_FROM = '2026-10';
+const _kittyDoubled = (ym) => String(ym).slice(0, 7) < KITTY_SPLIT_FROM;
+// What someone else puts into the household each month, when the Yearly plan says the house is shared.
+function _sharedFor(ym, allocs) {
+  if (_kittyDoubled(ym)) return 0;
+  const al = (allocs || []).find((x) => Number(x.year) === Number(String(ym).slice(0, 4)));
+  return al && al.sharedOn ? round2(Math.max(0, Number(al.sharedAmount) || 0)) : 0;
+}
 function _kittyFor(ym, allocs, loans) {
   const al = (allocs || []).find((x) => Number(x.year) === Number(String(ym).slice(0, 4)));
   const share = al ? Number(al.houseExp) || 0 : 0;
   // Floored at zero: a schedule bigger than the month's own budget would
   // otherwise produce a negative kitty, which reads as a bug rather than as
   // "everything this month is already committed".
-  return Math.max(0, round2(share * 2 + _emergencyDrawIn(ym, loans) - _repayEarmarkIn(ym, loans)));
+  const base = _kittyDoubled(ym) ? share * 2 : share + _sharedFor(ym, allocs);
+  return Math.max(0, round2(base + _emergencyDrawIn(ym, loans) - _repayEarmarkIn(ym, loans)));
 }
 
 // Categories where being "over" isn't a decision anyone can act on this month.
@@ -10901,9 +10912,11 @@ async function renderReview(host, token) {
   _rvwMethodsSection(host, methods, ' It is also what feeds this month\u2019s card reimbursement.');
   _rvwFitSection(host, fit, {
     word: 'household budget',
-    // The kitty is House Exp DOUBLED, so a suggested figure is only actionable
-    // once it is halved back into the line actually typed on Allocation.
-    each: (f) => ' — that is ' + fmtSheetCur(round2(f.suggested / 2)) + ' each on House Exp',
+    // Before KITTY_SPLIT_FROM the kitty is House Exp DOUBLED, so a suggested figure is halved back into the
+    // line actually typed on the Yearly plan; after it, the others' share comes off first.
+    each: (f) => (_kittyDoubled(thisYm)
+      ? ' — that is ' + fmtSheetCur(round2(f.suggested / 2)) + ' each on House Exp'
+      : ' — that is ' + fmtSheetCur(round2(Math.max(0, f.suggested - _sharedFor(thisYm, allocs)))) + ' on House Exp'),
   });
 
   // ---- Context: what wasn't judged, and what can't be ----
@@ -11194,7 +11207,8 @@ async function renderAllocation(host, token) {
     const prevVal = prevAlloc ? (prevAlloc[cat.key] || 0) : 0;
     const stepUp = prevVal > 0 ? (((val - prevVal) / prevVal) * 100) : (val > 0 ? 100 : 0);
     // Hide cards with both amount and percentage at 0
-    if (val === 0 && stepUp === 0) return;
+    const sharedAmt = cat.key === 'houseExp' && curAlloc && curAlloc.sharedOn ? Number(curAlloc.sharedAmount) || 0 : 0;
+    if (val === 0 && stepUp === 0 && !sharedAmt) return;
     const stepUpClass = stepUp > 5 ? 'step-up-pos' : stepUp < -5 ? 'step-up-neg' : 'step-up-flat';
 
     // Display-only — editing happens through the single "Edit All Allocations"
@@ -11206,9 +11220,15 @@ async function renderAllocation(host, token) {
       ]),
       el('div', { class: 'alloc-value', text: '₹ ' + Number(val).toLocaleString('en-IN') }),
       el('div', { class: 'alloc-stepup ' + stepUpClass, text: (stepUp > 0 ? '▲' : stepUp < 0 ? '▼' : '—') + ' ' + Math.abs(Math.round(stepUp)) + '%' }),
-    ]);
+      // Others' contribution to the house: a sub point of this card, counted in the household budget only.
+      sharedAmt > 0 ? el('div', { class: 'alloc-sub', title: 'Counted in the household budget only, not added to your allocations' }, [
+        el('span', { class: 'alloc-sub-l', text: '\u{1F91D} Shared by others' }),
+        el('span', { class: 'alloc-sub-v', text: '+ \u20B9 ' + sharedAmt.toLocaleString('en-IN') }),
+      ]) : null,
+    ].filter(Boolean));
     allocWrap.appendChild(card);
   });
+
 
   // ---- Balance: what the salary has left after everything else ----
   //
@@ -11334,6 +11354,18 @@ async function openAllocForm(year = null) {
     ]);
   });
 
+  // Someone else shares the house costs? Their monthly amount is added to the Tracker's Household budget.
+  const sharedChk = el('input', { type: 'checkbox' });
+  const sharedInp = numInput(0, '0');
+  const sharedBox = el('div', { class: 'alloc-form-row alloc-shared-sub hidden' }, [
+    el('div', { class: 'alloc-form-row-left' }, [el('span', { class: 'alloc-form-row-icon', text: '🤝' }), el('span', { class: 'alloc-form-row-label', text: 'Their monthly share of house expense' })]),
+    el('div', { class: 'alloc-form-row-input-wrap' }, [sharedInp, el('span', { class: 'alloc-form-row-currency', text: '₹' })]),
+  ]);
+  sharedChk.addEventListener('change', () => sharedBox.classList.toggle('hidden', !sharedChk.checked));
+  groupSections[1].appendChild(el('label', { class: 'alloc-shared-toggle' }, [sharedChk, el('span', { text: 'Does anyone else share the house expenses?' })]));
+  groupSections[1].appendChild(sharedBox);
+  groupSections[1].appendChild(el('p', { class: 'hint alloc-shared-note', text: 'Counted in the household budget only. It is not added to your allocations or Balance.' }));
+
   // Tracks the DB id of whatever year is currently loaded into the fields
   // (null = this year has no saved record yet, so Save will insert).
   let loadedId = null;
@@ -11347,6 +11379,8 @@ async function openAllocForm(year = null) {
     const src = existing || blankAlloc();
     loadedId = existing ? existing.id : null;
     Object.keys(fields).forEach(key => { fields[key].value = src[key] || 0; });
+    sharedChk.checked = !!src.sharedOn; sharedInp.value = src.sharedOn ? (Number(src.sharedAmount) || 0) : 0;
+    sharedBox.classList.toggle('hidden', !sharedChk.checked);
     existingBadge.textContent = existing ? '✎ Editing saved entry' : '＋ New entry';
     existingBadge.classList.toggle('is-existing', !!existing);
     title.textContent = `Annual Allocation — ${y}`;
@@ -11368,6 +11402,8 @@ async function openAllocForm(year = null) {
     if (!Number.isFinite(y)) { toast('Enter a valid year'); return; }
     const rec = { year: y, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
     Object.keys(fields).forEach(key => { rec[key] = Number(fields[key].value) || 0; });
+    rec.sharedOn = sharedChk.checked;
+    rec.sharedAmount = sharedChk.checked ? Math.max(0, Number(sharedInp.value) || 0) : 0;
     if (loadedId) rec.id = loadedId;
     await DB.put('allocations', rec);
     closeModal();

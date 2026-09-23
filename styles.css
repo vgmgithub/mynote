@@ -3448,3 +3448,13 @@ input, textarea, select, [contenteditable="true"], .allow-select, .allow-select 
 .more-opts[open] > summary::before { content: '▾  '; }
 
 .empty-cta { margin-top: 12px; min-width: 200px; flex: none; }
+
+.alloc-shared-toggle { display: flex; align-items: center; gap: 10px; padding: 10px 4px 4px; font-size: 0.9rem; cursor: pointer; }
+.alloc-shared-toggle input { width: 20px; height: 20px; }
+.alloc-shared-sub { margin-top: 6px; margin-left: 14px; }
+
+.alloc-shared-note { margin: 4px 2px 0; }
+
+/* Yearly plan: the others' contribution is a sub point inside the House Exp card */
+.alloc-sub { display: flex; justify-content: space-between; gap: 8px; margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--line); font-size: 0.72rem; color: var(--muted); }
+.alloc-sub-v { font-weight: 700; color: var(--good); }
