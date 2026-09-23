@@ -16926,13 +16926,31 @@ async function openBackupSheet() {
   if (!fileSystemAccessSupported()) { openBackupFallbackSheet(); return; }
   const handle = await getSavedFolder();
   if (!handle) { openBackupSetupSheet(); return; }
-  // The menu click is a valid user gesture - safe to request permission here.
-  if (!(await ensureFolderPermission(handle, 'readwrite'))) {
-    await appAlert('Permission to use the backup folder was not granted. You can pick a different folder, or use the file-based restore at the bottom.');
-    openBackupSetupSheet();
-    return;
-  }
-  openBackupMainSheet(handle);
+  // Already allowed: straight to the sheet. Otherwise ask ONE tap to allow the
+  // same folder again - never make the user re-pick it just because the browser
+  // wants its permission confirmed.
+  let state = 'prompt';
+  try { state = await handle.queryPermission({ mode: 'readwrite' }); } catch (_) {}
+  if (state === 'granted') { openBackupMainSheet(handle); return; }
+  openBackupAllowSheet(handle);
+}
+
+function openBackupAllowSheet(handle) {
+  openModal(el('div', { class: 'sheet' }, [
+    el('h2', { text: 'Backup & Restore' }),
+    el('p', { class: 'hint', text:
+      'Your backup folder "' + (handle.name || 'folder') + '" is saved. Your browser needs one tap to allow access to it again.' }),
+    el('div', { class: 'btn-row' }, [
+      el('button', { class: 'btn primary', text: 'Allow access', onclick: async () => {
+        if (await ensureFolderPermission(handle, 'readwrite')) { closeModal(); openBackupMainSheet(handle); }
+        else toast('Access not allowed. Try again, or choose a different folder.');
+      } }),
+      el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }),
+    ]),
+    el('div', { class: 'menu-foot' }, [
+      el('button', { class: 'link-btn', text: 'Choose a different folder', onclick: () => { closeModal(); openBackupSetupSheet(); } }),
+    ]),
+  ]));
 }
 
 function openBackupSetupSheet() {

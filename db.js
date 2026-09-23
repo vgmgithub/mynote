@@ -265,7 +265,9 @@ export const DB = (function () {
         stocks,
         snapshots,
         monthly,
-        meta,
+        // The backup-folder handle is a live browser object: it can't be
+        // serialised (it would export as {}) and must never travel in a backup.
+        meta: meta.filter((m) => m.key !== 'backupFolderHandle'),
         feed,
         funds,
         fds,
@@ -293,6 +295,9 @@ export const DB = (function () {
       if (!data || data.app !== 'mynote-stocks') {
         throw new Error('This file is not a MyNotes backup.');
       }
+      // Keep this device's backup folder across a restore - it belongs to the
+      // device, not to the data being restored.
+      const keptFolder = await this.get('meta', 'backupFolderHandle').catch(() => null);
       await Promise.all([
         this.clear('stocks'),
         this.clear('snapshots'),
@@ -321,7 +326,8 @@ export const DB = (function () {
       (data.stocks || []).forEach((s) => tasks.push(this.put('stocks', s)));
       (data.snapshots || []).forEach((s) => tasks.push(this.put('snapshots', s)));
       (data.monthly || []).forEach((m) => tasks.push(this.put('monthly', m)));
-      (data.meta || []).forEach((m) => tasks.push(this.put('meta', m)));
+      (data.meta || []).forEach((m) => { if (m.key !== 'backupFolderHandle') tasks.push(this.put('meta', m)); });
+      if (keptFolder && keptFolder.value) tasks.push(this.put('meta', keptFolder));
       // feed + funds + fds may be missing on older backups — silently skip.
       (data.feed || []).forEach((f) => tasks.push(this.put('feed', f).catch(() => {})));
       (data.funds || []).forEach((f) => tasks.push(this.put('funds', f).catch(() => {})));

@@ -31,7 +31,9 @@ export function fileSystemAccessSupported() {
 
 export async function getSavedFolder() {
   const rec = await DB.get('meta', HANDLE_KEY).catch(() => null);
-  return (rec && rec.value) || null;
+  const h = rec && rec.value;
+  // A real handle only - an old backup could have left a plain {} here.
+  return h && typeof h.queryPermission === 'function' ? h : null;
 }
 
 async function putSavedFolder(handle) {
