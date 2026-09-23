@@ -114,6 +114,8 @@ let _bondSort = 'maturity';  // 'maturity' | 'amount' | 'rate'
 let _efTab = 'fund';         // 'fund' | 'targets' | 'loans' | 'log' | 'terms' (bottom nav)
 let _efLoanFilter = 'open';  // 'open' | 'closed' | 'all'
 // Expense view state (only used inside the Expense section page).
+let _ccTab = 'cc';           // 'cc' | 'heat' | 'cat' | 'chk' (Credit Cards bottom nav)
+let _ccYm = null, _ccCardId = null, _ccCatClicked = false;
 let _expTab = 'tracker';     // 'cc' | 'alloc' | 'spend' | 'tracker' | 'review' (bottom nav) - opens on the everyday one
 let _expSheetYm = null;      // month shown on the Expense tab; null = this month
 // First month the monthly sheet covers. Nothing before this is reachable — the
@@ -1990,7 +1992,7 @@ function applyAppMode(mode) {
   // Which screen is up, exposed for CSS. Home is the one screen with no bottom
   // nav, so the offset the FABs use to clear one is dead space there.
   document.body.setAttribute('data-mode', mode);
-  const isHome = mode === 'home', isStocks = mode === 'stocks', isMF = mode === 'mf', isFD = mode === 'fd', isDiv = mode === 'div', isMetal = mode === 'metal', isBond = mode === 'bond', isEF = mode === 'ef', isBankSav = mode === 'banksav', isInvestment = mode === 'investment', isSavings = mode === 'savings', isExpense = mode === 'expense', isPersonal = mode === 'personal', isHealth = mode === 'health', isVault = mode === 'vault';
+  const isHome = mode === 'home', isStocks = mode === 'stocks', isMF = mode === 'mf', isFD = mode === 'fd', isDiv = mode === 'div', isMetal = mode === 'metal', isBond = mode === 'bond', isEF = mode === 'ef', isBankSav = mode === 'banksav', isInvestment = mode === 'investment', isSavings = mode === 'savings', isExpense = mode === 'expense', isCC = mode === 'cc', isPersonal = mode === 'personal', isHealth = mode === 'health', isVault = mode === 'vault';
   $('#homeView').classList.toggle('hidden', !isHome);
   $('#investmentView').classList.toggle('hidden', !isInvestment);
   $('#savingsView').classList.toggle('hidden', !isSavings);
@@ -2022,7 +2024,9 @@ function applyAppMode(mode) {
   $('#bondAddBtn').classList.toggle('hidden', !isBond);
   $('#efAddBtn').classList.toggle('hidden', !isEF || _efTab === 'fund' || _efTab === 'terms');
   $('#bankSavAddBtn').classList.toggle('hidden', !isBankSav);
-  $('#ccAddBtn').classList.toggle('hidden', !isExpense || _expTab !== 'cc');
+  $('#ccView').classList.toggle('hidden', !isCC);
+  $('#ccBottomNav').classList.toggle('hidden', !isCC);
+  $('#ccAddBtn').classList.toggle('hidden', !isCC || _ccTab !== 'cc');
   // Reachable from Home as well as its own Spends tab, for the same reason the
   // household one is: logging a spend is the most frequent thing done in the
   // app, and burying it three taps deep is how a tracker stops being kept up.
@@ -2046,7 +2050,7 @@ function applyAppMode(mode) {
   if (!isHealth) $('#healthAddBtn').classList.add('hidden');
   if (!isMetal) $('#metalAddBtn').classList.add('hidden'); // renderMetal shows it on Gold/Silver only
   $('#backBtn').classList.toggle('hidden', isHome);
-  $('#appTitle').innerHTML = isHome ? '' : (isInvestment ? 'Investment' : isSavings ? 'Savings' : isExpense ? 'Expense' : isPersonal ? 'Personal&nbsp;Finance' : isHealth ? 'Health&nbsp;Check' : isMF ? 'Mutual&nbsp;Funds' : isFD ? 'Fixed&nbsp;Deposits' : isDiv ? 'Dividends' : isMetal ? 'Metals' : isBond ? 'Bonds' : isEF ? 'Emergency&nbsp;Fund' : isBankSav ? 'Bank&nbsp;Savings' : isVault ? 'My&nbsp;Passwords' : 'MyNotes');
+  $('#appTitle').innerHTML = isHome ? '' : (isInvestment ? 'Investment' : isSavings ? 'Savings' : isExpense ? 'Expense' : isCC ? 'Credit&nbsp;Cards' : isPersonal ? 'Personal&nbsp;Finance' : isHealth ? 'Health&nbsp;Check' : isMF ? 'Mutual&nbsp;Funds' : isFD ? 'Fixed&nbsp;Deposits' : isDiv ? 'Dividends' : isMetal ? 'Metals' : isBond ? 'Bonds' : isEF ? 'Emergency&nbsp;Fund' : isBankSav ? 'Bank&nbsp;Savings' : isVault ? 'My&nbsp;Passwords' : 'MyNotes');
   if (isStocks) {
     render();
   } else {
@@ -2056,6 +2060,7 @@ function applyAppMode(mode) {
     if (isInvestment) renderHomeInvestment();
     if (isSavings) renderHomeSavings();
     if (isExpense) { buildExpBottomNav(); renderHomeExpense(); }
+    if (isCC) { buildCcBottomNav(); renderCc(); }
     if (isPersonal) { buildPfBottomNav(); renderPersonal(); }
     // resetHealthCheckView() lands every fresh entry on Family - clicking a
     // person tab inside Health Check calls renderHealthCheck() directly
@@ -2821,9 +2826,9 @@ async function renderPersonal() {
   $('#pfAddBtn').classList.toggle('hidden', _pfTab !== 'spends');
 
   const token = ++_pfRenderToken;
+  if (_pfTab === 'cards') _pfTab = 'spends'; // the Card check now lives on Credit Cards
   if (_pfTab === 'limits') { await renderPfLimits(host, token); return; }
   if (_pfTab === 'review') { await renderPfReview(host, token); return; }
-  if (_pfTab === 'cards') { await renderPfCardCheck(host, token); return; }
   if (_pfTab === 'tags') { await renderTagAnalysis(host, token); return; }
   await renderPfSpends(host, token);
 }
@@ -3616,12 +3621,14 @@ async function renderPfReview(host, token) {
 // logged spend is already inside it by the time the statement arrives - adding
 // it again would charge the same swipe twice. So the two are compared, not
 // summed into each other.
-async function renderPfCardCheck(host, token) {
+// o.rerender / o.stale let another screen (Credit Cards) host it; Personal passes nothing.
+async function renderPfCardCheck(host, token, o) {
+  const rerender = (o && o.rerender) || renderPersonal, stale = (o && o.stale) || pfRenderStale;
   const mod = await import('./credit.js');
   const now = new Date();
   const thisYm = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
   const [{ rows: pRows, byYm, cards }, houseRows] = await Promise.all([pfLoad(), DB.all('spends').catch(() => [])]);
-  if (pfRenderStale(token)) return;
+  if (stale(token)) return;
 
   // One month PAST the current one, unlike the other tabs. A cycle that closes
   // on the 7th means a swipe today is on next month's bill, and the statement
@@ -3651,12 +3658,12 @@ async function renderPfCardCheck(host, token) {
     class: 'cc-timeline-chip' + (k === ym ? ' active' : '') + (k === thisYm ? ' is-current' : '')
       + (k > thisYm ? ' is-ahead' : '') + (totalOf(k) > 0 ? ' has-data' : ''),
     text: mod.monthLabel(k),
-    onclick: () => { if (k === ym) return; _pfYm = k; _pfTimelineClicked = true; renderPersonal(); },
+    onclick: () => { if (k === ym) return; _pfYm = k; _pfTimelineClicked = true; rerender(); },
   }))));
   host.appendChild(timelineWrap);
   _mountMonthStrip('pfcards', timelineWrap, _pfTimelineClicked);
   _pfTimelineClicked = false;
-  _attachMonthSwipe(host, months, ym, (k) => { _pfYm = k; _pfTimelineClicked = true; renderPersonal(); });
+  _attachMonthSwipe(host, months, ym, (k) => { _pfYm = k; _pfTimelineClicked = true; rerender(); });
 
   host.appendChild(el('h3', { class: 'div-group-head', text: '\ud83e\uddfe ' + mod.monthLabel(ym) + ' against your statements' }));
 
@@ -3664,7 +3671,7 @@ async function renderPfCardCheck(host, token) {
     host.appendChild(el('div', { class: 'empty' }, [
       el('div', { class: 'e-icon', text: '\ud83d\udcb3' }),
       el('p', { text: 'No credit cards yet.' }),
-      el('p', { class: 'hint', text: 'Add one on the Expense \u2192 Credit Card tab and its statement can be checked against what you have logged.' }),
+      el('p', { class: 'hint', text: 'Add one on the Credit Cards \u2192 Credit Card tab and its statement can be checked against what you have logged.' }),
     ]));
     return;
   }
@@ -3727,9 +3734,9 @@ async function renderPfCardCheck(host, token) {
 
   host.appendChild(explainRow('About this check', anyBilled
     ? 'Each card is read over its OWN billing cycle, shown under its name, and a statement is named for the month it CLOSES in — the month you pay it. So a swipe early in the month is usually on that month\u2019s bill, while one later in it is already on next month\u2019s. That is also why these card figures differ from the Spends tab, which measures a calendar month because the allowance is monthly. Logged is what the two trackers hold for that card in the window: household spends from the Tracker, personal ones from here. Nothing is written back to the card — the statement already contains every swipe, so adding a logged spend to it would count the same one twice. The gap is what was swiped and never written down.'
-    : 'Enter the month\u2019s billed figure on a card (Expense \u2192 Credit Card \u2192 tap a card \u2192 Months) and this will tell you how much of that bill your two trackers actually explain, read over the card\u2019s own billing cycle.', 'How a card is matched to its bill'));
+    : 'Enter the month\u2019s billed figure on a card (Credit Cards \u2192 tap a card \u2192 Months) and this will tell you how much of that bill your two trackers actually explain, read over the card\u2019s own billing cycle.', 'How a card is matched to its bill'));
   if (!anyCycle) {
-    host.appendChild(el('p', { class: 'hint warn rvw-note', text: 'None of these cards has a billing cycle set, so each is being read as a calendar month. Add the cycle days on the card (Expense \u2192 Credit Card \u2192 tap a card) and the comparison lines up with what the bank actually bills.' }));
+    host.appendChild(el('p', { class: 'hint warn rvw-note', text: 'None of these cards has a billing cycle set, so each is being read as a calendar month. Add the cycle days on the card (Credit Cards \u2192 tap a card) and the comparison lines up with what the bank actually bills.' }));
   }
 }
 
@@ -3741,7 +3748,7 @@ function buildPfBottomNav() {
   if (nav.childElementCount) { updatePfNavActive(); return; }
   nav.innerHTML = '';
   [['spends', '\ud83d\uded2', 'Spends'], ['limits', '\ud83c\udfaf', 'Limits'],
-   ['review', '\ud83d\udd0d', 'Review'], ['cards', '\ud83e\uddfe', 'Card bill'],
+   ['review', '\ud83d\udd0d', 'Review'],
    ['tags', '\ud83c\udff7\ufe0f', 'Tags']].forEach(([v, ico, label]) => {
     nav.appendChild(el('button', { 'data-view': v, onclick: () => { if (_pfTab === v) return; _pfTab = v; renderPersonal(); } },
       [el('span', { class: 'bn-ico', text: ico }), label]));
@@ -3770,7 +3777,7 @@ function buildExpBottomNav() {
   // which read as "which Expense is this" rather than saying what the tab
   // actually is: the monthly cash-flow sheet (In Hand + Virtual Bal minus
   // what's gone out), headlined by Available Balance. Renamed 2026-09-16.
-  [['cc', '💳', 'Credit Card'], ['spend', '🧾', 'Cash flow'], ['tracker', '📍', 'Tracker'], ['review', '🔍', 'Review'], ['alloc', '🧭', 'Yearly plan']].forEach(([v, ico, label]) => {
+  [['spend', '🧾', 'Cash flow'], ['tracker', '📍', 'Tracker'], ['review', '🔍', 'Review'], ['alloc', '🧭', 'Yearly plan']].forEach(([v, ico, label]) => {
     nav.appendChild(el('button', { 'data-view': v, onclick: () => { if (_expTab === v) return; _expTab = v; renderHomeExpense(); } },
       [el('span', { class: 'bn-ico', text: ico }), label]));
   });
@@ -4595,16 +4602,17 @@ async function renderHome() {
   // The icon's own listener stops the click from also reaching the card's -
   // without that, tapping the icon would fire both and Balance would win by
   // running last, which happens to look right today but is fragile.
-  const expenseCard = _homeCard('💳', 'Expense', 'Cash flow · Credit Cards · Tracker', () => setAppMode('expense'));
+  const expenseCard = _homeCard('🛒', 'Expense', 'Cash flow · Tracker · Review', () => setAppMode('expense'));
   expenseCard.querySelector('.home-card-ico').addEventListener('click', (e) => {
     e.stopPropagation();
     _expTab = 'spend';
     setAppMode('expense');
   });
+  const ccCard = _homeCard('💳', 'Credit Cards', 'Cards · Heatmap · Category spend · Card check', () => setAppMode('cc'));
   const personalCard = _homeCard(_walletIcon(), 'Personal Finance', 'Own spends · card & UPI / cash limits', () => setAppMode('personal'));
   const healthCard = _homeCard(el('img', { class: 'home-card-beat', src: 'icons/health-card.png', alt: '', style: 'width: 30px; height: 30px; display: block;' }), 'Health Check', 'Medical records · Family history', () => setAppMode('health'));
   const vaultCard = _homeCard('\ud83d\udd10', 'My Passwords', 'Locked · encrypted on this device', () => setAppMode('vault'));
-  host.appendChild(el('div', { class: 'home-cards' }, [investmentCard, savingsCard, expenseCard, personalCard, healthCard, vaultCard]));
+  host.appendChild(el('div', { class: 'home-cards' }, [investmentCard, savingsCard, expenseCard, ccCard, personalCard, healthCard, vaultCard]));
 
   // Wrapped like the upcoming strip above - three boxes hitting two external
   // APIs must never be the reason Home fails to render.
@@ -6243,6 +6251,127 @@ async function renderTagAnalysis(host, token, o) {
 }
 
 // ---------- Expense section page (Credit Card | Allocation | Expense) ----------
+// ---------- Credit Cards: its own screen (Credit Card | Heatmap | Category Spend | Card Check) ----------
+// Manage > Analyse > Understand > Reconcile. Nothing here has storage of its own:
+// every tab is a view over the creditCards, spends and personalSpends stores.
+const CC_TABS = [['cc', '\u{1F4B3}', 'Credit Card'], ['heat', '\u{1F525}', 'Heatmap'], ['cat', '\u{1F4CA}', 'Category Spend'], ['chk', '\u{1F9FE}', 'Card Check']];
+
+function buildCcBottomNav() {
+  const nav = $('#ccBottomNav');
+  nav.innerHTML = '';
+  CC_TABS.forEach(([v, ico, label]) => {
+    nav.appendChild(el('button', { 'data-view': v, onclick: () => { if (_ccTab === v) return; _ccTab = v; renderCc(); } },
+      [el('span', { class: 'bn-ico', text: ico }), label]));
+  });
+  updateCcNavActive();
+}
+function updateCcNavActive() {
+  $('#ccBottomNav').querySelectorAll('button').forEach((x) => x.classList.toggle('active', x.getAttribute('data-view') === _ccTab));
+}
+
+async function renderCc() {
+  if (state.appMode !== 'cc') return;
+  const host = $('#ccView');
+  host.innerHTML = '';
+  updateCcNavActive();
+  $('#ccAddBtn').classList.toggle('hidden', _ccTab !== 'cc');
+  const token = ++_expRenderToken;
+  const tab = _ccTab;
+  if (tab === 'heat') { await renderCreditCards(host, token, 'heat'); return; }
+  if (tab === 'cat') { await renderCcCategory(host, token); return; }
+  if (tab === 'chk') { await renderPfCardCheck(host, token, { rerender: renderCc, stale: expRenderStale }); return; }
+  await renderCreditCards(host, token);
+}
+
+// Card spending by category for one statement month, household and personal
+// together. Attribution is the same as everywhere else: a spend belongs to the bill
+// its own card's cycle puts it on (statementYmFor), so the totals agree with the
+// Card Check. Refunds are negative amounts and simply net off.
+async function renderCcCategory(host, token) {
+  const mod = await import('./credit.js');
+  const [cards, house, personal] = await Promise.all([
+    DB.all('creditCards').then((r) => r || []),
+    DB.all('spends').catch(() => []),
+    DB.all('personalSpends').catch(() => []),
+  ]);
+  if (expRenderStale(token)) return;
+  if (!cards.length) {
+    host.appendChild(el('div', { class: 'empty' }, [
+      el('div', { class: 'e-icon', text: '\u{1F4B3}' }),
+      el('p', { text: 'No credit cards yet.' }),
+      el('p', { class: 'hint', text: 'Add a card on the Credit Card tab, then log spends against it.' }),
+    ]));
+    return;
+  }
+  const cardById = new Map(cards.map((c) => [c.id, c]));
+  const stmt = (r) => { const c = cardById.get(r.cardId); return r.method === 'Card' && c ? mod.statementYmFor(r.date, c) : null; };
+  const rows = [];
+  house.forEach((r) => { const k = stmt(r); if (k) rows.push({ r, k, kind: 'house' }); });
+  personal.forEach((r) => { const k = stmt(r); if (k) rows.push({ r, k, kind: 'personal' }); });
+
+  const thisYm = new Date().toISOString().slice(0, 7);
+  const months = [...new Set(rows.map((x) => x.k).concat([thisYm]))].sort();
+  if (!_ccYm || !months.includes(_ccYm)) _ccYm = thisYm;
+  const ym = _ccYm;
+  if (_ccCardId && !cardById.has(_ccCardId)) _ccCardId = null;
+  const cardId = _ccCardId;
+
+  const appHeader = document.querySelector('.app-header');
+  const wrap = el('div', { class: 'cc-timeline-scroll cc-timeline-sticky trk-timeline', style: 'top:' + (appHeader ? appHeader.offsetHeight : 0) + 'px' });
+  const hasData = new Set(rows.map((x) => x.k));
+  wrap.appendChild(el('div', { class: 'cc-timeline' }, months.slice().reverse().map((k) => el('button', {
+    type: 'button',
+    class: 'cc-timeline-chip' + (k === ym ? ' active' : '') + (k === thisYm ? ' is-current' : '') + (hasData.has(k) ? ' has-data' : ''),
+    text: mod.monthLabel(k),
+    onclick: () => { if (k === ym) return; _ccYm = k; _ccCatClicked = true; renderCc(); },
+  }))));
+  host.appendChild(wrap);
+  _mountMonthStrip('cccat', wrap, _ccCatClicked);
+  _ccCatClicked = false;
+  _attachMonthSwipe(host, months, ym, (k) => { _ccYm = k; _ccCatClicked = true; renderCc(); });
+
+  host.appendChild(el('div', { class: 'cc-timeline cc-cardchips' }, [{ id: null, name: 'All cards' }].concat(cards).map((c) => el('button', {
+    type: 'button',
+    class: 'cc-timeline-chip' + ((c.id || null) === cardId ? ' active' : ''),
+    text: c.name || 'Card',
+    onclick: () => { _ccCardId = c.id || null; renderCc(); },
+  }))));
+  host.appendChild(el('h3', { class: 'div-group-head', text: '\u{1F4CA} ' + mod.monthLabel(ym) + ' by category' }));
+
+  const inScope = rows.filter((x) => x.k === ym && (!cardId || x.r.cardId === cardId));
+  if (!inScope.length) {
+    host.appendChild(el('div', { class: 'empty' }, [
+      el('p', { text: 'No card spends on this month’s bill.' }),
+      el('p', { class: 'hint', text: 'Log a spend with the Card method and it shows up here, under the bill it lands on.' }),
+    ]));
+  } else {
+    const by = new Map();
+    inScope.forEach(({ r, kind }) => {
+      const name = r.category || 'Uncategorised';
+      const e = by.get(name) || { name, house: 0, personal: 0 };
+      e[kind] += Number(r.amount) || 0;
+      by.set(name, e);
+    });
+    const list = [...by.values()].map((e) => Object.assign(e, { total: round2(e.house + e.personal) })).sort((a, b) => b.total - a.total);
+    const grand = round2(list.reduce((s, e) => s + e.total, 0));
+    const max = Math.max(1, ...list.map((e) => Math.abs(e.total)));
+    host.appendChild(el('div', { class: 'card' }, [
+      el('div', { class: 'pf-cc-top' }, [el('span', { class: 'pf-cc-name', text: cardId ? (cardById.get(cardId).name || 'Card') : 'All cards' }), el('span', { class: 'pf-cc-billed', text: fmtSheetCur(grand) })]),
+    ]));
+    list.forEach((e) => {
+      host.appendChild(el('div', { class: 'pf-card-check' }, [
+        el('div', { class: 'pf-cc-top' }, [el('span', { class: 'pf-cc-name', text: e.name }), el('span', { class: 'pf-cc-billed', text: fmtSheetCur(e.total) })]),
+        el('div', { class: 'pf-cc-track' }, [el('span', { class: 'pf-cc-fill is-house', style: 'width:' + (Math.max(0, e.total) / max * 100).toFixed(1) + '%' })]),
+        el('div', { class: 'pf-cc-legend' }, [
+          el('span', {}, [el('i', { class: 'rvw-dot is-house' }), 'household ' + fmtSheetCur(round2(e.house))]),
+          el('span', {}, [el('i', { class: 'rvw-dot is-personal' }), 'personal ' + fmtSheetCur(round2(e.personal))]),
+        ]),
+      ]));
+    });
+  }
+  host.appendChild(explainRow('About this view', 'Household spends from the Tracker and personal ones from Personal Finance, each counted on the bill its card’s cycle puts it on, so the totals match the Card Check. Refunds net off their category. Nothing is stored here: it is read from what you have already logged.', 'How this is counted'));
+}
+
 async function renderHomeExpense() {
   // Does nothing unless the Expense section is actually on screen. The spend
   // form can be opened from the FAB on HOME, and its save calls back here to
@@ -6250,16 +6379,18 @@ async function renderHomeExpense() {
   // reset the FABs from `_expTab` (still 'cc' when the section was never
   // opened), so Home was left showing the add-credit-card button. Which FAB
   // belongs to which screen is applyAppMode's business, not this function's.
+  // Credit Cards has its own screen now; its saves still call this to refresh.
+  if (state.appMode === 'cc') { renderCc(); return; }
   if (state.appMode !== 'expense') return;
+  if (_expTab === 'cc') _expTab = 'tracker';
 
   const host = $('#expenseView');
   host.innerHTML = '';
   updateExpNavActive();
-  $('#ccAddBtn').classList.toggle('hidden', _expTab !== 'cc');
+  $('#ccAddBtn').classList.add('hidden');
   $('#spendAddBtn').classList.toggle('hidden', _expTab !== 'tracker');
 
   const token = ++_expRenderToken;
-  if (_expTab === 'cc') { await renderCreditCards(host, token); return; }
   if (_expTab === 'alloc') { await renderAllocation(host, token); return; }
   if (_expTab === 'tracker') { await renderSpendTracker(host, token); return; }
   if (_expTab === 'review') { await renderReview(host, token); return; }
@@ -15118,7 +15249,92 @@ function openCcPayForm(card, ym, billed, mod, cyc) {
   ]));
 }
 
-async function renderCreditCards(host, token) {
+function renderCcGrid(host, g, mod) {
+  if (g.yms.length) {
+    // Chronological, left to right, like the sheet this grew out of and like
+    // anybody reads a run of months. That puts the newest at the RIGHT end,
+    // which is where the grid opens - the month you are actually paying should be
+    // on screen without a swipe, and history is a scroll leftwards.
+    const displayYms = g.yms.slice();
+    const displayMonthly = g.monthly.slice();
+
+    const wrapCard = el('div', { class: 'chart-card' }, [el('h3', { text: 'Month by month' })]);
+    const head = el('tr', {}, [el('th', { class: 'corner', text: 'Month' })]);
+    displayYms.forEach((ym) => head.appendChild(el('th', { text: mod.monthLabel(ym) })));
+    const tbody = el('tbody');
+    g.rows.forEach(({ card, cell }) => {
+      const tr = el('tr', {}, [el('th', { class: 'rowhead', text: card.name || 'Card' })]);
+      displayYms.forEach((ym) => {
+        const v = cell(ym);
+        // Struck through once settled, per card per month. The grid is read to
+        // find what is still owed, and a figure that has been paid answering
+        // that question the same way as one that has not is the whole problem.
+        const paid = !!(v && v.status);
+        tr.appendChild(el('td', {
+          class: (v && v.billed ? '' : 'flat') + (paid ? ' is-paid' : '') + (v && v.status === 'late' ? ' is-late' : ''),
+          title: paid ? (v.status === 'late' ? 'Paid late' : 'Paid') + (v.paidOn ? ' · ' + _spendDayLabel(String(v.paidOn).slice(0, 10)) : '') : '',
+          text: v && v.billed ? fmtIntCur(v.billed) : '—',
+        }));
+      });
+      tbody.appendChild(tr);
+    });
+    const sumRow = (label, pick, cls) => {
+      const tr = el('tr', { class: 'cc-sum' }, [el('th', { class: 'rowhead', text: label })]);
+      displayMonthly.forEach((m) => {
+        const out = pick(m);
+        tr.appendChild(el('td', { class: out.cls || cls || '', text: out.text }));
+      });
+      tbody.appendChild(tr);
+    };
+    sumRow('Total', (m) => ({ text: fmtIntCur(m.billed) }));
+    sumRow('Reimbursed', (m) => ({ text: m.reimbursed ? fmtIntCur(m.reimbursed) : '—', cls: m.reimbursed ? 'pos' : 'flat' }));
+    sumRow('To be paid', (m) => {
+      // Heatmap background: greener the more toBePaid IMPROVED vs the
+      // previous month (m.diff < 0), redder the more it worsened — on top
+      // of (not instead of) the existing bold treatment once every card
+      // for that month is marked paid.
+      let heatCls = 'cc-heat-flat';
+      if (m.diff != null) heatCls = m.diff < 0 ? 'cc-heat-better' : m.diff > 0 ? 'cc-heat-worse' : 'cc-heat-flat';
+      return {
+        text: m.toBePaid ? fmtIntCur(m.toBePaid) : '—',
+        cls: [heatCls, m.fullyPaid ? 'cc-fully-paid' : (m.toBePaid ? 'warn' : 'flat')].join(' '),
+      };
+    });
+    sumRow('vs last month', (m) => m.diff == null
+      ? { text: '—', cls: 'flat' }
+      // A credit-card bill going DOWN is the good direction, so the colours are
+      // deliberately inverted vs. every other surface in the app.
+      : { text: (m.diff > 0 ? '+' : '') + fmtIntCur(m.diff), cls: m.diff > 0 ? 'neg' : m.diff < 0 ? 'pos' : 'flat' });
+
+    const gridScroll = el('div', { class: 'heatmap-scroll cc-scroll' }, [
+      el('table', { class: 'heatmap cc-grid' }, [el('thead', {}, [head]), tbody]),
+    ]);
+    // Parked at the newest month. Remembered after that, because this whole tab
+    // re-renders on every timeline tap and on every bill paid, and snapping a
+    // grid somebody had scrolled into history back to the far right each time
+    // is worse than not scrolling it at all.
+    //
+    // What is remembered is an offset UNLESS the grid is sitting at the end, in
+    // which case it stays null - "keep me on the newest". Storing the offset
+    // there would strand the view one column short the month a new one appears.
+    const gridEnd = () => Math.max(0, gridScroll.scrollWidth - gridScroll.clientWidth);
+    gridScroll.addEventListener('scroll', () => {
+      _ccGridScroll = Math.abs(gridScroll.scrollLeft - gridEnd()) < 4 ? null : gridScroll.scrollLeft;
+    }, { passive: true });
+    const parkGrid = () => { gridScroll.scrollLeft = _ccGridScroll == null ? gridEnd() : Math.min(_ccGridScroll, gridEnd()); };
+    wrapCard.appendChild(gridScroll);
+    wrapCard.appendChild(explainRow('About this grid', 'Oldest month first, so the newest is on the right — where this opens. Scroll left for history. "vs last month" compares the to-be-paid figure against the previous month that has data.', 'How to read it'));
+    host.appendChild(wrapCard);
+    // Once, synchronously - reading scrollWidth on an attached element settles
+    // layout, so this needs no frame to wait for. Again on the next frame in
+    // case a late webfont reflows the columns under it.
+    parkGrid();
+    requestAnimationFrame(parkGrid);
+  }
+}
+
+// part 'heat' renders only the Month by month grid (the Heatmap tab); anything else is the Credit Card tab.
+async function renderCreditCards(host, token, part) {
   // Called again on every timeline click (via renderHomeExpense, which
   // clears first) — but also defensively cleared here, the same lesson the
   // Yearly plan tab's duplication bug taught: never trust the caller alone.
@@ -15161,6 +15377,11 @@ async function renderCreditCards(host, token) {
   const { map: reimbMap, detail: reimbDetail } = _reimbMap(
     _reimbParts(cards, houseSpends, personalSpends, mod), reimbRows);
   const g = mod.computeCredit(cards, reimbMap);
+  if (part === 'heat') {
+    if (g.yms.length) renderCcGrid(host, g, mod);
+    else host.appendChild(el('div', { class: 'empty' }, [el('div', { class: 'e-icon', text: '\u{1F525}' }), el('p', { text: 'No statements logged yet.' }), el('p', { class: 'hint', text: 'Log a card\'s billed amount on the Credit Card tab and the month by month view fills in here.' })]));
+    return;
+  }
 
   const thisYm = todayISO().slice(0, 7);
   const timelineEndYm = g.latestYm && g.latestYm > thisYm ? g.latestYm : thisYm;
@@ -15388,89 +15609,6 @@ async function renderCreditCards(host, token) {
       + 'Counted from what is logged: household spends put on a card, plus personal spends marked for '
       + 'others. Type over it to set your own figure.', 'Where this figure comes from'),
   ]));
-
-  // ---- The wide grid (the sheet's A:AB), oldest month first ----
-  if (g.yms.length) {
-    // Chronological, left to right, like the sheet this grew out of and like
-    // anybody reads a run of months. That puts the newest at the RIGHT end,
-    // which is where the grid opens - the month you are actually paying should be
-    // on screen without a swipe, and history is a scroll leftwards.
-    const displayYms = g.yms.slice();
-    const displayMonthly = g.monthly.slice();
-
-    const wrapCard = el('div', { class: 'chart-card' }, [el('h3', { text: 'Month by month' })]);
-    const head = el('tr', {}, [el('th', { class: 'corner', text: 'Month' })]);
-    displayYms.forEach((ym) => head.appendChild(el('th', { text: mod.monthLabel(ym) })));
-    const tbody = el('tbody');
-    g.rows.forEach(({ card, cell }) => {
-      const tr = el('tr', {}, [el('th', { class: 'rowhead', text: card.name || 'Card' })]);
-      displayYms.forEach((ym) => {
-        const v = cell(ym);
-        // Struck through once settled, per card per month. The grid is read to
-        // find what is still owed, and a figure that has been paid answering
-        // that question the same way as one that has not is the whole problem.
-        const paid = !!(v && v.status);
-        tr.appendChild(el('td', {
-          class: (v && v.billed ? '' : 'flat') + (paid ? ' is-paid' : '') + (v && v.status === 'late' ? ' is-late' : ''),
-          title: paid ? (v.status === 'late' ? 'Paid late' : 'Paid') + (v.paidOn ? ' · ' + _spendDayLabel(String(v.paidOn).slice(0, 10)) : '') : '',
-          text: v && v.billed ? fmtIntCur(v.billed) : '—',
-        }));
-      });
-      tbody.appendChild(tr);
-    });
-    const sumRow = (label, pick, cls) => {
-      const tr = el('tr', { class: 'cc-sum' }, [el('th', { class: 'rowhead', text: label })]);
-      displayMonthly.forEach((m) => {
-        const out = pick(m);
-        tr.appendChild(el('td', { class: out.cls || cls || '', text: out.text }));
-      });
-      tbody.appendChild(tr);
-    };
-    sumRow('Total', (m) => ({ text: fmtIntCur(m.billed) }));
-    sumRow('Reimbursed', (m) => ({ text: m.reimbursed ? fmtIntCur(m.reimbursed) : '—', cls: m.reimbursed ? 'pos' : 'flat' }));
-    sumRow('To be paid', (m) => {
-      // Heatmap background: greener the more toBePaid IMPROVED vs the
-      // previous month (m.diff < 0), redder the more it worsened — on top
-      // of (not instead of) the existing bold treatment once every card
-      // for that month is marked paid.
-      let heatCls = 'cc-heat-flat';
-      if (m.diff != null) heatCls = m.diff < 0 ? 'cc-heat-better' : m.diff > 0 ? 'cc-heat-worse' : 'cc-heat-flat';
-      return {
-        text: m.toBePaid ? fmtIntCur(m.toBePaid) : '—',
-        cls: [heatCls, m.fullyPaid ? 'cc-fully-paid' : (m.toBePaid ? 'warn' : 'flat')].join(' '),
-      };
-    });
-    sumRow('vs last month', (m) => m.diff == null
-      ? { text: '—', cls: 'flat' }
-      // A credit-card bill going DOWN is the good direction, so the colours are
-      // deliberately inverted vs. every other surface in the app.
-      : { text: (m.diff > 0 ? '+' : '') + fmtIntCur(m.diff), cls: m.diff > 0 ? 'neg' : m.diff < 0 ? 'pos' : 'flat' });
-
-    const gridScroll = el('div', { class: 'heatmap-scroll cc-scroll' }, [
-      el('table', { class: 'heatmap cc-grid' }, [el('thead', {}, [head]), tbody]),
-    ]);
-    // Parked at the newest month. Remembered after that, because this whole tab
-    // re-renders on every timeline tap and on every bill paid, and snapping a
-    // grid somebody had scrolled into history back to the far right each time
-    // is worse than not scrolling it at all.
-    //
-    // What is remembered is an offset UNLESS the grid is sitting at the end, in
-    // which case it stays null - "keep me on the newest". Storing the offset
-    // there would strand the view one column short the month a new one appears.
-    const gridEnd = () => Math.max(0, gridScroll.scrollWidth - gridScroll.clientWidth);
-    gridScroll.addEventListener('scroll', () => {
-      _ccGridScroll = Math.abs(gridScroll.scrollLeft - gridEnd()) < 4 ? null : gridScroll.scrollLeft;
-    }, { passive: true });
-    const parkGrid = () => { gridScroll.scrollLeft = _ccGridScroll == null ? gridEnd() : Math.min(_ccGridScroll, gridEnd()); };
-    wrapCard.appendChild(gridScroll);
-    wrapCard.appendChild(explainRow('About this grid', 'Oldest month first, so the newest is on the right — where this opens. Scroll left for history. "vs last month" compares the to-be-paid figure against the previous month that has data.', 'How to read it'));
-    host.appendChild(wrapCard);
-    // Once, synchronously - reading scrollWidth on an attached element settles
-    // layout, so this needs no frame to wait for. Again on the next frame in
-    // case a late webfont reflows the columns under it.
-    parkGrid();
-    requestAnimationFrame(parkGrid);
-  }
 
   host.appendChild(explainRow('About this tab', 'Credit card bills are money going out, so nothing here counts toward Home\'s Total Invested. Log each card\'s statement as "Billed", set the combined monthly reimbursement below the card list, and mark each card Ontime/Late on its own Details > Months tab once paid.', 'What this does and does not count'));
 

@@ -3513,3 +3513,6 @@ input.loan-pay { flex: 1 1 auto; width: auto; }
 .sip-row b { text-align: right; font-variant-numeric: tabular-nums; }
 .sip-form { margin-top: 12px; }
 .sip-form[hidden] { display: none; }
+
+#ccBottomNav button { font-size: 0.72rem; }
+.cc-cardchips { flex-wrap: wrap; padding: 4px 0 8px; gap: 6px; }
