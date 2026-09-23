@@ -1,6 +1,6 @@
 // Health Check module - Medical records tracking
 import { DB } from './db.js';
-import { $, el, toast, openModal, closeModal, field, flashSwipeDirection, insideHorizontalScroller } from './app.js';
+import { $, el, toast, openModal, closeModal, field, flashSwipeDirection, insideHorizontalScroller, appConfirm } from './app.js';
 import { todayISO, num } from './core.js';
 
 let _healthPerson = null;
@@ -1163,7 +1163,7 @@ async function openHealthPeopleManager(activeTab, editing) {
           el('button', {
             class: 'hc-icon-btn danger', 'aria-label': 'Delete', title: 'Delete', text: '🗑️',
             onclick: async () => {
-              if (!window.confirm('Delete ' + p.name + '? This also removes their health records.')) return;
+              if (!(await appConfirm('Delete ' + p.name + '? This also removes their health records.'))) return;
               await DB.del('healthPeople', p.id);
               const checks = await DB.all('healthChecks').catch(() => []);
               await Promise.all(checks.filter(c => c.personId === p.id).map(c => DB.del('healthChecks', c.id)));
@@ -1273,7 +1273,7 @@ async function openHealthParamsManager(activeTab, editing) {
         el('button', {
           class: 'hc-icon-btn danger', 'aria-label': 'Delete', title: 'Delete', text: '🗑️',
           onclick: async () => {
-            if (!window.confirm('Delete parameter "' + p.label + '"? Past readings for it are kept but will no longer show a status color.')) return;
+            if (!(await appConfirm('Delete parameter "' + p.label + '"? Past readings for it are kept but will no longer show a status color.'))) return;
             await DB.del('healthParams', p.id);
             closeModal(); toast('Removed'); openHealthParamsManager('list');
           },
@@ -1471,7 +1471,7 @@ async function openHealthCheckForm(person, existing) {
   };
 
   const del = async () => {
-    if (!window.confirm('Delete this health check record?')) return;
+    if (!(await appConfirm('Delete this health check record?'))) return;
     await DB.del('healthChecks', existing.id);
     closeModal(); toast('Removed'); openHealthRecordsManager(person);
   };
@@ -1513,7 +1513,7 @@ async function openHealthRecordsManager(person) {
         el('button', {
           class: 'hc-icon-btn danger', 'aria-label': 'Delete', title: 'Delete', text: '🗑️',
           onclick: async () => {
-            if (!window.confirm('Delete this health check record from ' + c.date + '?')) return;
+            if (!(await appConfirm('Delete this health check record from ' + c.date + '?'))) return;
             await DB.del('healthChecks', c.id);
             closeModal(); toast('Removed'); openHealthRecordsManager(person);
           },
