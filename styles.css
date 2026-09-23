@@ -44,7 +44,7 @@ html, body {
 
 body {
   padding-bottom: calc(72px + var(--safe-bottom));
-  min-height: 100vh;
+  /* No min-height: 100vh - on phones 100vh is taller than the visible window (it counts the system bars), which made every short page scroll for no reason. The background comes from html, so nothing is lost. */
   touch-action: manipulation;
 }
 
@@ -3401,3 +3401,14 @@ body[data-mode="home"] #homeView { padding-bottom: calc(8px + var(--safe-bottom)
 .app-dialog-btns .btn { flex: 1; max-width: 200px; }
 .btn.danger-fill { background: var(--bad); color: #fff; }
 @keyframes app-dialog-fade { from { opacity: 0; } to { opacity: 1; } }
+/* ---------- Behave like an app, not a web page ----------
+   Long-pressing or dragging on labels used to select text and pop up the
+   browser's copy / "web search" bar. Selection stays on for anything you type
+   into. */
+html, body {
+  -webkit-user-select: none; user-select: none;
+  -webkit-touch-callout: none;
+}
+input, textarea, select, [contenteditable="true"], .allow-select, .allow-select * {
+  -webkit-user-select: text; user-select: text;
+}
