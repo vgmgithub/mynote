@@ -3070,7 +3070,14 @@ async function renderPfSpends(host, token) {
       el('p', { text: 'Nothing logged for ' + mod.monthLabel(ym) + ' yet.' }),
       el('p', { class: 'hint', text: t.limit > 0
         ? 'Tap the + to log a personal spend. Card and UPI are tracked against separate limits.'
-        : 'Set the Card figure on the Expense Yearly plan tab and the UPI limit on the Limits tab, then tap + to log a spend.' }),
+        : 'Set your Card and UPI limits, then log a spend. Limits are optional - you can log spends without them.' }),
+      el('div', { class: 'btn-row' }, [
+        el('button', { class: 'btn primary', type: 'button', text: 'Log a spend', onclick: () => openPfSpendForm(null) }),
+        t.limit > 0 ? null : el('button', { class: 'btn ghost', type: 'button', text: 'Set limits', onclick: () => {
+          const b = [...document.querySelectorAll('#pfBottomNav button')].find((x) => /limits/i.test(x.textContent));
+          if (b) b.click();
+        } }),
+      ].filter(Boolean)),
     ]));
     return;
   }
@@ -11530,7 +11537,8 @@ function renderDivStocks(host, all, mod) {
     host.appendChild(el('div', { class: 'empty' }, [
       el('div', { class: 'e-icon', text: '💰' }),
       el('p', { text: 'No dividend-tracked stocks here yet.' }),
-      el('p', { class: 'hint', text: 'Open a holding under Stocks → edit → turn on "Dividend available" to track it here.' }),
+      el('p', { class: 'hint', text: 'Open a stock, edit it, and turn on "Dividend available". It then shows up here.' }),
+      el('button', { class: 'btn primary empty-cta', type: 'button', text: 'Go to Stocks', onclick: () => setAppMode('stocks') }),
     ]));
     return;
   }
