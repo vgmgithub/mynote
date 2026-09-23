@@ -16874,9 +16874,13 @@ async function exportData() {
 }
 
 function importData() {
-  const input = el('input', { type: 'file', accept: 'application/json,.json' });
+  // Kept in the page while the picker is open: on some phones a detached file
+  // input is discarded before the chosen file is reported back.
+  const input = el('input', { type: 'file', accept: 'application/json,.json,application/octet-stream,text/plain', style: 'display:none' });
+  document.body.appendChild(input);
   input.addEventListener('change', async () => {
     const file = input.files && input.files[0];
+    input.remove();
     if (!file) return;
     let data;
     try { data = JSON.parse(await file.text()); }
@@ -16887,12 +16891,15 @@ function importData() {
     try {
       await DB.importAll(data);
       await markBackedUp();
-      toast('Backup imported');
-      refresh();
+      toast('Backup imported · reloading…');
+      // A full reload, like the other restore paths: Home and the feature
+      // choices are rebuilt from the restored data instead of showing stale numbers.
+      setTimeout(() => location.reload(), 900);
     } catch (e) {
       appAlert('Import failed: ' + e.message);
     }
   });
+  input.addEventListener('cancel', () => input.remove());
   input.click();
 }
 
