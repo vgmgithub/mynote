@@ -3439,3 +3439,10 @@ input, textarea, select, [contenteditable="true"], .allow-select, .allow-select 
 /* (i) beside a label: tap for a plain-language meaning */
 .help-dot { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; margin-left: 6px; padding: 0; border-radius: 50%; border: 1px solid var(--line); background: var(--card-2); color: var(--muted); font: italic 700 0.62rem Georgia, serif; vertical-align: middle; cursor: pointer; }
 .help-dot:active { color: var(--text); }
+
+/* Advanced fields behind "More options" */
+.more-opts { margin: 10px 0 4px; border-top: 1px dashed var(--line); padding-top: 8px; }
+.more-opts > summary { cursor: pointer; color: var(--accent); font-weight: 700; font-size: 0.86rem; padding: 4px 0 8px; list-style: none; }
+.more-opts > summary::-webkit-details-marker { display: none; }
+.more-opts > summary::before { content: '▸  '; }
+.more-opts[open] > summary::before { content: '▾  '; }

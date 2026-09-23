@@ -4165,9 +4165,11 @@ async function openFdForm(existing) {
     el('div', { class: 'field-row' }, [field('Start date', startDate), field('Maturity date', maturityDate)]),
     field('Tenure (months) → fills maturity date', tenure),
     el('div', { class: 'field-row' }, [field('Compounding', compounding, 'compounding'), field('Type', payout, 'payoutType')]),
-    field('Funded by — tick matured FD(s) to merge in (adds their payout to your deposit)', parentListEl),
-    field('Notes', notes),
-    field('Part of Emergency Fund — moves it to that page and out of these totals', efSwitch),
+    moreOptions([
+      field('Funded by — tick matured FD(s) to merge in (adds their payout to your deposit)', parentListEl),
+      field('Notes', notes),
+      field('Part of Emergency Fund — moves it to that page and out of these totals', efSwitch),
+    ], !!(existing && ((existing.parentFdIds && existing.parentFdIds.length) || existing.parentFdId || existing.notes || existing.emergencyFund))),
     readout,
   ]);
 
@@ -13113,16 +13115,20 @@ async function openBondForm(existing) {
   const detailsContent = el('div', {}, [
     field('Name', name),
     el('div', { class: 'field-row' }, [field('Rating', rating), field('Coupon rate % p.a.', rate, 'coupon')]),
-    el('div', { class: 'field-row' }, [field('₹ invested', investAmount), field('Bank rate % (optional)', bankRate)]),
+    field('₹ invested', investAmount),
     el('div', { class: 'field-row' }, [field('Start date', startDate), field('Maturity date', maturityDate)]),
     field('Tenure (months) → fills maturity date', tenure),
-    el('div', { class: 'field-row' }, [field('Type', payout, 'payoutType'), field('Maturity amount (optional override)', maturityAmount)]),
-    el('div', { class: 'field-row' }, [interestFreqField, field('Principal repaid', principalFreq, 'principalRepaid')]),
-    principalFirstDateField,
-    staggerBlock,
-    field('Sold / redeemed early — also use this to close out a bond redeemed at maturity', soldSwitch),
-    soldBlock,
-    field('Part of Emergency Fund — moves it to that page and out of these totals', efSwitch),
+    field('Type', payout, 'payoutType'),
+    moreOptions([
+      el('div', { class: 'field-row' }, [field('Bank rate % (optional)', bankRate), field('Maturity amount (optional override)', maturityAmount)]),
+      el('div', { class: 'field-row' }, [interestFreqField, field('Principal repaid', principalFreq, 'principalRepaid')]),
+      principalFirstDateField,
+      staggerBlock,
+      field('Sold / redeemed early — also use this to close out a bond redeemed at maturity', soldSwitch),
+      soldBlock,
+      field('Part of Emergency Fund — moves it to that page and out of these totals', efSwitch),
+    ], !!(existing && (existing.bankRate || existing.maturityAmount || existing.interestFreq || existing.principalFreq
+      || existing.principalFirstDate || (existing.schedule && existing.schedule.length) || existing.soldDate || existing.emergencyFund))),
     readout,
   ]);
 
@@ -16016,9 +16022,11 @@ async function openFundForm(existing) {
     el('div', { class: 'field-row' }, [field('Status', status), field('Monthly SIP', sip, 'sip')]),
     el('div', { class: 'field-row' }, [field('Latest NAV', latestNav, 'nav'), field('NAV as of', navAsOf)]),
     soldRow,
-    el('div', { class: 'field-row' }, [field('Good return', goodReturn), field('Target year', targetYear)]),
-    field('Part of Emergency Fund — moves it to that page and out of these totals', efSwitch),
-    field('Remarks', remarks),
+    moreOptions([
+      el('div', { class: 'field-row' }, [field('Good return', goodReturn), field('Target year', targetYear)]),
+      field('Part of Emergency Fund — moves it to that page and out of these totals', efSwitch),
+      field('Remarks', remarks),
+    ], !!(existing && (existing.goodReturn || existing.remarks || existing.emergencyFund))),
   ]);
   editTabContent.appendChild(explainRow('About these figures', 'Current value = total units × latest NAV. Log each buy (with units) on the Fund Holdings tab, then just refresh the latest NAV here to update value, return, XIRR and benchmark status.', 'How value is worked out'));
 
@@ -16595,6 +16603,13 @@ function helpDot(term) {
   return el('button', { class: 'help-dot', type: 'button', 'aria-label': 'What is ' + g[0] + '?', text: 'i',
     onclick: (e) => { e.preventDefault(); e.stopPropagation(); openInfoSheet(g[0], g[1]); } });
 }
+// Advanced fields tuck behind "More options". Opens by itself when the record
+// already uses one of them, so nothing that has data is ever hidden.
+export const moreOptions = (children, open) => {
+  const d = el('details', { class: 'more-opts' }, [el('summary', { text: 'More options' })].concat(children));
+  if (open) d.open = true;
+  return d;
+};
 export const field = (labelText, inputNode, help) => el('div', { class: 'field' }, [el('label', { text: labelText }, help ? [helpDot(help)] : null), inputNode]);
 
 // A segmented control over a short list of options, exposing the same `.value`
