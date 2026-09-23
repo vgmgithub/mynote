@@ -14530,13 +14530,21 @@ async function renderBankSavings() {
   host.appendChild(explainRow('About these balances', 'Balances are typed in by hand, not fetched live — update one whenever you check it. Not counted in Home\'s Total Invested (it\'s cash in hand, not capital at work).', 'Where these come from'));
 }
 
+// What kind of account it is (shown under the bank name). Optional.
+const BANK_SAV_TYPES = ['Savings', 'Salary', 'Joint', 'Current', 'NRE / NRO', 'Business', 'Kids / Minor', 'Other'];
+
 async function openBankSavForm(existing) {
   const isEdit = !!(existing && existing.id != null);
   const r = Object.assign({}, existing || {});
 
   const bankList = el('datalist', { id: 'banksavbanklist' }, BANK_SAV_BANKS.map((x) => el('option', { value: x })));
   const bank = el('input', { type: 'text', value: r.bank || '', list: 'banksavbanklist', placeholder: 'Bank name' });
-  const label = el('input', { type: 'text', value: r.label || '', placeholder: 'e.g. Salary, Joint (optional)' });
+  // Account type: a fixed list instead of free text. An older account whose text is not on the list keeps its own
+  // value as an option, so nothing already saved is lost or silently changed. Stored in the same `label` field.
+  const types = r.label && !BANK_SAV_TYPES.includes(r.label) ? BANK_SAV_TYPES.concat([r.label]) : BANK_SAV_TYPES;
+  const label = el('select', { 'aria-label': 'Account type' }, [el('option', { value: '', text: 'Select account type' })]
+    .concat(types.map((t) => el('option', { value: t, text: t }))));
+  label.value = r.label || '';
   const balance = el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: r.balance != null ? r.balance : '', placeholder: '₹ current balance' });
   const asOfDate = el('input', { type: 'date', value: r.asOfDate || todayISO() });
   const notes = el('textarea', { placeholder: 'Your notes' });
@@ -14544,7 +14552,7 @@ async function openBankSavForm(existing) {
 
   const buildRec = () => ({
     bank: bank.value.trim(),
-    label: label.value.trim(),
+    label: label.value,
     balance: num(balance.value) || 0,
     asOfDate: asOfDate.value || todayISO(),
     notes: notes.value.trim(),
@@ -14572,7 +14580,7 @@ async function openBankSavForm(existing) {
       el('h2', { text: isEdit ? (r.bank || 'Edit account') : 'Add savings account' }),
       bankList,
       field('Bank', bank),
-      field('Account label (optional)', label),
+      field('Account type', label),
       field('Current balance (₹)', balance),
       field('As of date', asOfDate),
       field('Notes', notes),
