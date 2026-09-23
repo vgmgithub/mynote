@@ -4612,7 +4612,7 @@ async function renderHome() {
   const personalCard = _homeCard(_walletIcon(), 'Personal Finance', 'Own spends · card & UPI / cash limits', () => setAppMode('personal'));
   const healthCard = _homeCard(el('img', { class: 'home-card-beat', src: 'icons/health-card.png', alt: '', style: 'width: 30px; height: 30px; display: block;' }), 'Health Check', 'Medical records · Family history', () => setAppMode('health'));
   const vaultCard = _homeCard('\ud83d\udd10', 'My Passwords', 'Locked · encrypted on this device', () => setAppMode('vault'));
-  host.appendChild(el('div', { class: 'home-cards' }, [investmentCard, savingsCard, expenseCard, ccCard, personalCard, healthCard, vaultCard]));
+  host.appendChild(el('div', { class: 'home-cards' }, [investmentCard, savingsCard, expenseCard, personalCard, ccCard, healthCard, vaultCard]));
 
   // Wrapped like the upcoming strip above - three boxes hitting two external
   // APIs must never be the reason Home fails to render.
