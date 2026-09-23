@@ -3412,3 +3412,17 @@ html, body {
 input, textarea, select, [contenteditable="true"], .allow-select, .allow-select * {
   -webkit-user-select: text; user-select: text;
 }
+
+.ef-equal-tip { margin: 2px 2px 10px; font-size: 0.78rem; }
+
+/* Emergency Fund > Targets: the ladder explainer and the last-achieved note share a line */
+.ef-ladder-foot { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px 12px; margin-top: 10px; padding-top: 6px; border-top: 1px dashed var(--line); font-size: 0.66rem; }
+.ef-ladder-foot .explain-row { width: auto; margin: 0; padding: 0; border: none; }
+.ef-ladder-last { color: var(--muted); font-size: 0.66rem; white-space: nowrap; }
+
+/* SGB tab: the rule that puts a stock on this page */
+.sgb-rule { display: flex; gap: 12px; align-items: flex-start; margin: 2px 0 12px; padding: 12px 14px; border-radius: 14px; background: rgba(251, 191, 36, 0.09); }
+.sgb-rule-ico { font-size: 1.3rem; line-height: 1.2; }
+.sgb-rule b { font-size: 0.9rem; }
+.sgb-rule div div { color: var(--muted); font-size: 0.82rem; line-height: 1.5; margin-top: 3px; }
+.sgb-rule .sgb-rule-eg { font-style: italic; opacity: 0.85; }

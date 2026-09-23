@@ -204,6 +204,40 @@ export function ladderTargets(targets, corpus) {
   });
 }
 
+// When was the most recently reached target actually reached?
+//
+// A target is reached the day the fund's running total first covers it, so the
+// answer comes from replaying what was taken in, in date order: each logged
+// contribution, plus the interest a loan paid once it closed (the two inflows
+// that carry a date). Investment income that arrived without a date can tip a
+// target over without appearing in that replay; for that case the date of the
+// last dated inflow is used, since nothing later can have been responsible.
+// Returns null while no target is met.
+export function lastTargetAchieved(result, nowMs) {
+  const met = ((result && result.targets) || []).filter((t) => t.isMet);
+  if (!met.length) return null;
+  const iso = (d) => { const s = String(d || ''); return s.length === 7 ? s + '-01' : s.slice(0, 10); };
+  const events = [];
+  ((result && result.contributionRows) || []).forEach((c) => {
+    const amt = (Number(c.mine) || 0) + (Number(c.spouse) || 0);
+    if (c.date && amt) events.push({ date: iso(c.date), amt });
+  });
+  ((result && result.loans) || []).forEach((l) => {
+    if (l.isClosed && l.closureDate && l.interest > 0) events.push({ date: iso(l.closureDate), amt: l.interest });
+  });
+  if (!events.length) return null;
+  events.sort((a, b) => a.date.localeCompare(b.date));
+  const lastDate = events[events.length - 1].date;
+  let best = null;
+  for (const t of met) {
+    let run = 0, date = lastDate;
+    for (const e of events) { run += e.amt; if (run >= t.cumulative) { date = e.date; break; } }
+    if (!best || date > best.date || (date === best.date && t.cumulative > best.target.cumulative)) best = { target: t, date };
+  }
+  const days = Math.max(0, Math.floor(((nowMs || Date.now()) - Date.parse(best.date)) / 86400000));
+  return { target: best.target, date: best.date, days };
+}
+
 // Projects the fund's contributed total forward, assuming the last logged
 // monthly contribution keeps repeating unchanged. Only WHOLE months between
 // the last contribution and the target count — matching how contributions are

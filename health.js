@@ -367,8 +367,11 @@ async function renderHealthCheck() {
       // With nothing out of range there's nothing to filter to, so this stops
       // being a control and becomes a plain status label - a button that only
       // ever shows an empty list is a button that shouldn't be pressable.
+      // A BMI outside the healthy band is not "well" either, so the label is left out then.
       isFamily ? null : (outOfRangeCount === 0
-        ? el('div', { class: 'hc-filter-btn hc-filter-btn-clear', text: 'All is Well' })
+        ? ((() => { const bm = calcBmi(person.heightCm, person.weightKg); return bm && bm.cls !== 'good'; })()
+          ? null
+          : el('div', { class: 'hc-filter-btn hc-filter-btn-clear', text: 'All is Well' }))
         : el('button', {
             class: 'hc-filter-btn' + (_hcFilterOutOfRange ? ' active' : ''),
             onclick: () => { _hcFilterOutOfRange = !_hcFilterOutOfRange; renderHealthCheck(); },

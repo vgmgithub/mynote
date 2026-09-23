@@ -183,10 +183,12 @@ const b = (s) => el('b', { text: s });
 // equity - a single SGB can otherwise dominate an allocation chart it has no
 // business being in.
 //
-// Identified by name because that is how these rows are entered; the check was
-// written out as the same regex in five places, which is how two of them come
-// to disagree.
-const isSgb = (s) => /sgb/i.test((s && s.name) || '');
+// TWO things make a row an SGB: its name STARTS with "SGB" and its category is
+// BONDS. Name alone used to be enough, which quietly swallowed any holding with
+// "sgb" anywhere in it; the category makes it something the user opts into.
+const isSgb = (s) => /^\s*sgb/i.test((s && s.name) || '') && /bond/i.test((s && s.category) || '');
+// Said in one place so the SGB tab, its empty state and any future hint agree.
+const SGB_RULE_TEXT = 'A holding counts as an SGB when its name starts with "SGB" and its category is BONDS. Those are listed here, counted as gold under Metals, and left out of your stock totals.';
 
 // The Overview tab's cross-portfolio view. Deliberately NOT a value of
 // state.portfolio: that drives which stocks are loaded, which currency is
@@ -5261,7 +5263,7 @@ async function renderHomeInvestment() {
   const stockCard = _homeCard('📈', 'Stocks', 'Holdings · trends · news', () => setAppMode('stocks'));
   const mfCard = _homeCard('📊', 'Mutual Funds', 'SIPs · XIRR · 2030 goal', () => openMF());
   const fdCard = _homeCard('🏦', 'Fixed Deposits', 'FD ladder · maturity · interest', () => setAppMode('fd'));
-  const metalCard = _homeCard(_metalBarIcon(), 'Metals', 'gold · silver · SGB', () => openMetal());
+  const metalCard = _homeCard(_metalBarIcon(), 'Metals', 'gold · silver', () => openMetal());
   const bondCard = _homeCard('🧾', 'Bonds', 'coupon · maturity · vs bank', () => openBond());
 
   host.appendChild(el('div', { class: 'home-cards' }, [stockCard, mfCard, fdCard, metalCard, bondCard]));
@@ -5299,10 +5301,12 @@ async function renderHomeInvestment() {
     }
 
     const mp = await metalPortfolio();
+    const metalSub = metalCard.querySelector('.home-card-sub');
     if (mp.hasTxns || mp.gold.sgbCount) {
       const inv = mp.gold.invested + mp.silver.invested;
-      const metalSub = metalCard.querySelector('.home-card-sub');
       if (metalSub) metalSub.textContent = `Gold ${_gramsShort(mp.gold.grams)}g · Silver ${_gramsShort(mp.silver.grams)}g · ${fmtIntCur(inv)} invested`;
+    } else if (metalSub && mp.gold.sgbCount) {
+      metalSub.textContent = 'gold · silver · SGB';
     }
 
     const bondList = (await DB.byIndex('bonds', 'owner', 'me')) || [];
@@ -12310,15 +12314,23 @@ async function renderMetalOverview(host) {
 async function renderMetalSgb(host) {
   const all = (await DB.all('stocks')) || [];
   const sgbs = all.filter(isSgb);
-  host.appendChild(el('p', { class: 'hint', style: 'margin:2px 0 10px', text: 'Sovereign Gold Bonds from your Stocks list — add or edit them under Stocks; they appear here for reference.' }));
+  host.appendChild(el('div', { class: 'sgb-rule' }, [
+    el('span', { class: 'sgb-rule-ico', text: '📜' }),
+    el('div', {}, [
+      el('b', { text: 'How an SGB gets here' }),
+      el('div', { text: SGB_RULE_TEXT }),
+      el('div', { class: 'sgb-rule-eg', text: 'Example: name "SGB 2032 Series II", category "BONDS".' }),
+    ]),
+  ]));
   if (!sgbs.length) {
     host.appendChild(el('div', { class: 'empty' }, [
-      el('div', { class: 'e-icon', text: '📜' }),
-      el('p', { text: 'No SGBs found.' }),
-      el('p', { class: 'hint', text: 'Add a holding with "SGB" in its name under Stocks to see it here.' }),
+      el('div', { class: 'e-icon', text: '🪙' }),
+      el('p', { text: 'No SGBs yet.' }),
+      el('p', { class: 'hint', text: 'Add one under Stocks using the name and category above, and it appears here.' }),
     ]));
     return;
   }
+  host.appendChild(el('p', { class: 'hint', style: 'margin:2px 0 10px', text: 'Add or edit these under Stocks; they are shown here for reference.' }));
 
   // ---- Overview: every SGB summed into one figure, same shape as the Gold/
   // Silver ledger's own summary card above the per-bond list below it.
@@ -13319,7 +13331,7 @@ async function renderEmergency() {
   ]));
 
   if (_efTab === 'fund') host.appendChild(efFundTab(c, parked));
-  else if (_efTab === 'targets') host.appendChild(efTargetsTab(c));
+  else if (_efTab === 'targets') host.appendChild(efTargetsTab(c, mod));
   else if (_efTab === 'loans') host.appendChild(efLoansTab(c, mod));
   else if (_efTab === 'terms') host.appendChild(efTermsTab(mod, c));
   else host.appendChild(efLogTab(c));
@@ -13540,7 +13552,7 @@ function openEfProjectionCalc(c, mod) {
 }
 
 // ---- Targets tab
-function efTargetsTab(c) {
+function efTargetsTab(c, mod) {
   const wrap = el('div', { class: 'tab-content' });
   if (!c.targets.length) {
     wrap.appendChild(el('div', { class: 'empty' }, [
@@ -13570,7 +13582,14 @@ function efTargetsTab(c) {
       ]));
     });
   }
-  wrap.appendChild(explainRow('About the ladder', 'Your emergency fund ladder progress. Each target can replace or add to the previous one.', 'How the ladder works'));
+  // "How the ladder works" on the left; when a target was last reached, on the
+  // right of the SAME line.
+  const last = mod && mod.lastTargetAchieved ? mod.lastTargetAchieved(c) : null;
+  const when = !last ? '' : last.days === 0 ? 'today' : last.days === 1 ? 'yesterday' : last.days + ' days ago';
+  wrap.appendChild(el('div', { class: 'ef-ladder-foot' }, [
+    explainRow('About the ladder', 'Your emergency fund ladder progress. Each target can replace or add to the previous one.', 'How the ladder works'),
+    last ? el('span', { class: 'ef-ladder-last', title: last.target.name || '', text: '🏆 Last target achieved ' + when }) : null,
+  ].filter(Boolean)));
   return wrap;
 }
 
@@ -14375,7 +14394,12 @@ async function openEfContribForm(existing) {
   // Both sides pay the same amount, so mirror it — saves typing the same number
   // twice every month, and it's still editable when a month differs.
   mine.addEventListener('input', () => { if (!isEdit || !spouse.value) spouse.value = mine.value; refresh(); });
-  spouse.addEventListener('input', refresh);
+  // Shown once a spouse amount is in play.
+  const equalTip = el('p', { class: 'hint ef-equal-tip', text: 'We recommend equal contribution amounts, so that each penny stays accountable between both of you.' });
+  const syncTip = () => equalTip.classList.toggle('hidden', !((num(spouse.value) || 0) > 0));
+  spouse.addEventListener('input', () => { refresh(); syncTip(); });
+  mine.addEventListener('input', syncTip);
+  syncTip();
   refresh();
 
   const del = async () => {
@@ -14399,6 +14423,7 @@ async function openEfContribForm(existing) {
       el('h2', { text: isEdit ? 'Edit contribution' : 'Log contribution' }),
       field('Month', date),
       el('div', { class: 'field-row' }, [field('Mine (₹)', mine), field('Spouse (₹)', spouse)]),
+      equalTip,
       field('Note', note),
       total,
     ]),
