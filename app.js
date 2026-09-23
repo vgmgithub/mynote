@@ -16858,6 +16858,10 @@ async function markBackedUp() {
 
 async function exportData() {
   const data = await DB.exportAll();
+  if (_backupRecordCount(data) === 0) {
+    appAlert('There is nothing to back up yet - the app has no records.');
+    return;
+  }
   const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = el('a', { href: url, download: 'mynote-stocks-backup-' + todayISO() + '.json' });
@@ -16874,9 +16878,14 @@ function importData() {
   input.addEventListener('change', async () => {
     const file = input.files && input.files[0];
     if (!file) return;
-    if (!(await appConfirm('Importing will REPLACE all current data on this device. Continue?'))) return;
+    let data;
+    try { data = JSON.parse(await file.text()); }
+    catch (e) { appAlert('That file could not be read as a backup: ' + e.message); return; }
+    const count = _backupRecordCount(data);
+    if (count === 0) { appAlert(_EMPTY_BACKUP_MSG); return; }
+    if (!(await appConfirm('This backup holds ' + count + ' records. Importing REPLACES all current data on this device. Continue?'))) return;
     try {
-      await DB.importAll(JSON.parse(await file.text()));
+      await DB.importAll(data);
       await markBackedUp();
       toast('Backup imported');
       refresh();
@@ -16900,6 +16909,18 @@ const _fmtBackupSize = (n) => {
   if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
   return (n / (1024 * 1024)).toFixed(1) + ' MB';
 };
+
+// How many of the user's own records a backup (or the live database) holds.
+// Settings-like stores (meta, feed, snapshots, healthParams' starter list) don't
+// count: a backup with only those is an EMPTY backup, and restoring or writing
+// one is how good data gets replaced by nothing.
+const _RECORD_STORES = ['stocks', 'monthly', 'funds', 'fds', 'dividends', 'metals', 'bonds', 'emergency', 'bankSavings',
+  'creditCards', 'allocations', 'ccReimbursements', 'monthlySheet', 'spends', 'personalSpends', 'vault',
+  'healthPeople', 'healthChecks'];
+function _backupRecordCount(data) {
+  return _RECORD_STORES.reduce((n, k) => n + ((data && Array.isArray(data[k])) ? data[k].length : 0), 0);
+}
+const _EMPTY_BACKUP_MSG = 'This backup has no records in it, so restoring it would only erase your data. Nothing was changed.';
 
 async function openBackupSheet() {
   if (!fileSystemAccessSupported()) { openBackupFallbackSheet(); return; }
@@ -16941,6 +16962,18 @@ async function openBackupMainSheet(handle) {
   const backupNow = async () => {
     try {
       const data = await DB.exportAll();
+      const count = _backupRecordCount(data);
+      if (count === 0) {
+        await appAlert('There is nothing to back up yet - the app has no records. A backup of an empty app could overwrite a good backup, so none was saved.');
+        return;
+      }
+      // Same-day backups overwrite each other. Never let a smaller one silently replace a fuller one.
+      const sameDay = list.find((b) => b.date === new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0') + '-' + String(new Date().getDate()).padStart(2, '0'));
+      if (sameDay) {
+        let existing = 0;
+        try { existing = _backupRecordCount(await readBackupByName(handle, sameDay.name)); } catch (_) {}
+        if (existing > count && !(await appConfirm('Today\'s backup already holds ' + existing + ' records, but the app has only ' + count + ' now.\n\nOverwrite the fuller backup with this smaller one?'))) return;
+      }
       const result = await writeBackup(handle, data);
       await rotateBackups(handle);
       await markBackedUp();
@@ -16950,17 +16983,22 @@ async function openBackupMainSheet(handle) {
   };
 
   const restore = async (item) => {
+    let data;
+    try { data = await readBackupByName(handle, item.name); }
+    catch (e) { appAlert('Could not read that backup: ' + (e.message || e)); return; }
+    const count = _backupRecordCount(data);
+    if (count === 0) { appAlert(_EMPTY_BACKUP_MSG); return; }
     const ok = (await appConfirm(
       'Restore from ' + _fmtBackupDate(item.date) + '?\n\n' +
-      'This REPLACES all your current data with the backup. Any edits made since that backup will be lost.\n\n' +
+      'This backup holds ' + count + ' records. It REPLACES all your current data. Any edits made since that backup will be lost.\n\n' +
       'A safety snapshot of your current state will be saved as "prerestore" first.'
     ));
     if (!ok) return;
     try {
-      // Snapshot current state to prerestore - single-level "oops" undo.
+      // Snapshot current state to prerestore - single-level "oops" undo. Skipped when
+      // the app is empty, so a blank snapshot never replaces a useful one.
       const current = await DB.exportAll();
-      await writePreRestoreSnapshot(handle, current);
-      const data = await readBackupByName(handle, item.name);
+      if (_backupRecordCount(current) > 0) await writePreRestoreSnapshot(handle, current);
       await DB.importAll(data);
       await markBackedUp();
       toast('Restored · ' + _fmtBackupDate(item.date) + ' · reloading…');
@@ -17029,13 +17067,15 @@ async function restoreFromOutsideFile() {
   let data;
   try { data = await readBackupViaFilePicker(); }
   catch (e) { if (e.message !== 'No file picked' && e.name !== 'AbortError') appAlert('Could not read file: ' + (e.message || e)); return; }
-  if (!(await appConfirm('Restore from this file?\n\nThis REPLACES all your current data. Any edits since the backup will be lost.'))) return;
+  const count = _backupRecordCount(data);
+  if (count === 0) { appAlert(_EMPTY_BACKUP_MSG); return; }
+  if (!(await appConfirm('Restore from this file?\n\nIt holds ' + count + ' records and REPLACES all your current data. Any edits since the backup will be lost.'))) return;
   try {
     const handle = await getSavedFolder();
     if (handle) {
       // If a backup folder is set, drop a prerestore there for one-level undo.
       const current = await DB.exportAll();
-      await writePreRestoreSnapshot(handle, current).catch(() => {});
+      if (_backupRecordCount(current) > 0) await writePreRestoreSnapshot(handle, current).catch(() => {});
     }
     await DB.importAll(data);
     toast('Restored · reloading…');
