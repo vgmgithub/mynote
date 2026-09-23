@@ -3517,19 +3517,25 @@ input.loan-pay { flex: 1 1 auto; width: auto; }
 #ccBottomNav button { font-size: 0.72rem; }
 .cc-cardchips { flex-wrap: wrap; padding: 4px 0 8px; gap: 6px; }
 
-/* ---------- Home FAB rings: dashed LED ring = share of the month's limit spent ---------- */
+/* ---------- Home FAB rings: a strip of LEDs = share of the month's limit spent ---------- */
+/* Both add-spend FABs a little smaller, with room between them for the rings. */
+.fab.fab-spend, .fab.fab-personal { width: 48px; height: 48px; right: 22px; }
+.fab.fab-spend svg:not(.fab-ring), .fab.fab-personal img { width: 23px; height: 23px; }
+.fab.fab-personal.is-second { bottom: calc(78px + 48px + 22px + var(--safe-bottom)); }
+body[data-mode="home"] .fab.fab-personal.is-second { bottom: calc(18px + 48px + 22px + var(--safe-bottom)); }
 .fab svg.fab-ring, .fab.fab-spend svg.fab-ring, .fab.fab-personal svg.fab-ring {
-  position: absolute; left: -8px; top: -8px; width: 72px; height: 72px; pointer-events: none; overflow: visible;
-  --ring: #ffffff; --ring-dim: rgba(255, 255, 255, 0.16); --ring-glow: rgba(255, 255, 255, 0.85);
+  position: absolute; left: -8px; top: -8px; width: 64px; height: 64px; pointer-events: none; overflow: visible;
   animation: fab-ring-breathe 2.6s ease-in-out infinite;
 }
-.fab.fab-personal svg.fab-ring { --ring: #2fd3a4; --ring-dim: rgba(47, 211, 164, 0.16); --ring-glow: rgba(47, 211, 164, 0.8); }
-.fab-ring circle { fill: none; stroke-width: 3; stroke-linecap: round; }
+/* Household (kitty): the amber of its own icon. Personal: white. */
+.fab.fab-spend svg.fab-ring { --ring: #f5a623; --ring-dim: rgba(245, 166, 35, 0.3); --ring-glow: rgba(245, 166, 35, 0.9); }
+.fab.fab-personal svg.fab-ring { --ring: #ffffff; --ring-dim: rgba(255, 255, 255, 0.28); --ring-glow: rgba(255, 255, 255, 0.9); }
+.fab-ring circle { fill: none; stroke-width: 3.4; stroke-linecap: butt; }
 .fab-ring .fab-ring-track { stroke: var(--ring-dim); }
-.fab-ring .fab-ring-lit { stroke: var(--ring); filter: drop-shadow(0 0 2px var(--ring-glow)) drop-shadow(0 0 5px var(--ring-glow)); }
+.fab-ring .fab-ring-lit { stroke: var(--ring); filter: drop-shadow(0 0 1.5px var(--ring-glow)) drop-shadow(0 0 4px var(--ring-glow)); }
 body:not([data-mode="home"]) .fab svg.fab-ring { display: none; }
-@keyframes fab-ring-breathe { 0%, 100% { opacity: 0.78; } 50% { opacity: 1; } }
-/* A new entry: a few quick blinks while the extra dashes light up. */
+@keyframes fab-ring-breathe { 0%, 100% { opacity: 0.8; } 50% { opacity: 1; } }
+/* A new entry: a few quick blinks while the extra LEDs light up. */
 .fab.ring-blink svg.fab-ring { animation: fab-ring-blink 0.4s ease-in-out 6; }
 @keyframes fab-ring-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
 @media (prefers-reduced-motion: reduce) {

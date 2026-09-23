@@ -4652,7 +4652,7 @@ async function renderHome() {
 // month's limit already spent (household budget for the Tracker FAB, Card + UPI / Cash for the
 // personal one); a full ring means the limit is used up. It always breathes a soft glow, and every
 // new entry makes it blink while the extra dashes light up one by one. No limit set: no ring.
-const FAB_RING_DASHES = 28;
+const FAB_RING_DASHES = 36;
 const _fabRingPrev = {};
 function _fabRingLoad(id) {
   if (_fabRingPrev[id]) return _fabRingPrev[id];
@@ -4664,7 +4664,8 @@ function _fabRingStore(id, v) {
   try { localStorage.setItem('fabRing:' + id, JSON.stringify(v)); } catch (_) {}
 }
 function _fabRingDashes(n) {
-  const unit = 100 / FAB_RING_DASHES, dash = unit * 0.62, gap = unit - dash;
+  // Short segments with clear gaps, so it reads as separate LEDs on a strip.
+  const unit = 100 / FAB_RING_DASHES, dash = unit * 0.46, gap = unit - dash;
   const parts = [];
   for (let i = 0; i < n; i++) parts.push(dash.toFixed(3), gap.toFixed(3));
   parts.push('0', '200');
@@ -4678,14 +4679,14 @@ function _setFabRing(btn, spent, limit) {
   if (!svg) {
     svg = document.createElementNS(NS, 'svg');
     svg.setAttribute('class', 'fab-ring');
-    svg.setAttribute('viewBox', '0 0 72 72');
+    svg.setAttribute('viewBox', '0 0 64 64');
     svg.setAttribute('aria-hidden', 'true');
     ['fab-ring-track', 'fab-ring-lit'].forEach((cls) => {
       const c = document.createElementNS(NS, 'circle');
       c.setAttribute('class', cls);
-      c.setAttribute('cx', '36'); c.setAttribute('cy', '36'); c.setAttribute('r', '33');
+      c.setAttribute('cx', '32'); c.setAttribute('cy', '32'); c.setAttribute('r', '29.5');
       c.setAttribute('pathLength', '100');
-      c.setAttribute('transform', 'rotate(-90 36 36)');
+      c.setAttribute('transform', 'rotate(-90 32 32)');
       svg.appendChild(c);
     });
     svg.querySelector('.fab-ring-track').setAttribute('stroke-dasharray', _fabRingDashes(FAB_RING_DASHES));
