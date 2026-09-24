@@ -3547,3 +3547,42 @@ body:not([data-mode="home"]) .fab svg.fab-ring { display: none; }
 @media (prefers-reduced-motion: reduce) {
   .fab-ring .fab-ring-head, .fab.ring-blink .fab-ring .fab-ring-head { animation: none; opacity: 1; }
 }
+
+/* ---------- Quick spend forms (Kitty + Personal) ---------- */
+.sheet.no-rise { animation: none; }
+.quick-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.quick-added { font-size: 0.72rem; font-weight: 700; color: var(--good); background: color-mix(in srgb, var(--good) 14%, transparent); padding: 3px 10px; border-radius: 999px; animation: pro-pop 0.35s ease-out; }
+.quick-cats { display: flex; flex-direction: column; gap: 6px; }
+.quick-cats-label { font-size: 0.6rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; font-weight: 700; }
+.quick-cats-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.spend-cat-btn.quick-cat { font-size: 0.84rem; padding: 9px 15px; }
+.quick-all-toggle { display: inline-flex; align-items: center; gap: 6px; margin: 8px 0 2px; padding: 4px 2px; border: none; background: none; color: var(--accent); font: inherit; font-size: 0.78rem; font-weight: 700; cursor: pointer; }
+.quick-all-chev { display: inline-block; transition: transform 0.25s ease; }
+.quick-all-toggle[aria-expanded="true"] .quick-all-chev { transform: rotate(180deg); }
+.quick-all { display: none; }
+.quick-all.open { display: block; }
+.quick-cats + .quick-all-toggle + .quick-all.open { margin-top: 6px; animation: lp-fade 0.2s ease-out; }
+.quick-amount { position: relative; }
+.quick-amount-cur { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); font-size: 1.35rem; font-weight: 700; color: var(--muted); pointer-events: none; }
+.field input.quick-amount-in { padding: 11px 14px 11px 36px; font-size: 1.6rem; font-weight: 800; border-radius: 14px; }
+.field input.quick-amount-in:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+.field.is-refund input.quick-amount-in { color: var(--good); }
+.quick-amts { display: flex; flex-wrap: wrap; gap: 8px; }
+.quick-form .field + .quick-amts { margin: -4px 0 12px; }
+.quick-amt { padding: 7px 14px; border-radius: 999px; border: 1px dashed color-mix(in srgb, var(--accent) 55%, var(--line)); background: color-mix(in srgb, var(--accent) 8%, transparent); color: var(--accent); font: inherit; font-size: 0.84rem; font-weight: 700; cursor: pointer; }
+.quick-amt:active, .quick-day:active { transform: scale(0.96); }
+.quick-days { display: flex; gap: 6px; align-items: stretch; }
+.quick-day { flex: 0 0 auto; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--card-2); color: var(--text); font: inherit; font-size: 0.82rem; font-weight: 600; cursor: pointer; }
+.quick-day.active { border-color: var(--accent); background: var(--card); color: var(--accent); font-weight: 700; box-shadow: inset 0 0 0 1px var(--accent); }
+.field .quick-days input[type="date"] { flex: 1 1 auto; width: auto; min-width: 0; padding: 8px 10px; font-size: 0.85rem; }
+.field .quick-days input.is-picked { border-color: var(--accent); color: var(--accent); }
+.quick-left { margin: 0; padding: 0 2px; font-size: 0.78rem; font-weight: 600; color: var(--muted); }
+.quick-form .field + .quick-left, .quick-form .quick-amts + .quick-left { margin: -4px 0 12px; }
+.quick-left.is-over { color: var(--bad); }
+.quick-form .is-missing { border-radius: 12px; box-shadow: 0 0 0 2px var(--bad); animation: quick-missing 0.45s ease-in-out 2; }
+.btn.quick-next { background: color-mix(in srgb, var(--accent) 14%, var(--card)); color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line)); }
+@media (max-width: 360px) { .quick-day { padding: 8px 9px; } .btn-row .btn.quick-next { font-size: 0.85rem; } }
+@media (prefers-reduced-motion: reduce) { .quick-added, .quick-form .is-missing, .quick-cats + .quick-all-toggle + .quick-all.open { animation: none; } .quick-all-chev { transition: none; } }
+@keyframes lp-fade { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes pro-pop { from { opacity: 0; transform: scale(0.55); } to { opacity: 1; transform: none; } }
+@keyframes quick-missing { 0%, 100% { transform: none; } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }

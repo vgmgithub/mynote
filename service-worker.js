@@ -1,4 +1,4 @@
-const CACHE = 'mynote-stocks-v523';
+const CACHE = 'mynote-stocks-v524';
 const ASSETS = [
   './',
   './index.html',
@@ -20,6 +20,8 @@ const ASSETS = [
   './credit.js',
   './vault.js',
   './health.js',
+  './spend-quick.js',
+  './spend-kit.js',
   './manifest.webmanifest',
   './icons/icon-180.png',
   './icons/icon-192.png',
