@@ -93,7 +93,8 @@ function _usCurToggle() {
 }
 
 // Mutual-fund view state (only used inside the MF surface).
-let _mfSort = 'ret';        // 'ret' | 'xirr' | 'inv' | 'name' (default: Return %)
+let _mfSort = 'ret';        // 'ret' | 'xirr' | 'val' | 'name' (default: Return %)
+let _mfSortDir = 'desc';    // tapping a new chip starts ascending; tapping the active one flips it
 let _mfFilter = 'investing'; // 'investing' | 'sold' (holding vs redeemed - not SIP status)
 let _mfTab = 'holdings';     // 'holdings' | 'overview' | 'benchmark' | 'stats' (bottom nav)
 let _mfBenchTab = 'returns';  // 'returns' | 'xirr' (sub-tabs within benchmark)
@@ -16233,8 +16234,20 @@ async function renderMF() {
   // Filter + Sort + Update button (top of holdings tab)
   const filterSeg = el('div', { class: 'seg' }, [['investing', `Investing (${heldRows.length})`], ['sold', `Sold (${soldRows.length})`]].map(([v, l]) =>
     el('button', { class: (_mfFilter === v ? 'active' : ''), 'data-filter': v, type: 'button', text: l, onclick: () => { _mfFilter = v; renderMF(); } })));
-  const sortbar = el('div', { class: 'sortbar mf-sortbar' }, [['xirr', 'XIRR'], ['ret', 'Return'], ['inv', 'Invested'], ['name', 'Name']].map(([v, l]) =>
-    el('button', { class: 'sort-btn' + (_mfSort === v ? ' active' : ''), type: 'button', text: l, onclick: () => { _mfSort = v; renderMF(); } })));
+  // Tapping a chip sorts ascending; tapping the same chip again flips it, and the active chip shows which.
+  const SORTS = [['xirr', 'XIRR', 'XIRR'], ['ret', 'Ret%', 'Return %'], ['val', 'Value', 'Current value'], ['name', 'A–Z', 'Name']];
+  const sortbar = el('div', { class: 'mf-sort-chips' }, SORTS.map(([v, short, full]) => {
+    const on = _mfSort === v;
+    const arrow = on ? (_mfSortDir === 'asc' ? ' ↑' : ' ↓') : '';
+    return el('button', { class: 'mf-sort-chip' + (on ? ' active' : ''), type: 'button',
+      'aria-label': 'Sort by ' + full + (on ? (_mfSortDir === 'asc' ? ', ascending' : ', descending') : ''), title: full,
+      text: short + arrow,
+      onclick: () => {
+        if (_mfSort === v) _mfSortDir = _mfSortDir === 'asc' ? 'desc' : 'asc';
+        else { _mfSort = v; _mfSortDir = 'asc'; }
+        renderMF();
+      } });
+  }));
   const toolbarTop = el('div', { class: 'toolbar mf-toolbar-top' }, [filterSeg, sortbar]);
 
   holdContent.appendChild(toolbarTop);
@@ -16245,12 +16258,21 @@ async function renderMF() {
       el('p', { text: viewSold ? 'No sold funds.' : 'No funds you are holding.' }),
     ]));
   } else {
-    list.sort((a, b) => {
+    // Ascending comparator; descending just flips it. A fund with no XIRR yet always sorts last,
+    // whichever way round, rather than jumping to the top when the order is reversed.
+    const mfSortAsc = (a, b) => {
       if (_mfSort === 'name') return (a.f.name || '').localeCompare(b.f.name || '');
-      if (_mfSort === 'inv') return b.c.invested - a.c.invested;
-      if (_mfSort === 'ret') return b.c.absReturnPct - a.c.absReturnPct;
-      const av = a.c.xirr == null ? -Infinity : a.c.xirr, bv = b.c.xirr == null ? -Infinity : b.c.xirr;
-      return bv - av;
+      if (_mfSort === 'val') return a.c.value - b.c.value;
+      if (_mfSort === 'ret') return a.c.absReturnPct - b.c.absReturnPct;
+      return a.c.xirr - b.c.xirr;
+    };
+    const mfDir = _mfSortDir === 'asc' ? 1 : -1;
+    list.sort((a, b) => {
+      if (_mfSort === 'xirr') {
+        const an = a.c.xirr == null, bn = b.c.xirr == null;
+        if (an || bn) return an === bn ? 0 : an ? 1 : -1;
+      }
+      return mfDir * mfSortAsc(a, b);
     });
 
     const listWrap = el('section', { class: 'stock-list' });
@@ -17582,6 +17604,9 @@ function openStockForm(existing) {
   const name = el('input', { type: 'text', value: s.name || '', placeholder: 'e.g. Tata Power' });
   const catList = el('datalist', { id: 'catlist' }, CATEGORIES.map((c) => el('option', { value: c })));
   const category = el('input', { type: 'text', value: s.category || '', list: 'catlist', placeholder: 'Category' });
+  // Conviction is a call made once you've watched a stock for a while, not on day one - asking for it
+  // while adding a fresh holding is exactly the kind of decision that slows the form down for nothing.
+  // It only shows once there's something to edit.
   const conviction = el('select', {}, CONVICTIONS.map((c) => {
     const o = el('option', { value: c.v, text: c.label });
     if (c.v === (s.conviction || '')) o.selected = true;
@@ -17602,6 +17627,41 @@ function openStockForm(existing) {
   // there any more — see openDivForm — so this is the only way to reach a
   // year further back than one with existing dividend data).
   const startYear = el('input', { type: 'number', inputmode: 'numeric', step: '1', value: s.startYear != null ? s.startYear : '', placeholder: 'e.g. 2020' });
+  // Live feedback the moment units and prices are typed - seeing "you're up ₹X" right away, before Add
+  // is even tapped, is what makes entering a holding feel immediate rather than a form filled blind.
+  const pnlCur = curOf(state.portfolio);
+  const pnlInvested = el('div', { class: 'v' });
+  const pnlValue = el('div', { class: 'v' });
+  const pnlDiff = el('div', { class: 'v' });
+  const pnlDiffSub = el('div', { class: 'sub' });
+  const pnlRow = el('div', { class: 'fd-stat-row stock-pnl-row hidden' }, [
+    el('div', { class: 'fd-stat is-neutral' }, [el('div', { class: 'k', text: 'Invested' }), pnlInvested]),
+    el('div', { class: 'fd-stat is-neutral' }, [el('div', { class: 'k', text: 'Value' }), pnlValue]),
+    el('div', { class: 'fd-stat is-good' }, [el('div', { class: 'k', text: 'P&L' }), pnlDiff, pnlDiffSub]),
+  ]);
+  const updatePnl = () => {
+    const u = num(units.value), bp = num(buyPrice.value), cp = num(currentPrice.value);
+    if (!u || !bp) { pnlRow.classList.add('hidden'); return; }
+    const invested = u * bp;
+    pnlInvested.textContent = fmtCur(invested, pnlCur);
+    if (cp) {
+      const value = u * cp;
+      const diff = value - invested;
+      const pct = invested ? (diff / invested) * 100 : 0;
+      pnlValue.textContent = fmtCur(value, pnlCur);
+      pnlDiff.textContent = (diff >= 0 ? '+' : '') + fmtCur(diff, pnlCur);
+      pnlDiff.className = 'v ' + (diff >= 0 ? 'pos' : 'neg');
+      pnlDiffSub.textContent = (diff >= 0 ? '+' : '') + pct.toFixed(2) + '%';
+      pnlDiffSub.className = 'sub ' + (diff >= 0 ? 'pos' : 'neg');
+    } else {
+      pnlValue.textContent = '—';
+      pnlDiff.textContent = '—'; pnlDiff.className = 'v';
+      pnlDiffSub.textContent = 'enter current price';
+    }
+    pnlRow.classList.remove('hidden');
+  };
+  [units, buyPrice, currentPrice].forEach((inp) => inp.addEventListener('input', updatePnl));
+  updatePnl();
   const soldPrice = numInput(s.soldPrice, '0');
   const soldUnits = numInput(s.soldUnits, 'units sold');
   const soldDate = el('input', { type: 'date', value: s.soldDate || todayISO() });
@@ -17660,7 +17720,6 @@ function openStockForm(existing) {
   }
 
   const histBlock = el('div', { class: 'field' }, [
-    el('label', { text: 'Monthly returns (month-end %)' }),
     chartNode,
     editorWrap,
   ]);
@@ -17716,14 +17775,24 @@ function openStockForm(existing) {
   openModal(el('div', { class: 'sheet' }, [
     el('h2', { text: isEdit ? 'Edit stock' : 'Add stock' }),
     catList,
-    field('Name', name),
-    el('div', { class: 'field-row' }, [field('Category', category), field('Conviction', conviction)]),
-    field('Status', status),
-    el('div', { class: 'field-row' }, [field('Units held', units), field('Avg buy price', buyPrice)]),
-    el('div', { class: 'field-row' }, [field('Current price', currentPrice), field('Started (year)', startYear)]),
-    soldBlock,
-    histBlock,
-    field('Dividend available — shows this stock on the Dividends page', divSwitch),
+    el('div', { class: 'form-secs' }, [
+      formSection('📈', 'Stock', [
+        field('Name', name),
+        isEdit ? el('div', { class: 'field-row' }, [field('Category', category), field('Conviction', conviction)]) : field('Category', category),
+        field('Status', status),
+      ]),
+      formSection('💰', 'Holding', [
+        el('div', { class: 'field-row' }, [field('Units held', units), field('Avg buy price', buyPrice)]),
+        field('Current price', currentPrice),
+        pnlRow,
+        field('Started (year)', startYear),
+        soldBlock,
+      ]),
+      formSection('📊', 'Monthly returns (month-end %)', [histBlock]),
+      formSection('🏷️', 'Extras', [
+        field('Dividend available — shows this stock on the Dividends page', divSwitch),
+      ]),
+    ]),
     el('div', { class: 'btn-row' }, [
       el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeModal }),
       el('button', { class: 'btn primary', text: isEdit ? 'Save' : 'Add', onclick: save }),
