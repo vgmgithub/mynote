@@ -1,7 +1,7 @@
 // IndexedDB data layer. All data lives on this device only.
 export const DB = (function () {
   const NAME = 'mynote-stocks';
-  const VERSION = 19;
+  const VERSION = 20;
   let dbp = null;
 
   function open() {
@@ -174,6 +174,13 @@ export const DB = (function () {
         if (!db.objectStoreNames.contains('healthParams')) {
           db.createObjectStore('healthParams', { keyPath: 'id', autoIncrement: true });
         }
+        // Health Check - Medicine Cabinet. One row per medicine, holding type/purpose/usage/expiry and which
+        // person (or the whole household) it belongs to. Indexed by `personId` for per-person filtering.
+        // See medicine.js for the record shape and status rules. Added in v20.
+        if (!db.objectStoreNames.contains('medicines')) {
+          const s = db.createObjectStore('medicines', { keyPath: 'id', autoIncrement: true });
+          s.createIndex('personId', 'personId', { unique: false });
+        }
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
@@ -231,7 +238,7 @@ export const DB = (function () {
       // `feed` is best-effort: very old backups (v2 export) won't have it, and
       // the store may not exist if the user is mid-upgrade. Don't fail the
       // whole export over a missing store.
-      const [stocks, snapshots, monthly, meta, feed, funds, fds, dividends, metals, bonds, emergency, bankSavings, creditCards, allocations, ccReimbursements, monthlySheet, spends, personalSpends, vault, healthPeople, healthChecks, healthParams] = await Promise.all([
+      const [stocks, snapshots, monthly, meta, feed, funds, fds, dividends, metals, bonds, emergency, bankSavings, creditCards, allocations, ccReimbursements, monthlySheet, spends, personalSpends, vault, healthPeople, healthChecks, healthParams, medicines] = await Promise.all([
         this.all('stocks'),
         this.all('snapshots'),
         this.all('monthly'),
@@ -257,6 +264,7 @@ export const DB = (function () {
         this.all('healthPeople').catch(() => []),
         this.all('healthChecks').catch(() => []),
         this.all('healthParams').catch(() => []),
+        this.all('medicines').catch(() => []),
       ]);
       return {
         app: 'mynote-stocks',
@@ -288,6 +296,7 @@ export const DB = (function () {
         healthPeople,
         healthChecks,
         healthParams,
+        medicines,
       };
     },
     // Replace all data with the contents of a previously exported object.
@@ -321,6 +330,7 @@ export const DB = (function () {
         this.clear('healthPeople').catch(() => {}),
         this.clear('healthChecks').catch(() => {}),
         this.clear('healthParams').catch(() => {}),
+        this.clear('medicines').catch(() => {}),
       ]);
       const tasks = [];
       (data.stocks || []).forEach((s) => tasks.push(this.put('stocks', s)));
@@ -347,6 +357,7 @@ export const DB = (function () {
       (data.healthPeople || []).forEach((r) => tasks.push(this.put('healthPeople', r).catch(() => {})));
       (data.healthChecks || []).forEach((r) => tasks.push(this.put('healthChecks', r).catch(() => {})));
       (data.healthParams || []).forEach((r) => tasks.push(this.put('healthParams', r).catch(() => {})));
+      (data.medicines || []).forEach((r) => tasks.push(this.put('medicines', r).catch(() => {})));
       await Promise.all(tasks);
     },
   };

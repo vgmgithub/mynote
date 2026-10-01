@@ -20,7 +20,10 @@ let _hcFilterOutOfRange = false;
 // every fresh entry into Health Check (from Home, or any other section)
 // lands on Family - not internally, or clicking a person tab (which sets
 // _hcView itself, via selectTab) would get undone by this on its own re-render.
-function resetHealthCheckView() { _hcView = 'family'; }
+// Home's Coming up can ask for the Medicines tab instead: set just before setAppMode('health').
+let _hcEnterMeds = false;
+function resetHealthCheckView() { _hcView = _hcEnterMeds ? 'meds' : 'family'; _hcEnterMeds = false; }
+function enterMedicinesNext() { _hcEnterMeds = true; }
 // installHealthSwipe() attaches its touch listeners once, the first time
 // Health Check renders - not once per render, since renderHealthCheck()
 // clears and rebuilds #healthView's children but never the element itself.
@@ -226,13 +229,13 @@ function installHealthSwipe() {
 
     const people = await DB.all('healthPeople').catch(() => []);
     if (!people.length) return;
-    const stripIds = ['family', ...people.map(p => p.id)];
-    const curId = _hcView === 'family' ? 'family' : _healthPerson;
+    const stripIds = ['family', 'meds', ...people.map(p => p.id)];
+    const curId = _hcView === 'family' || _hcView === 'meds' ? _hcView : _healthPerson;
     const idx = stripIds.indexOf(curId);
     if (idx === -1) return;
     const nextId = stripIds[idx + dir];
     if (nextId === undefined) return; // clamp at both ends, same as the portfolio swipe
-    if (nextId === 'family') { _hcView = 'family'; } else { _hcView = null; _healthPerson = nextId; }
+    if (nextId === 'family' || nextId === 'meds') { _hcView = nextId; } else { _hcView = null; _healthPerson = nextId; }
     await renderHealthCheck();
     flashSwipeDirection(dir);
     const activeTab = document.querySelector('.hc-tab.active');
@@ -258,18 +261,20 @@ async function renderHealthCheck() {
     return;
   }
 
-  if (!people.length) {
+  // The Medicine Cabinet is the household's, so it opens even before anyone is added.
+  if (!people.length && _hcView !== 'meds') {
     $('#healthAddBtn').classList.add('hidden');
     host.appendChild(el('div', { class: 'hc-empty' }, [
       el('div', { text: 'No people added yet.' }),
       el('button', { class: 'hc-empty-cta', text: '+ Add Family Member', onclick: () => openHealthPeopleManager('add') }),
+      el('button', { class: 'hc-empty-cta hc-empty-meds', text: '💊 Medicine Cabinet', onclick: () => { _hcView = 'meds'; renderHealthCheck(); } }),
     ]));
     return;
   }
 
-  if (!_healthPerson) _healthPerson = people[0].id;
+  if (!_healthPerson && people.length) _healthPerson = people[0].id;
   const person = people.find(p => p.id === _healthPerson) || people[0];
-  if (!person.id) _healthPerson = people[0].id;
+  if (person && !person.id) _healthPerson = people[0].id;
 
   // renderHealthCheck() rebuilds this whole row from scratch, so a fresh
   // .hc-tabs always starts scrolled to its left edge - without restoring
@@ -290,8 +295,14 @@ async function renderHealthCheck() {
       text: 'Family',
       onclick: () => selectTab(() => { _hcView = 'family'; }),
     }),
+    // The household's medicines: expiry, type, purpose, how to use (medicine-ui.js).
+    el('button', {
+      class: 'hc-tab hc-tab-meds' + (_hcView === 'meds' ? ' active' : ''),
+      text: '💊 Medicines',
+      onclick: () => selectTab(() => { _hcView = 'meds'; }),
+    }),
     ...people.map(p => el('button', {
-      class: 'hc-tab' + (_hcView !== 'family' && _healthPerson === p.id ? ' active' : ''),
+      class: 'hc-tab' + (_hcView !== 'family' && _hcView !== 'meds' && _healthPerson === p.id ? ' active' : ''),
       text: p.name,
       onclick: () => selectTab(() => { _hcView = null; _healthPerson = p.id; })
     })),
@@ -305,6 +316,14 @@ async function renderHealthCheck() {
     el('button', { class: 'icon-btn hc-gear gear-btn', text: '⚙️', onclick: () => openHealthSettingsMenu() }),
   ]);
   host.appendChild(topRow);
+
+  if (_hcView === 'meds') {
+    const m = await import('./medicine-ui.js');
+    await m.renderMedicineCabinet(host, { people, rerender: renderHealthCheck });
+    return;
+  }
+  // Back from the Medicines tab: the + adds a health check again.
+  $('#healthAddBtn').setAttribute('aria-label', 'Add health check'); $('#healthAddBtn').title = 'Add health check';
 
   const fab = $('#healthAddBtn');
   const isFamily = _hcView === 'family';
@@ -1537,4 +1556,4 @@ async function openHealthRecordsManager(person) {
   ]));
 }
 
-export { renderHealthCheck, openHealthPeopleManager, openHealthCheckForm, openHealthParamsManager, openHealthRecordsManager, resetHealthCheckView };
+export { renderHealthCheck, openHealthPeopleManager, openHealthCheckForm, openHealthParamsManager, openHealthRecordsManager, resetHealthCheckView, enterMedicinesNext };

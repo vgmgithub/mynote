@@ -3225,6 +3225,51 @@ textarea.vault-notes:focus { outline: none; border-color: var(--accent); }
    into the page's own background. */
 .hc-tab.hc-tab-family { background: linear-gradient(135deg, #38bdf8, #0284c7); color: #fff; border: 1.5px solid #0284c7; font-weight: 700; }
 .hc-tab.hc-tab-family.active { background: linear-gradient(135deg, rgba(56, 189, 248, 0.32), rgba(14, 165, 233, 0.14)); color: var(--accent); border: 1.5px solid var(--accent); }
+/* ---------- Medicine Cabinet (Health Check tab) ---------- */
+.hc-tab.hc-tab-meds { background: linear-gradient(135deg, #34d399, #059669); color: #fff; border: 1.5px solid #059669; font-weight: 700; }
+.hc-tab.hc-tab-meds.active { background: linear-gradient(135deg, rgba(52, 211, 153, 0.3), rgba(5, 150, 105, 0.14)); color: #059669; border: 1.5px solid #10b981; }
+.hc-empty-meds { display: block; margin: 10px auto 0; background: #059669; }
+.med-head { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; margin-bottom: 10px; }
+.med-head-title { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 1.02rem; }
+.med-head-ico { font-size: 1.2rem; }
+.med-head-sub { color: var(--muted); font-size: 0.8rem; margin-top: 2px; }
+.med-head-badges { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.med-badge { font-size: 0.68rem; font-weight: 800; color: #fff; padding: 3px 9px; border-radius: 999px; }
+.med-badge.is-expired { background: linear-gradient(135deg, #f87171, #dc2626); }
+.med-badge.is-soon { background: linear-gradient(135deg, #fbbf24, #d97706); }
+.med-search { width: 100%; box-sizing: border-box; margin: 6px 0 10px; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--text); font: inherit; font-size: 0.85rem; }
+.med-sec { margin-bottom: 12px; }
+.med-sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-weight: 800; font-size: 0.86rem; margin: 4px 2px 6px; }
+.med-sec-hint { font-weight: 500; font-size: 0.7rem; color: var(--muted); }
+.med-card { background: var(--card); border: 1px solid var(--line); border-left: 4px solid #10b981; border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; cursor: pointer; }
+.med-card.is-soon { border-left-color: #f59e0b; }
+.med-card.is-expired { border-left-color: #dc2626; }
+.med-card.is-used, .med-card.is-disposed { border-left-color: var(--line); opacity: 0.75; }
+.med-card.is-unknown { border-left-color: var(--muted); }
+.med-row { display: flex; align-items: flex-start; gap: 10px; }
+.med-ico { font-size: 1.3rem; line-height: 1.2; }
+.med-main { flex: 1; min-width: 0; }
+.med-name { font-weight: 800; font-size: 0.92rem; overflow-wrap: anywhere; }
+.med-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.med-tag { font-size: 0.64rem; font-weight: 700; padding: 2px 7px; border-radius: 999px; background: var(--card-2); color: var(--muted); }
+.med-tag.is-purpose { background: rgba(16, 185, 129, 0.14); color: #059669; }
+.med-tag.is-who { background: rgba(56, 189, 248, 0.14); color: #0284c7; }
+.med-exp { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex: 0 0 auto; }
+.med-exp-date { font-size: 0.72rem; font-weight: 700; white-space: nowrap; }
+.med-status { font-size: 0.62rem; font-weight: 800; padding: 2px 7px; border-radius: 999px; white-space: nowrap; background: rgba(16, 185, 129, 0.14); color: #059669; }
+.med-status.is-soon { background: rgba(245, 158, 11, 0.16); color: #b45309; }
+.med-status.is-expired { background: #dc2626; color: #fff; }
+.med-status.is-used, .med-status.is-disposed, .med-status.is-unknown { background: var(--card-2); color: var(--muted); }
+.med-usage { margin-top: 6px; font-size: 0.76rem; color: var(--muted); line-height: 1.35; }
+.med-usage b { color: var(--text); font-weight: 700; }
+.med-acts { display: flex; gap: 8px; margin-top: 8px; }
+.med-act { display: inline-flex; align-items: center; gap: 5px; padding: 6px 12px; border-radius: 999px; font: inherit; font-size: 0.74rem; font-weight: 800; cursor: pointer; border: 1px solid var(--line); background: var(--card-2); color: var(--text); }
+.med-act.is-buy { background: linear-gradient(135deg, #34d399, #059669); color: #fff; border-color: #059669; }
+.med-act-plus { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; background: rgba(255, 255, 255, 0.28); font-size: 0.85rem; line-height: 1; }
+.med-act.is-dispose { color: #dc2626; border-color: rgba(220, 38, 38, 0.4); }
+.med-tip { font-size: 0.72rem; margin: -2px 2px 12px; }
+.med-empty-sub { font-size: 0.78rem; margin-top: 8px; }
+.med-dispose-old { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; margin-top: 8px; cursor: pointer; }
 /* Selected person, shown below the badge row - emoji + name + age. */
 .hc-selected { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-bottom: 18px; position: sticky; top: 0; z-index: 15; background: var(--bg); padding: 10px 0; }
 .hc-selected-info { display: flex; align-items: center; gap: 10px; min-width: 0; }

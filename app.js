@@ -17868,7 +17868,8 @@ async function openMenu() {
 // worth saying out loud: "43 new entries" means something, "812 KB" does not.
 const BACKED_UP_STORES = ['stocks', 'snapshots', 'monthly', 'funds', 'fds', 'dividends',
   'metals', 'bonds', 'emergency', 'bankSavings', 'creditCards', 'allocations',
-  'ccReimbursements', 'monthlySheet', 'spends', 'personalSpends', 'vault'];
+  'ccReimbursements', 'monthlySheet', 'spends', 'personalSpends', 'vault',
+  'healthPeople', 'healthChecks', 'medicines'];
 
 async function dataCount() {
   const counts = await Promise.all(BACKED_UP_STORES.map(
