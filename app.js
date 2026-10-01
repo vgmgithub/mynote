@@ -5502,8 +5502,8 @@ function _liveRatesAsOfLabel(iso) {
 // `sub`, when given, is the raw spot figure - shown smaller, under the main
 // (marked-up) value, so the untouched number stays checkable at a glance
 // instead of only living in a tooltip or a separate screen.
-function _liveRateBox(label, val, sub) {
-  return el('div', { class: 'home-rate-box' }, [
+function _liveRateBox(label, val, sub, kind) {
+  return el('div', { class: 'home-rate-box' + (kind ? ' is-' + kind : '') }, [
     el('div', { class: 'home-rate-lbl', text: label }),
     el('div', { class: 'home-rate-val', text: _homeRateFmt(val) }),
     el('div', { class: 'home-rate-sub', text: sub != null ? 'Spot ' + _homeRateFmt(sub) : '' }),
@@ -5526,9 +5526,9 @@ async function _homeLiveRatesStrip() {
   const cached = await DB.get('meta', 'homeLiveRates').catch(() => null);
   const rates = cached && cached.value ? cached.value : null;
 
-  const goldBox = _liveRateBox('Gold 24K/g', rates ? rates.gold : null, rates ? rates.goldSpot : null);
-  const silverBox = _liveRateBox('Silver 999/g', rates ? rates.silver : null, rates ? rates.silverSpot : null);
-  const usdBox = _liveRateBox('1 USD', rates ? rates.usdInr : null);
+  const goldBox = _liveRateBox('Gold 24K/g', rates ? rates.gold : null, rates ? rates.goldSpot : null, 'gold');
+  const silverBox = _liveRateBox('Silver 999/g', rates ? rates.silver : null, rates ? rates.silverSpot : null, 'silver');
+  const usdBox = _liveRateBox('1 USD', rates ? rates.usdInr : null, null, 'usd');
   const asOfEl = el('div', {
     class: 'home-rate-asof',
     text: rates ? _liveRatesSourceLabel(rates) + ' · ' + _liveRatesAsOfLabel(rates.asOf) : 'Fetching…',
