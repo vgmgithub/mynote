@@ -17852,6 +17852,7 @@ async function openMenu() {
     : 'Protect this app with a PIN';
   items.push(menuItem('🔒', lockCfg && lockCfg.enabled ? 'App lock · on' : 'Set up app lock', lockDesc, () => { closeModal(); openLockEntry(); }));
   items.push(menuItem('📰', 'Feed settings', 'Marketaux API key for the news Feed', () => { closeModal(); openFeedSettings(); }));
+  items.push(menuItem('🧠', 'AI Prompt', 'Turn your own data into a prompt for any AI assistant', () => { closeModal(); openAiPromptSheet(); }));
   items.push(menuItem('🔄', 'Check for updates', 'See if a newer version is ready to install', () => { closeModal(); checkForUpdatesNow(); }));
   openModal(el('div', { class: 'sheet' }, [
     el('h2', { text: 'Menu' }),
@@ -17859,6 +17860,202 @@ async function openMenu() {
     el('p', { class: 'hint', text: 'All data is stored only on this device. Export regularly so you have a backup.' }),
     el('div', { class: 'btn-row' }, [el('button', { class: 'btn ghost', text: 'Close', onclick: closeModal })]),
   ]));
+}
+
+// ---------- AI Prompt ----------
+// This month's budget, month-end estimate and flagged categories for the prompt, worked out exactly as the
+// Household and Personal Review tabs do (renderReview / renderPfReview), so the prompt quotes the figures they
+// already show rather than a second, different calculation.
+function promptReview(spends, pf, allocs, efLoans) {
+  const now = new Date();
+  const thisYm = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  // Both tabs estimate the month only once something is logged and there are enough earlier months to go on.
+  const judged = (a) => a.spent > 0 && a.historyMonths >= REVIEW_MIN_HISTORY;
+  const pack = (a, f) => ({
+    budget: a.kitty, estimate: f ? f.forecast : null, lo: f ? f.lo : null, hi: f ? f.hi : null, grade: f ? f.grade : null,
+    usualByNow: f ? f.usualByNow : null, flagged: judged(a) ? a.actionable.slice(0, 3) : [],
+  });
+  const byYm = new Map();
+  (spends || []).forEach((r) => {
+    const k = String(r.ym || '').slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(k) || (Number(r.amount) || 0) < 0) return;
+    if (!byYm.has(k)) byYm.set(k, []);
+    byYm.get(k).push(r);
+  });
+  const kitty = _kittyFor(thisYm, allocs, efLoans);
+  const a = _reviewAnalysis(thisYm, byYm, thisYm, kitty, now);
+  const dueTotal = _recurringDue(thisYm, byYm).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+  const out = { house: pack(a, judged(a) ? _reviewForecast(thisYm, byYm, now, dueTotal, kitty) : null) };
+  if (pf) {
+    const ownByYm = pfSpendsOnly(pfOwnMap(pf.byYm)), ownByYmCal = pfSpendsOnly(pfOwnMap(pf.byYmCal));
+    const limit = _pfCardLimit(thisYm, pf.allocs) + (Number(pf.upiLimit) || 0);
+    const a2 = _reviewAnalysis(thisYm, ownByYm, thisYm, limit, now, _pfGroupOf);
+    out.personal = pack(a2, judged(a2) ? _reviewForecast(thisYm, ownByYmCal, now, 0, limit) : null);
+  }
+  return out;
+}
+// The same month map with refunds (negative amounts) taken out - what the prompt reads, which is spending alone.
+function pfSpendsOnly(byYm) {
+  const out = new Map();
+  byYm.forEach((rows, k) => {
+    const spent = rows.filter((r) => (Number(r && r.amount) || 0) >= 0);
+    if (spent.length) out.set(k, spent);
+  });
+  return out;
+}
+
+// The Balance tab's existing loans, as the latest month's sheet up to now holds them (a new month carries the
+// unpaid ones over from it): how many, and what is still owed. Never their labels.
+function promptLoans(sheets) {
+  const ym = todayISO().slice(0, 7);
+  const last = (sheets || []).filter((x) => x && typeof x.ym === 'string' && x.ym <= ym).sort((a, b) => a.ym.localeCompare(b.ym)).pop();
+  if (!last) return null;
+  const open = sheetItemsOf(last, SHEET_LISTS.loan).filter((i) => !i.paid && loanLeft(i) > 0);
+  return { count: open.length, owed: loansOwed(open) };
+}
+
+async function copyPrompt(text) {
+  if (!String(text || '').trim()) { toast('Nothing to copy yet'); return; }
+  try { await navigator.clipboard.writeText(text); toast('Prompt copied. Review it before you paste it anywhere.'); return; } catch (_) { /* fall back below */ }
+  try {
+    const t = el('textarea', { style: 'position:fixed;opacity:0' }); t.value = text; document.body.appendChild(t); t.select();
+    document.execCommand('copy'); t.remove(); toast('Prompt copied. Review it before you paste it anywhere.');
+  } catch (_) { toast('Could not copy. Select the text and copy it by hand.'); }
+}
+
+// Session-only - what purpose, which items, the question, income mode/range and the generated text so far. Never
+// saved to a backup; starts fresh each time the app (re)loads.
+let _aiPurpose = null, _aiItems = null, _aiQuestion = '', _aiText = null, _aiIncomeMode = 'exact', _aiIncomeRange = { lo: '', hi: '' };
+
+async function openAiPromptSheet() {
+  const [spends, allocations, creditCards, bankSavings, stocks, funds, fds, metals, bonds, sheets, ratesRow, efLoans, pf] = await Promise.all([
+    DB.all('spends').catch(() => []), DB.all('allocations').catch(() => []), DB.all('creditCards').catch(() => []),
+    DB.all('bankSavings').catch(() => []), DB.all('stocks').catch(() => []), DB.all('funds').catch(() => []),
+    DB.all('fds').catch(() => []), DB.all('metals').catch(() => []), DB.all('bonds').catch(() => []),
+    DB.all('monthlySheet').catch(() => []), DB.get('meta', 'homeLiveRates').catch(() => null),
+    DB.byIndex('emergency', 'kind', 'loan').catch(() => []), pfLoad().catch(() => null),
+  ]);
+  let ef = null;
+  try { ef = (await efLoad()).c; } catch (_) { ef = null; }
+  const rv = (ratesRow && ratesRow.value) || {};
+  const usdInr = Number(rv.usdInr) > 0 ? Number(rv.usdInr) : 0;
+  const aiMod = await import('./ai-prompt.js');
+  const summary = aiMod.summarise({
+    spends, allocations, creditCards, bankSavings, stocks, funds, fds, metals, bonds, ef, usdInr,
+    // The Personal tab's own list and its rule for which month a spend counts in.
+    personalSpends: pf ? pf.rows : [], personalMonthOf: pf ? pf.countedYm : null,
+    rates: { gold: Number(rv.gold) || 0, silver: Number(rv.silver) || 0, asOf: rv.asOf || null },
+    review: promptReview(spends, pf, allocations, efLoans),
+    loans: promptLoans(sheets),
+    today: todayISO(),
+  });
+  const avail = aiMod.availableItems(summary);
+  const purposes = aiMod.PURPOSES.filter((p) => p.id === 'custom' || p.items.some((i) => avail.includes(i)));
+  if (!purposes.some((p) => p.id === _aiPurpose)) _aiPurpose = purposes[0].id;
+  if (!_aiItems) _aiItems = new Set((aiMod.PURPOSES.find((p) => p.id === _aiPurpose) || {}).items || []);
+
+  const body = el('div', { class: 'sheet-scroll' });
+  const sheet = el('div', { class: 'sheet has-fixed-footer' }, [
+    body,
+    el('div', { class: 'sheet-footer' }, [el('div', { class: 'btn-row' }, [el('button', { class: 'btn ghost', text: 'Close', onclick: closeModal })])]),
+  ]);
+
+  const redraw = () => {
+    body.innerHTML = '';
+    body.appendChild(el('h2', { text: 'AI Prompt' }));
+    body.appendChild(el('div', { class: 'card an-prompt-head' }, [
+      el('p', { class: 'hint', text: 'Your financial data is already here. Create a ready-to-use prompt, edit it if you want, and paste it into any AI assistant you choose.' }),
+    ]));
+
+    const purposeRow = el('div', { class: 'pf-filter an-purposes' }, purposes.map((p) => el('button', {
+      type: 'button', class: 'pf-filter-chip' + (p.id === _aiPurpose ? ' active' : ''), text: p.label,
+      onclick: () => { if (p.id === _aiPurpose) return; _aiPurpose = p.id; _aiItems = new Set(p.items); _aiText = null; redraw(); },
+    })));
+    body.appendChild(el('p', { class: 'catsp-sub', text: 'What is it for?' }));
+    body.appendChild(purposeRow);
+    // What this purpose is built around but this device cannot offer yet - said before generating, so a thinner
+    // answer is not a surprise. Nothing is shown when everything it needs is there.
+    const gaps = aiMod.purposeGaps(_aiPurpose, avail);
+    if (gaps.length) {
+      body.appendChild(el('p', { class: 'hint an-gaps' }, [
+        el('b', { text: 'Not available here: ' }),
+        document.createTextNode(gaps.join(', ') + '. The answer will be less complete without ' + (gaps.length === 1 ? 'it' : 'them')
+          + ' - log the data to include ' + (gaps.length === 1 ? 'it' : 'them') + '.'),
+      ]));
+    }
+
+    const question = el('textarea', { class: 'an-question', rows: '3', placeholder: _aiPurpose === 'custom' ? 'Type your question' : 'Add your own question or context (optional)' });
+    question.value = _aiQuestion || '';
+    question.addEventListener('input', () => { _aiQuestion = question.value; });
+    body.appendChild(question);
+
+    body.appendChild(el('p', { class: 'catsp-sub', text: 'What to include' }));
+    if (!avail.length) {
+      body.appendChild(el('p', { class: 'hint', text: 'There is no data to include yet. Log some spending, or add savings or investments, and they can be included here.' }));
+    }
+    const incomeExtra = el('div', { class: 'an-income-extra hidden' });
+    const paintIncomeExtra = () => {
+      incomeExtra.innerHTML = '';
+      const on = _aiItems.has('income');
+      incomeExtra.classList.toggle('hidden', !on);
+      if (!on) return;
+      incomeExtra.appendChild(el('p', { class: 'hint', text: 'Income: the exact figure, or give a range instead to keep it less specific.' }));
+      incomeExtra.appendChild(el('div', { class: 'pf-filter an-income-mode' }, [
+        el('button', { type: 'button', class: 'pf-filter-chip' + (_aiIncomeMode !== 'range' ? ' active' : ''), text: 'Exact amount',
+          onclick: () => { if (_aiIncomeMode === 'exact') return; _aiIncomeMode = 'exact'; _aiText = null; paintIncomeExtra(); } }),
+        el('button', { type: 'button', class: 'pf-filter-chip' + (_aiIncomeMode === 'range' ? ' active' : ''), text: 'A range instead',
+          onclick: () => { if (_aiIncomeMode === 'range') return; _aiIncomeMode = 'range'; _aiText = null; paintIncomeExtra(); } }),
+      ]));
+      if (_aiIncomeMode === 'range') {
+        const lo = el('input', { type: 'number', inputmode: 'decimal', min: '0', placeholder: 'Lowest, e.g. 50000', value: _aiIncomeRange.lo });
+        const hi = el('input', { type: 'number', inputmode: 'decimal', min: '0', placeholder: 'Highest, e.g. 75000', value: _aiIncomeRange.hi });
+        lo.addEventListener('input', () => { _aiIncomeRange.lo = lo.value; _aiText = null; });
+        hi.addEventListener('input', () => { _aiIncomeRange.hi = hi.value; _aiText = null; });
+        incomeExtra.appendChild(el('div', { class: 'an-income-range' }, [lo, el('span', { 'aria-hidden': 'true', text: '–' }), hi, el('span', { class: 'hint', text: '/month' })]));
+      }
+    };
+    const checks = el('div', { class: 'an-items' }, aiMod.DATA_ITEMS.filter((it) => avail.includes(it.id)).map((it) => {
+      const box = el('input', { type: 'checkbox' });
+      box.checked = _aiItems.has(it.id);
+      box.addEventListener('change', () => {
+        if (box.checked) _aiItems.add(it.id); else _aiItems.delete(it.id);
+        if (it.id === 'income') paintIncomeExtra();
+      });
+      return el('label', { class: 'an-item' }, [box, el('span', { text: it.label })]);
+    }));
+    body.appendChild(checks);
+    paintIncomeExtra();
+    body.appendChild(incomeExtra);
+    body.appendChild(el('p', { class: 'hint', text: 'Never included: names, notes and tags, card, bank, fund, loan and profile names, account or payment ids, Health Check and your passwords.' }));
+
+    const editor = el('textarea', { class: 'an-editor', rows: '16', spellcheck: 'false', 'aria-label': 'Your prompt' });
+    const make = () => aiMod.buildPrompt({ summary, items: [..._aiItems].filter((i) => avail.includes(i)), purpose: _aiPurpose, question: _aiQuestion,
+      incomeMode: _aiIncomeMode, incomeRange: _aiIncomeRange });
+    editor.value = _aiText != null ? _aiText : '';
+    editor.addEventListener('input', () => { _aiText = editor.value; });
+    const out = el('div', { class: 'an-output' + (_aiText != null ? '' : ' hidden') }, [
+      el('div', { class: 'an-privacy' }, [el('b', { text: 'Review before sharing' }), el('p', { text: aiMod.PRIVACY_NOTE })]),
+      editor,
+      el('div', { class: 'btn-row an-actions' }, [
+        el('button', { class: 'btn primary', type: 'button', text: 'Copy Prompt', onclick: () => copyPrompt(editor.value) }),
+        el('button', { class: 'btn ghost', type: 'button', text: 'Regenerate', onclick: () => { _aiText = make(); editor.value = _aiText; } }),
+        el('button', { class: 'btn ghost', type: 'button', text: 'Clear', onclick: () => { _aiText = ''; editor.value = ''; editor.focus(); } }),
+      ]),
+    ]);
+    body.appendChild(el('div', { class: 'btn-row' }, [el('button', { class: 'btn primary', type: 'button', text: 'Generate prompt', onclick: () => {
+      if (_aiPurpose === 'custom' && !String(_aiQuestion || '').trim()) { toast('Type your question first'); question.focus(); return; }
+      _aiText = make(); editor.value = _aiText; out.classList.remove('hidden');
+      try { editor.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (_) { /* older browsers */ }
+    } })]));
+    // A disclaimer, so it sits under the button that creates the prompt rather than in the intro.
+    body.appendChild(el('p', { class: 'hint an-disclaimer' }, [
+      el('b', { text: 'Disclaimer: ' }),
+      document.createTextNode('MyNotes does not give financial advice and sends nothing anywhere: the prompt is built on this phone, and you decide where it goes.'),
+    ]));
+    body.appendChild(out);
+  };
+  redraw();
+  openModal(sheet);
 }
 
 // ---------- backup ----------

@@ -3652,3 +3652,28 @@ body:not([data-mode="home"]) .fab svg.fab-ring { display: none; }
 .fd-stat.is-good { background: color-mix(in srgb, var(--good) 12%, var(--card-2)); border-color: color-mix(in srgb, var(--good) 35%, var(--line)); }
 .fd-stat.is-accent { background: color-mix(in srgb, var(--accent) 10%, var(--card-2)); border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); }
 .stock-pnl-row { margin: 2px 0 4px; }
+
+/* ---------- AI Prompt sheet ---------- */
+.catsp-sub { margin: 6px 0 2px; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.an-prompt-head { margin-bottom: 12px; }
+.an-disclaimer { margin: 8px 2px 12px; font-size: 0.64rem; line-height: 1.45; text-align: center; }
+.an-disclaimer b { color: var(--text); font-weight: 700; }
+.an-purposes { flex-wrap: wrap; }
+.an-question, .an-editor { width: 100%; box-sizing: border-box; margin: 8px 0; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--card); color: var(--text); font: inherit; font-size: 0.86rem; line-height: 1.45; resize: vertical; }
+.an-editor { min-height: 320px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.78rem; }
+.an-items { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; margin: 6px 0 4px; }
+.an-item { display: flex; align-items: center; gap: 8px; font-size: 0.84rem; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); }
+.an-privacy { margin: 12px 0 4px; padding: 10px 12px; border-radius: 10px; font-size: 0.78rem; line-height: 1.45;
+  background: color-mix(in srgb, var(--warn) 10%, transparent); border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--line)); }
+.an-privacy p { margin: 4px 0 0; color: var(--muted); }
+.an-actions { flex-wrap: wrap; }
+.an-gaps { margin: 2px 0 10px; padding: 7px 10px; border-radius: 8px; font-size: 0.74rem;
+  background: color-mix(in srgb, var(--warn) 9%, transparent); border: 1px solid color-mix(in srgb, var(--warn) 30%, var(--line)); }
+.an-income-extra { margin: -2px 0 8px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--card-2); }
+.an-income-extra .hint { margin: 0 0 6px; }
+.an-income-mode { margin: 0 0 8px; }
+.an-income-range { display: flex; align-items: center; gap: 6px; }
+.an-income-range input { flex: 1; min-width: 0; padding: 7px 9px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--text); font: inherit; font-size: 0.82rem; }
+.an-income-range span.hint { margin: 0; flex: 0 0 auto; }
+@media (max-width: 360px) { .an-items { grid-template-columns: 1fr; } }

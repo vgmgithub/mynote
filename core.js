@@ -27,6 +27,12 @@ export const convIcon = (v) => CONV_ICON[v] || '';
 const CUR_BY_PORTFOLIO = PORTFOLIOS.reduce((m, p) => { m[p.id] = p.cur; return m; }, {});
 export const curOf = (pid) => CUR_BY_PORTFOLIO[pid] || 'INR';
 
+// A Sovereign Gold Bond sits in the stocks store (it is bought and held like one) but is gold, not equity - kept
+// here, alongside the other pure predicates, so anything reading a stock list can tell the two apart the same way.
+export const isSgb = (s) => /^\s*sgb/i.test((s && s.name) || '') && /bond/i.test((s && s.category) || '');
+
+export const BANK_SAV_TYPES = ['Savings', 'Salary', 'Joint', 'Current', 'NRE / NRO', 'Business', 'Kids / Minor', 'Other'];
+
 // Intl.NumberFormat is expensive to construct, so build one formatter per currency once.
 const _fmt = {};
 export function fmtCur(n, cur) {
