@@ -55,7 +55,10 @@ export const fmtIntRate = (n) => {
   return v.toFixed(2) + '%';
 };
 export const pctClass = (n) => (n > 0 ? 'pos' : n < 0 ? 'neg' : 'flat');
-export const todayISO = () => new Date().toISOString().slice(0, 10);
+// The date on the person's own clock. toISOString() is UTC, which in India is still YESTERDAY until 5:30 AM - so
+// for the first hours of a new day (and of a new month) the app used to believe it was still the old one.
+const localYmd = (d = new Date()) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+export const todayISO = () => localYmd();
 
 export function num(v) {
   if (v === '' || v == null) return null;
@@ -83,7 +86,7 @@ export function labelToYm(label) {
   return d ? d.slice(0, 7) : (/^\d{4}-\d{2}$/.test(label) ? label : null);
 }
 export const monthKey = (portfolio, ym) => portfolio + '|' + ym;
-export const thisYm = () => new Date().toISOString().slice(0, 7);
+export const thisYm = () => localYmd().slice(0, 7);
 
 // Parse messy sheet figures like "2,786.99", "+ 3340.61", "₹1,200", "29.39%".
 export function cleanNum(v) {

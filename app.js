@@ -6500,7 +6500,7 @@ async function renderCcCategory(host, token) {
   house.forEach((r) => { const k = stmt(r); if (k) rows.push({ r, k, kind: 'house' }); });
   personal.forEach((r) => { const k = stmt(r); if (k) rows.push({ r, k, kind: 'personal' }); });
 
-  const thisYm = new Date().toISOString().slice(0, 7);
+  const thisYm = todayISO().slice(0, 7);
   const months = [...new Set(rows.map((x) => x.k).concat([thisYm]))].sort();
   if (!_ccYm || !months.includes(_ccYm)) _ccYm = thisYm;
   const ym = _ccYm;
@@ -7173,16 +7173,28 @@ async function renderExpenseSheet(host, token) {
     ? sheetItemsOf(prevSheet, SHEET_LISTS.loan).filter((it) => !it.paid).map((it) => ({ label: it.label, amount: it.amount, srcId: null, paid: false, paidOn: null, repaid: (it.repaid || []).slice() }))
     : [];
   if (!carriedLoans.length && perMonth('loan') > 0) carriedLoans = [{ label: 'Existing loans', amount: perMonth('loan'), srcId: null, paid: false }];
-  if (!sheetRow && ym === thisYm && (fetchable.length || carried.length || carriedLoans.length)) {
+  // Other Expense carries too, now: what was itemised there last month comes across. The automatic "next
+  // statement card reimbursement" line is not one of those entries (it is worked out, never stored) - it is
+  // what this month's own Next Month Due shows, so it is not duplicated.
+  const carriedOther = prevSheet ? sheetItemsOf(prevSheet, SHEET_LISTS.other).map((it) => Object.assign({}, it)) : [];
+  if (!sheetRow && ym === thisYm && (fetchable.length || carried.length || carriedLoans.length || carriedOther.length)) {
     const seed = { ym, updatedAt: new Date().toISOString() };
-    fetchable.forEach((r) => { seed[r.key] = exprTerm(r.source); });
+    // The running-total rows (Parents, Mutual Fund, stocks, Metal) carry last month's total and add this
+    // month's allocation on top, in the same "last+this" form the box already shows, so the history stays
+    // readable. Rows that follow something live (Next Month Due, EMI / EF, Monthly Expense) carry nothing.
+    fetchable.forEach((r) => {
+      const prevTotal = prevSheet ? sumExpr(normaliseExpr(prevSheet[r.key])) : 0;
+      seed[r.key] = prevTotal > 0 ? exprTerm(prevTotal) + '+' + exprTerm(r.source) : exprTerm(r.source);
+    });
     if (carried.length) seed.virtualItems = carried;
     if (carriedLoans.length) seed.loanItems = carriedLoans;
+    if (carriedOther.length) seed.otherItems = carriedOther;
     await DB.put('monthlySheet', seed);
     if (expRenderStale(token)) return;
     toast(mod.monthLabel(ym) + ' started — '
       + (fetchable.length ? 'figures fetched' : 'sheet opened')
-      + (carried.length ? ', ' + carried.length + ' virtual carried over' : ''));
+      + (carried.length ? ', ' + carried.length + ' virtual carried over' : '')
+      + (carriedOther.length ? ', ' + carriedOther.length + ' other expense carried over' : ''));
     renderHomeExpense();
     return;
   }
@@ -10666,14 +10678,21 @@ function _sharedFor(ym, allocs) {
   const al = (allocs || []).find((x) => Number(x.year) === Number(String(ym).slice(0, 4)));
   return al && al.sharedOn ? round2(Math.max(0, Number(al.sharedAmount) || 0)) : 0;
 }
-function _kittyFor(ym, allocs, loans) {
+// The household budget before any repayment earmark: the plan, what others share in, and an emergency draw in
+// the month it was taken. Used by the All months heatmap, where paid repayments count as spending instead.
+function _kittyNoEarmark(ym, allocs, loans) {
   const al = (allocs || []).find((x) => Number(x.year) === Number(String(ym).slice(0, 4)));
   const share = al ? Number(al.houseExp) || 0 : 0;
   // Floored at zero: a schedule bigger than the month's own budget would
   // otherwise produce a negative kitty, which reads as a bug rather than as
   // "everything this month is already committed".
   const base = _kittyDoubled(ym) ? share * 2 : share + _sharedFor(ym, allocs);
-  return Math.max(0, round2(base + _emergencyDrawIn(ym, loans) - _repayEarmarkIn(ym, loans)));
+  return Math.max(0, round2(base + _emergencyDrawIn(ym, loans)));
+}
+function _kittyFor(ym, allocs, loans) {
+  // A planned repayment no longer lowers the month's budget ahead of time: it reduces what is left only once it
+  // is recorded as paid (the Tracker entry the loan writes then). _repayEarmarkIn is kept for the "due" badge.
+  return _kittyNoEarmark(ym, allocs, loans);
 }
 
 // Categories where being "over" isn't a decision anyone can act on this month.
