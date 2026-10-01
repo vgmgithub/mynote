@@ -27,6 +27,16 @@ export const convIcon = (v) => CONV_ICON[v] || '';
 const CUR_BY_PORTFOLIO = PORTFOLIOS.reduce((m, p) => { m[p.id] = p.cur; return m; }, {});
 export const curOf = (pid) => CUR_BY_PORTFOLIO[pid] || 'INR';
 
+// Month-over-month: the change in a month's RETURN (profitLoss = value - invested), not in raw value - money
+// newly invested that month is not counted as "gain". The % is that change against last month's return.
+export function returnMoM(cur, prev) {
+  const c = cur && cur.profitLoss, p = prev && prev.profitLoss;
+  if (c == null || p == null || !Number.isFinite(Number(c)) || !Number.isFinite(Number(p))) return null;
+  const diff = Number(c) - Number(p);
+  const pct = Number(p) === 0 ? null : (diff / Math.abs(Number(p))) * 100;
+  return { diff, pct };
+}
+
 // A Sovereign Gold Bond sits in the stocks store (it is bought and held like one) but is gold, not equity - kept
 // here, alongside the other pure predicates, so anything reading a stock list can tell the two apart the same way.
 export const isSgb = (s) => /^\s*sgb/i.test((s && s.name) || '') && /bond/i.test((s && s.category) || '');

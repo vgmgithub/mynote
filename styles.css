@@ -3682,6 +3682,23 @@ body:not([data-mode="home"]) .fab svg.fab-ring { display: none; }
 .ef-summary-label { font-size: 0.74rem; font-weight: 700; color: #c4b5fd; margin-bottom: 2px; }
 html[data-theme="light"] .ef-summary-label { color: #7c3aed; }
 
+/* ---------- Trend Months: MoM % chip, up/down + index badges ---------- */
+.snap-list .card .sub .mom-pct { margin-left: 4px; padding: 0 5px; border-radius: 999px; font-size: 0.72rem; font-weight: 700;
+  background: rgba(52,211,153,0.12); }
+.snap-list .card .sub .mom.neg .mom-pct { background: rgba(248,113,113,0.12); }
+/* Third line: invested · up/down chips · index badge, on one line */
+.snap-list .card .month-meta { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; white-space: nowrap; }
+.month-meta .mm-counts { display: inline-flex; gap: 4px; }
+.month-meta .mm-up, .month-meta .mm-down { padding: 0 6px; border-radius: 999px; font-size: 0.68rem; font-weight: 700; line-height: 1.55; }
+.month-meta .mm-up { color: var(--good); background: rgba(52,211,153,0.14); }
+.month-meta .mm-down { color: var(--bad); background: rgba(248,113,113,0.14); }
+.month-meta .mm-index { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px 1px 2px; border-radius: 999px; font-size: 0.66rem; font-weight: 700; line-height: 1.6;
+  color: #fff; background: #362d7e; border: 1px solid #e8601c; box-shadow: inset 0 0 0 1px rgba(236,174,17,0.35); }
+.month-meta .mm-index:not(:has(img)) { padding-left: 8px; }
+.month-meta .mm-index-name { color: #fdba4d; font-weight: 800; }
+.month-meta .mm-index b { color: #fff; font-weight: 800; }
+.month-meta .mm-index-ico { width: 16px; height: 16px; border-radius: 50%; display: block; }
+
 /* ---------- AI Prompt sheet ---------- */
 .catsp-sub { margin: 6px 0 2px; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
 .an-prompt-head { margin-bottom: 12px; }
