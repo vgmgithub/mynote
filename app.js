@@ -17852,6 +17852,7 @@ async function openMenu() {
     : 'Protect this app with a PIN';
   items.push(menuItem('🔒', lockCfg && lockCfg.enabled ? 'App lock · on' : 'Set up app lock', lockDesc, () => { closeModal(); openLockEntry(); }));
   items.push(menuItem('📰', 'Feed settings', 'Marketaux API key for the news Feed', () => { closeModal(); openFeedSettings(); }));
+  items.push(menuItem('🔄', 'Check for updates', 'See if a newer version is ready to install', () => { closeModal(); checkForUpdatesNow(); }));
   openModal(el('div', { class: 'sheet' }, [
     el('h2', { text: 'Menu' }),
     el('div', { class: 'menu-list' }, items),
@@ -18938,6 +18939,23 @@ async function checkForNewVersion() {
     const [running, latest] = await Promise.all([_runningRelease(), _serverRelease()]);
     if (running && latest && latest > running) showUpdatePopup(latest);
   } catch (_) { /* offline or blocked: try again next time */ }
+}
+
+// Menu → "Check for updates": the same check, but always says something back -
+// the silent background version above would otherwise leave a manual tap
+// looking like it did nothing when there's nothing new.
+async function checkForUpdatesNow() {
+  if (navigator.onLine === false) { toast('You are offline'); return; }
+  toast('Checking for updates…');
+  try {
+    const reg = window.__swReg || (await navigator.serviceWorker.getRegistration());
+    if (reg) await reg.update().catch(() => {});
+  } catch (_) {}
+  try {
+    const [running, latest] = await Promise.all([_runningRelease(), _serverRelease()]);
+    if (running && latest && latest > running) showUpdatePopup(latest);
+    else toast('You already have the latest version');
+  } catch (_) { toast('Could not check for updates — try again later'); }
 }
 
 // Last resort that always works: drop the worker and its caches, then reload so
