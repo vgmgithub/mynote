@@ -3954,31 +3954,61 @@ async function renderFD() {
   const returnPct = totEff > 0 ? (totInterest / totEff) * 100 : 0;
   // Realized interest from matured FDs (non-superseded only - the latest matured
   // link per chain, so recycled money isn't counted twice as the ladder loops).
-  let interestMatured = 0;
-  maturedVisible.forEach(({ f, c }) => { if (!f.emergencyFund) interestMatured += c.totalInterest; });
+  let interestMatured = 0, maturedInvested = 0;
+  maturedVisible.forEach(({ f, c }) => { if (f.emergencyFund) return; interestMatured += c.totalInterest; maturedInvested += c.principal; });
+  const maturedReturnPct = maturedInvested > 0 ? (interestMatured / maturedInvested) * 100 : 0;
+  // What became of what matured: rolled back into the ladder vs taken out as cash - the natural third
+  // fact to sit beside "how much matured" and "what it earned", and it's what balances that row instead
+  // of leaving the Reinvested tile visibly shorter than its two neighbours.
+  const maturedPayout = maturedInvested + interestMatured;
+  const reinvestRate = maturedPayout > 0 ? (totRolled / maturedPayout) * 100 : 0;
 
   const holdContent = el('div', { class: 'tab-content' + (_fdTab === 'holdings' ? '' : ' hidden') });
   const ovrvContent = el('div', { class: 'tab-content' + (_fdTab === 'overview' ? '' : ' hidden') });
   const ladderContent = el('div', { class: 'tab-content' + (_fdTab === 'ladder' ? '' : ' hidden') });
 
   // Summary card (shared by Holdings + Overview; hidden on Ladder).
-  const summarySec = el('section', { class: 'summary' + (_fdTab === 'ladder' ? ' hidden' : '') }, [
+  const summarySec = el('section', { class: 'summary fd-summary' + (_fdTab === 'ladder' ? ' hidden' : '') }, [
     el('div', { class: 'row-between summary-top' }, [
       el('div', {}, [
         el('div', { class: 'label', text: 'Total invested value' }),
-        el('div', { class: 'big', text: fmtCur(totEff, 'INR') }),
+        el('div', { class: 'fd-big-row' }, [
+          el('div', { class: 'big', text: fmtCur(totEff, 'INR') }),
+          el('span', { class: 'fd-active-badge', text: activeRows.length + ' ACTIVE' }),
+        ]),
         el('div', { class: 'fd-subline', text: 'Fresh invested ' + fmtCur(totFresh, 'INR') }),
       ]),
       el('div', { class: 'summary-earned' }, [
-        el('div', { class: 'label', text: 'Interest to earn' }),
+        el('div', { class: 'label', text: 'Active FD interest' }),
         el('div', { class: 'v pos', text: fmtIntCur(totInterest) }),
+        el('div', { class: 'fd-subline', text: returnPct ? fmtIntRate(returnPct) + ' return' : '—' }),
       ]),
     ]),
-    el('div', { class: 'grid' }, [
-      _mfCell('Reinvested', fmtCur(totRolled, 'INR')),
-      _mfCell('Interest matured', fmtIntCur(interestMatured), 'pos'),
-      _mfCell('Return %', returnPct ? fmtIntRate(returnPct) : '—'),
-      _mfCell('Active FDs', String(activeRows.length)),
+    // Matured -> Interest matured -> Reinvested reads as one story (what came due, what it earned, how
+    // much of that went back into the ladder), each tinted by role and each carrying its own second
+    // line so the row lands even instead of the last tile trailing off shorter than the other two.
+    el('div', { class: 'fd-stat-row' }, [
+      el('div', { class: 'fd-stat is-neutral' }, [
+        el('div', { class: 'fd-stat-head' }, [
+          el('div', { class: 'k fd-k-tiered' }, [el('span', { class: 'fd-k-pre', text: 'Matured' }), el('span', { class: 'fd-k-main', text: 'Principal' })]),
+          el('span', { class: 'fd-stat-badge is-count', text: maturedVisible.length + (maturedVisible.length === 1 ? ' FD' : ' FDs') }),
+        ]),
+        el('div', { class: 'v', text: fmtCur(maturedInvested, 'INR') }),
+      ]),
+      el('div', { class: 'fd-stat is-good' }, [
+        el('div', { class: 'fd-stat-head' }, [
+          el('div', { class: 'k fd-k-tiered' }, [el('span', { class: 'fd-k-pre', text: 'Matured' }), el('span', { class: 'fd-k-main', text: 'Interest' })]),
+          maturedReturnPct ? el('span', { class: 'fd-stat-badge is-good', title: 'Return on the matured principal', text: fmtIntRate(maturedReturnPct) }) : null,
+        ].filter(Boolean)),
+        el('div', { class: 'v pos', text: fmtIntCur(interestMatured) }),
+      ]),
+      el('div', { class: 'fd-stat is-accent' }, [
+        el('div', { class: 'fd-stat-head' }, [
+          el('div', { class: 'k fd-k-tiered' }, [el('span', { class: 'fd-k-pre', text: 'Reinvested' }), el('span', { class: 'fd-k-main', text: 'FD Rollover' })]),
+          reinvestRate ? el('span', { class: 'fd-stat-badge is-accent', title: 'Share of matured payouts rolled into a new FD', text: Math.round(reinvestRate) + '%' }) : null,
+        ].filter(Boolean)),
+        el('div', { class: 'v', text: fmtCur(totRolled, 'INR') }),
+      ]),
     ]),
   ]);
 
@@ -13370,26 +13400,41 @@ async function renderBond() {
 
   // Totals over active bonds (still-live capital) - mirrors FD's "locked capital,
   // tracked in this surface's own totals" rationale.
-  let totInv = 0, totInterest = 0, totVsBank = 0, vsBankCount = 0, receivedToDate = 0;
+  let totInv = 0, totInterest = 0, receivedToDate = 0, couponsRemaining = 0;
   // Live capital = what's still outstanding. Same as principal for a bond whose
   // principal returns in one lump; genuinely smaller once it amortizes.
   // Emergency-Fund-linked bonds are excluded from every total on this page (they
-  // stay in the list, badged) because that surface owns them now — the same
-  // split SGBs have between the stocks store and the Metals surface.
-  activeRows.forEach(({ b: b2, c }) => { if (b2.emergencyFund) return; totInv += c.outstandingPrincipal; totInterest += c.totalInterest; });
+  // stay in the list, set apart under their own divider) because that surface
+  // owns them now — the same split SGBs have between the stocks store and the
+  // Metals surface. Their own earned/remaining figures are still shown below,
+  // separately, so this page never looks like it's missing real bond money.
+  activeRows.forEach(({ b: b2, c }) => {
+    if (b2.emergencyFund) return;
+    totInv += c.outstandingPrincipal;
+    totInterest += c.totalInterest;
+    // Coupons actually paid so far, and what's projected to still come, both from ACTIVE bonds only -
+    // a matured or sold bond's coupons belong to "Interest earned (realised)" instead, not here.
+    receivedToDate += c.payoutsTotal;
+    couponsRemaining += Math.max(0, c.totalInterest - c.payoutsTotal);
+  });
   const returnPct = totInv > 0 ? (totInterest / totInv) * 100 : 0;
   // Interest earned from closed (matured + sold) bonds - real (logged payouts,
   // or realised sale proceeds) once either exists, else the coupon-rate
-  // projection for a matured bond with no payouts logged. Received-to-date sums
-  // actual COUPON payouts logged across every bond - sale proceeds are a
-  // separate, larger figure shown on the sold card itself, not folded in here.
+  // projection for a matured bond with no payouts logged.
   let interestEarnedTotal = 0;
   closedRows.forEach(({ b: b2, c }) => { if (b2.emergencyFund) return; interestEarnedTotal += c.interestEarned; });
-  rows.forEach(({ b: b2, c }) => {
-    if (b2.emergencyFund) return;
-    if (c.vsBank != null) { totVsBank += c.vsBank; vsBankCount++; }
-    receivedToDate += c.payoutsTotal;
+  // Emergency Fund bonds: real money, real interest, but their principal and running totals belong to
+  // the Emergency Fund page. Surfaced here as their own pair of figures instead of silently vanishing -
+  // active bonds only, the same scope as "Coupons received" / "Coupon yet to receive" above, so these
+  // two numbers always match what's actually sitting under the Active filter, not a total that quietly
+  // includes a matured or sold EF bond the person isn't looking at right now.
+  let efReceived = 0, efRemaining = 0;
+  activeRows.forEach(({ b: b2, c }) => {
+    if (!b2.emergencyFund) return;
+    efReceived += c.payoutsTotal;
+    efRemaining += Math.max(0, c.totalInterest - c.payoutsTotal);
   });
+  const hasEf = activeRows.some(({ b: b2 }) => b2.emergencyFund);
 
   const holdContent = el('div', { class: 'tab-content' + (_bondTab === 'holdings' ? '' : ' hidden') });
   const ovrvContent = el('div', { class: 'tab-content' + (_bondTab === 'overview' ? '' : ' hidden') });
@@ -13401,19 +13446,26 @@ async function renderBond() {
         el('div', { class: 'big', text: fmtCur(totInv, 'INR') }),
       ]),
       el('div', { class: 'summary-earned' }, [
-        el('div', { class: 'label', text: 'Interest to earn (full tenure)' }),
+        el('div', { class: 'label', text: 'Overall Interest (Active Bonds)' }),
         el('div', { class: 'v pos', text: fmtIntCur(totInterest) }),
+        el('div', { class: 'label', text: returnPct ? fmtIntRate(returnPct) + ' return' : '—' }),
       ]),
     ]),
-    el('div', { class: 'grid' }, [
+    el('div', { class: 'grid grid-3' }, [
+      _mfCell('Coupons received', fmtIntCur(receivedToDate), 'pos'),
+      _mfCell('Coupon yet to receive', fmtIntCur(couponsRemaining)),
       // Sign-safe: a bond sold at a loss can make this negative for the first
       // time (previously bond interest was always >= 0).
-      _mfCell('Interest earned (realised)', (interestEarnedTotal >= 0 ? '+' : '') + fmtIntCur(interestEarnedTotal), interestEarnedTotal >= 0 ? 'pos' : 'neg'),
-      _mfCell('Coupons received', fmtIntCur(receivedToDate), 'pos'),
-      _mfCell('Return %', returnPct ? fmtIntRate(returnPct) : '—'),
-      _mfCell('vs Bank', vsBankCount ? (totVsBank >= 0 ? '+' : '') + fmtIntCur(totVsBank) : '—', totVsBank >= 0 ? 'pos' : 'neg'),
+      _mfCell('Interest Earned (Matured Bond)', (interestEarnedTotal >= 0 ? '+' : '') + fmtIntCur(interestEarnedTotal), interestEarnedTotal >= 0 ? 'pos' : 'neg'),
     ]),
-  ]);
+    hasEf ? el('div', { class: 'ef-summary' }, [
+      el('div', { class: 'ef-summary-label', text: '🔒 Emergency Fund bonds' }),
+      el('div', { class: 'grid grid-2' }, [
+        _mfCell('EF interest earned', fmtIntCur(efReceived), 'pos'),
+        _mfCell('EF interest yet to earn', fmtIntCur(efRemaining)),
+      ]),
+    ]) : null,
+  ].filter(Boolean));
 
   // ---- Holdings tab: filter + sort + card list ----
   const filterSeg = el('div', { class: 'seg' }, [

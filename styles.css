@@ -3653,6 +3653,35 @@ body:not([data-mode="home"]) .fab svg.fab-ring { display: none; }
 .fd-stat.is-accent { background: color-mix(in srgb, var(--accent) 10%, var(--card-2)); border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); }
 .stock-pnl-row { margin: 2px 0 4px; }
 
+/* ---------- FD overview tiles ---------- */
+.fd-big-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.fd-active-badge { display: inline-block; font-size: 0.6rem; font-weight: 800;
+  letter-spacing: 0.03em; padding: 2px 7px; border-radius: 999px; color: #fff;
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+  box-shadow: 0 2px 6px rgba(29,78,216,0.45), inset 0 1px 0 rgba(255,255,255,0.25); }
+.fd-summary { padding: 14px 16px; }
+.fd-summary .summary-top { margin-bottom: 10px; }
+.fd-stat .k.fd-k-tiered { display: flex; flex-direction: column; gap: 0; white-space: normal; overflow: visible; }
+.fd-k-pre { font-size: 0.5rem; font-weight: 600; letter-spacing: 0; opacity: 0.8; line-height: 1.15; }
+.fd-stat-head .fd-k-tiered { overflow: visible; }
+.fd-stat-head .fd-k-tiered .fd-k-main { font-size: 0.56rem; letter-spacing: 0; overflow: visible; text-overflow: clip; }
+.fd-k-main { font-size: 0.68rem; font-weight: 800; line-height: 1.2; }
+.fd-stat-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; min-width: 0; }
+.fd-stat-head .k { min-width: 0; overflow: hidden; }
+.fd-stat-head .fd-k-main { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fd-stat-badge { flex: 0 0 auto; padding: 1px 5px; border-radius: 999px; font-size: 0.56rem; font-weight: 700; line-height: 1.5; white-space: nowrap; color: #fff; }
+.fd-stat-badge.is-count { background: #4b5563; }
+.fd-stat-badge.is-good { background: #16a34a; }
+.fd-stat-badge.is-accent { background: #0284c7; }
+
+/* ---------- Bonds overview: 3-column grid, violet Emergency Fund sub-section ---------- */
+.summary .grid.grid-3 { grid-template-columns: repeat(3, 1fr); }
+.summary .grid.grid-2 { grid-template-columns: 1fr 1fr; }
+.ef-summary { margin-top: 14px; padding: 10px 12px 4px; border-radius: 10px;
+  border: 1px solid rgba(124,58,237,0.35); background: rgba(124,58,237,0.07); }
+.ef-summary-label { font-size: 0.74rem; font-weight: 700; color: #c4b5fd; margin-bottom: 2px; }
+html[data-theme="light"] .ef-summary-label { color: #7c3aed; }
+
 /* ---------- AI Prompt sheet ---------- */
 .catsp-sub { margin: 6px 0 2px; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
 .an-prompt-head { margin-bottom: 12px; }
